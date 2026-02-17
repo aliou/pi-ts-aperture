@@ -7,7 +7,7 @@ Aperture handles API key injection and request routing server-side. This extensi
 ## Setup
 
 ```bash
-pi install @aliou/pi-ts-aperture
+pi install npm:@aliou/pi-ts-aperture
 ```
 
 Then run the setup wizard:
