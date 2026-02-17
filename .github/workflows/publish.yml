@@ -1,0 +1,86 @@
+name: Publish
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    name: Publish
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+      pull-requests: write
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
+          scope: "@aliou"
+          cache: "pnpm"
+
+      - name: Upgrade npm for OIDC support
+        run: npm install -g npm@latest
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Get release info
+        id: release-info
+        run: |
+          pnpm changeset status --output=release.json 2>/dev/null || echo '{"releases":[]}' > release.json
+          node <<NODE
+          const fs = require('fs');
+          const release = JSON.parse(fs.readFileSync('release.json', 'utf8'));
+          const releases = release.releases?.filter(r => r.type !== 'none') || [];
+
+          let title = 'Version Packages';
+          let commit = 'Version Packages';
+          if (releases.length === 1) {
+            const { name, newVersion } = releases[0];
+            title = 'Updating ' + name + ' to version ' + newVersion;
+            commit = name + '@' + newVersion;
+          } else if (releases.length > 1) {
+            const summary = releases.map(r => r.name + '@' + r.newVersion).join(', ');
+            title = 'Updating ' + summary;
+            commit = summary;
+          }
+
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, 'title=' + title + '\n');
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, 'commit=' + commit + '\n');
+          NODE
+          rm -f release.json
+        continue-on-error: true
+
+      - name: Create Release PR or Publish
+        id: changesets
+        uses: changesets/action@v1
+        with:
+          version: pnpm changeset version
+          publish: pnpm changeset publish
+          title: ${{ steps.release-info.outputs.title || 'Version Packages' }}
+          commit: ${{ steps.release-info.outputs.commit || 'Version Packages' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_CONFIG_PROVENANCE: true
