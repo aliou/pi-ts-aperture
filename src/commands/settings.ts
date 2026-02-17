@@ -12,14 +12,17 @@ import {
   type SettingsSection,
   setNestedValue,
 } from "@aliou/pi-utils-settings";
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type {
+  ExtensionAPI,
+  ExtensionContext,
+} from "@mariozechner/pi-coding-agent";
 import { getSettingsListTheme } from "@mariozechner/pi-coding-agent";
 import type { ApertureConfig, ResolvedConfig } from "../config";
 import { configLoader } from "../config";
 
 export function registerApertureSettings(
   pi: ExtensionAPI,
-  onConfigChange: () => void,
+  onConfigChange: (ctx: ExtensionContext) => void,
 ): void {
   registerSettingsCommand<ApertureConfig, ResolvedConfig>(pi, {
     commandName: "aperture:settings",
@@ -89,8 +92,8 @@ export function registerApertureSettings(
       }
       return updated;
     },
-    onSave: () => {
-      onConfigChange();
+    onSave: (ctx) => {
+      onConfigChange(ctx);
     },
   });
 }

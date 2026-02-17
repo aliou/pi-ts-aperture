@@ -21,7 +21,7 @@
     "video": "https://assets.aliou.me/pi-extensions/demos/pi-ts-aperture.mp4"
   },
   "dependencies": {
-    "@aliou/pi-utils-settings": "^0.3.0"
+    "@aliou/pi-utils-settings": "^0.4.0"
   },
   "peerDependencies": {
     "@mariozechner/pi-ai": ">=0.52.12",

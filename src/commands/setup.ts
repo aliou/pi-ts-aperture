@@ -9,7 +9,10 @@
 
 import { FuzzySelector } from "@aliou/pi-utils-settings";
 import { getProviders } from "@mariozechner/pi-ai";
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type {
+  ExtensionAPI,
+  ExtensionContext,
+} from "@mariozechner/pi-coding-agent";
 import { getSettingsListTheme } from "@mariozechner/pi-coding-agent";
 import type { Component } from "@mariozechner/pi-tui";
 import { Input, Key, matchesKey } from "@mariozechner/pi-tui";
@@ -152,7 +155,7 @@ class ProviderMultiSelect implements Component {
 
 export function registerSetupCommand(
   pi: ExtensionAPI,
-  onConfigChange: () => void,
+  onConfigChange: (ctx: ExtensionContext) => void,
 ): void {
   pi.registerCommand("aperture:setup", {
     description: "Configure Tailscale Aperture integration",
@@ -194,7 +197,7 @@ export function registerSetupCommand(
 
       // Step 3: save and register
       await configLoader.save("global", { baseUrl, providers });
-      onConfigChange();
+      onConfigChange(ctx);
       ctx.ui.notify(
         `Aperture configured: ${providers.length} provider(s) via ${baseUrl}`,
         "info",
