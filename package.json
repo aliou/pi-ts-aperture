@@ -1,7 +1,7 @@
 {
   "name": "@aliou/pi-ts-aperture",
   "description": "Route Pi LLM providers through Tailscale Aperture",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "packageManager": "pnpm@10.26.1",
   "repository": {
     "type": "git",
