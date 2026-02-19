@@ -51,5 +51,13 @@
       "@mariozechner/pi-ai": "$@mariozechner/pi-coding-agent",
       "@mariozechner/pi-tui": "$@mariozechner/pi-coding-agent"
     }
+  },
+  "peerDependenciesMeta": {
+    "@mariozechner/pi-coding-agent": {
+      "optional": true
+    },
+    "@mariozechner/pi-ai": {
+      "optional": true
+    }
   }
 }
