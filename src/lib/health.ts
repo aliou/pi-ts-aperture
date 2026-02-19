@@ -10,7 +10,9 @@ export interface HealthCheckResult {
   error?: string;
 }
 
-export async function checkApertureHealth(baseUrl: string): Promise<HealthCheckResult> {
+export async function checkApertureHealth(
+  baseUrl: string,
+): Promise<HealthCheckResult> {
   const url = `${baseUrl.replace(/\/+$/, "")}/v1/models`;
   try {
     const res = await fetch(url, {
