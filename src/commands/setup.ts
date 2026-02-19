@@ -14,9 +14,10 @@ import type {
   ExtensionContext,
 } from "@mariozechner/pi-coding-agent";
 import { getSettingsListTheme } from "@mariozechner/pi-coding-agent";
-import type { Component } from "@mariozechner/pi-tui";
+import type { Component, TUI } from "@mariozechner/pi-tui";
 import { Input, Key, matchesKey } from "@mariozechner/pi-tui";
 import { configLoader } from "../config";
+import { checkApertureHealth } from "../lib/health";
 
 function normalizeUrl(url: string): string {
   let result = url.trim();
@@ -25,6 +26,102 @@ function normalizeUrl(url: string): string {
     result = `http://${result}`;
   }
   return result.replace(/\/v1\/?$/, "").replace(/\/+$/, "");
+}
+
+const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+
+/**
+ * Shows a spinner while verifying the Aperture URL is reachable.
+ * Kicks off the health check on construction and resolves done(boolean)
+ * when the check completes.
+ */
+class HealthCheckSpinner implements Component {
+  private theme: ReturnType<typeof getSettingsListTheme>;
+  private url: string;
+  private tui: TUI;
+  // true = healthy, false = failed (retry), undefined = cancelled
+  private done: (result: boolean | undefined) => void;
+  private frame = 0;
+  private timer: ReturnType<typeof setInterval>;
+  private result: { ok: boolean; error?: string } | null = null;
+
+  constructor(
+    theme: ReturnType<typeof getSettingsListTheme>,
+    url: string,
+    tui: TUI,
+    done: (result: boolean | undefined) => void,
+  ) {
+    this.theme = theme;
+    this.url = url;
+    this.tui = tui;
+    this.done = done;
+
+    // Animate spinner at ~80ms per frame.
+    this.timer = setInterval(() => {
+      this.frame = (this.frame + 1) % SPINNER_FRAMES.length;
+      this.tui.requestRender();
+    }, 80);
+
+    // Fire the check.
+    checkApertureHealth(url).then((res) => {
+      clearInterval(this.timer);
+      this.result = res;
+      this.tui.requestRender();
+
+      // On success, auto-advance after a brief pause.
+      // On failure, wait for user input (see handleInput).
+      if (res.ok) {
+        setTimeout(() => this.done(true), 600);
+      }
+    });
+  }
+
+  render(_width: number): string[] {
+    const lines: string[] = [];
+    lines.push(this.theme.label(" Aperture Setup", true));
+    lines.push("");
+
+    if (!this.result) {
+      const spinner = SPINNER_FRAMES[this.frame];
+      lines.push(this.theme.hint(`  ${spinner} Checking connection to ${this.url}...`));
+    } else if (this.result.ok) {
+      lines.push(this.theme.hint(`  Connected to ${this.url}`));
+    } else {
+      lines.push(
+        this.theme.hint(
+          `  Could not reach ${this.url}: ${this.result.error}`,
+        ),
+      );
+      lines.push("");
+      lines.push(
+        this.theme.hint(
+          "  Make sure the URL is correct and you are connected to the tailnet.",
+        ),
+      );
+      lines.push("");
+      lines.push(this.theme.hint("  Enter: try another URL · Esc: cancel"));
+    }
+
+    lines.push("");
+    return lines;
+  }
+
+  invalidate() {}
+
+  handleInput(data: string) {
+    // Only handle input after a failed check.
+    if (!this.result || this.result.ok) return;
+
+    if (matchesKey(data, Key.enter)) {
+      this.done(false); // retry
+    } else if (matchesKey(data, Key.escape)) {
+      this.done(undefined); // cancel wizard
+    }
+  }
+
+  dispose() {
+    clearInterval(this.timer);
+  }
 }
 
 /**
@@ -171,14 +268,27 @@ export function registerSetupCommand(
       const config = configLoader.getConfig();
       const settingsTheme = getSettingsListTheme();
 
-      // Step 1: base URL
-      const baseUrl = await ctx.ui.custom<string | undefined>(
-        (_tui, _theme, _kb, done) => {
-          return new UrlPrompt(settingsTheme, config.baseUrl, done);
-        },
-      );
+      // Step 1: base URL + health check loop.
+      // On failure, loop back to the URL prompt so the user can retry.
+      let baseUrl: string | undefined;
+      while (true) {
+        baseUrl = await ctx.ui.custom<string | undefined>(
+          (_tui, _theme, _kb, done) => {
+            return new UrlPrompt(settingsTheme, baseUrl ?? config.baseUrl, done);
+          },
+        );
 
-      if (!baseUrl) return;
+        if (!baseUrl) return;
+
+        const result = await ctx.ui.custom<boolean | undefined>(
+          (tui, _theme, _kb, done) => {
+            return new HealthCheckSpinner(settingsTheme, baseUrl!, tui, done);
+          },
+        );
+
+        if (result === true) break; // healthy, proceed
+        if (result === undefined) return; // cancelled
+      }
 
       // Step 2: select providers
       const knownProviders = getProviders();
