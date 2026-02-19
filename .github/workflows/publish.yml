@@ -57,14 +57,10 @@ jobs:
 
           let title = 'Version Packages';
           let commit = 'Version Packages';
-          if (releases.length === 1) {
-            const { name, newVersion } = releases[0];
-            title = 'Updating ' + name + ' to version ' + newVersion;
-            commit = name + '@' + newVersion;
-          } else if (releases.length > 1) {
-            const summary = releases.map(r => r.name + '@' + r.newVersion).join(', ');
-            title = 'Updating ' + summary;
-            commit = summary;
+          if (releases.length >= 1) {
+            const version = releases[0].newVersion;
+            title = version;
+            commit = version;
           }
 
           fs.appendFileSync(process.env.GITHUB_OUTPUT, 'title=' + title + '\n');
