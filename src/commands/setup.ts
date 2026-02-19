@@ -8,7 +8,6 @@
  */
 
 import { FuzzySelector } from "@aliou/pi-utils-settings";
-import { getProviders } from "@mariozechner/pi-ai";
 import type {
   ExtensionAPI,
   ExtensionContext,
@@ -83,14 +82,14 @@ class HealthCheckSpinner implements Component {
 
     if (!this.result) {
       const spinner = SPINNER_FRAMES[this.frame];
-      lines.push(this.theme.hint(`  ${spinner} Checking connection to ${this.url}...`));
+      lines.push(
+        this.theme.hint(`  ${spinner} Checking connection to ${this.url}...`),
+      );
     } else if (this.result.ok) {
       lines.push(this.theme.hint(`  Connected to ${this.url}`));
     } else {
       lines.push(
-        this.theme.hint(
-          `  Could not reach ${this.url}: ${this.result.error}`,
-        ),
+        this.theme.hint(`  Could not reach ${this.url}: ${this.result.error}`),
       );
       lines.push("");
       lines.push(
@@ -274,15 +273,20 @@ export function registerSetupCommand(
       while (true) {
         baseUrl = await ctx.ui.custom<string | undefined>(
           (_tui, _theme, _kb, done) => {
-            return new UrlPrompt(settingsTheme, baseUrl ?? config.baseUrl, done);
+            return new UrlPrompt(
+              settingsTheme,
+              baseUrl ?? config.baseUrl,
+              done,
+            );
           },
         );
 
         if (!baseUrl) return;
+        const urlToCheck = baseUrl;
 
         const result = await ctx.ui.custom<boolean | undefined>(
           (tui, _theme, _kb, done) => {
-            return new HealthCheckSpinner(settingsTheme, baseUrl!, tui, done);
+            return new HealthCheckSpinner(settingsTheme, urlToCheck, tui, done);
           },
         );
 
@@ -291,7 +295,11 @@ export function registerSetupCommand(
       }
 
       // Step 2: select providers
-      const knownProviders = getProviders();
+      // Use model registry so custom/extension providers are included.
+      const knownProviders = Array.from(
+        new Set(ctx.modelRegistry.getAll().map((model) => model.provider)),
+      ).sort((a, b) => a.localeCompare(b));
+
       const providers = await ctx.ui.custom<string[] | undefined>(
         (_tui, _theme, _kb, done) => {
           return new ProviderMultiSelect(
