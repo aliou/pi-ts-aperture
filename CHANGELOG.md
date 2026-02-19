@@ -1,5 +1,18 @@
 # @aliou/pi-ts-aperture
 
+## 0.2.0
+
+### Minor Changes
+
+- 926f0a9: Improve `/aperture:setup` provider and connectivity flow.
+
+  - Add URL health check during setup (`/v1/models`) before provider selection, with retry/cancel UX.
+  - Build provider choices from Pi's runtime model registry so extension-registered providers (for example `pi-synthetic`) appear in the setup list.
+
+### Patch Changes
+
+- 2263fc2: mark pi SDK peer deps as optional to prevent koffi OOM in Gondolin VMs
+
 ## 0.1.0
 
 ### Minor Changes
