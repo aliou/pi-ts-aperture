@@ -2,18 +2,26 @@
   "name": "@aliou/pi-ts-aperture",
   "description": "Route Pi LLM providers through Tailscale Aperture",
   "version": "0.2.0",
-  "packageManager": "pnpm@10.26.1",
+  "type": "module",
+  "license": "MIT",
+  "private": false,
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "pi"
+  ],
   "repository": {
     "type": "git",
     "url": "https://github.com/aliou/pi-ts-aperture"
   },
-  "keywords": [
-    "pi-package"
-  ],
   "publishConfig": {
     "access": "public",
     "provenance": true
   },
+  "files": [
+    "src",
+    "README.md"
+  ],
   "pi": {
     "extensions": [
       "./src/index.ts"
@@ -28,16 +36,29 @@
     "@mariozechner/pi-coding-agent": ">=0.52.12",
     "@mariozechner/pi-tui": ">=0.51.0"
   },
+  "peerDependenciesMeta": {
+    "@mariozechner/pi-coding-agent": {
+      "optional": true
+    },
+    "@mariozechner/pi-ai": {
+      "optional": true
+    },
+    "@mariozechner/pi-tui": {
+      "optional": true
+    }
+  },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "lint": "biome check",
     "format": "biome check --write",
+    "check:lockfile": "pnpm install --frozen-lockfile --ignore-scripts",
     "prepare": "[ -d .git ] && husky || true",
     "changeset": "changeset",
     "version": "changeset version",
     "release": "pnpm changeset publish"
   },
   "devDependencies": {
+    "@aliou/biome-plugins": "^0.3.2",
     "@biomejs/biome": "^2.3.13",
     "@changesets/cli": "^2.27.11",
     "@mariozechner/pi-coding-agent": "0.52.12",
@@ -52,15 +73,5 @@
       "@mariozechner/pi-tui": "$@mariozechner/pi-coding-agent"
     }
   },
-  "peerDependenciesMeta": {
-    "@mariozechner/pi-coding-agent": {
-      "optional": true
-    },
-    "@mariozechner/pi-ai": {
-      "optional": true
-    },
-    "@mariozechner/pi-tui": {
-      "optional": true
-    }
-  }
+  "packageManager": "pnpm@10.26.1"
 }
