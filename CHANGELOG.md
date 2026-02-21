@@ -1,5 +1,11 @@
 # @aliou/pi-ts-aperture
 
+## 0.2.1
+
+### Patch Changes
+
+- cf32bda: Move `@mariozechner/pi-tui` to peer dependencies to avoid bundling the SDK alongside the extension.
+
 ## 0.2.0
 
 ### Minor Changes
