@@ -14,46 +14,72 @@ import { registerApertureSettings } from "./commands/settings";
 import { registerSetupCommand } from "./commands/setup";
 import { configLoader } from "./config";
 
-function getApertureBaseUrl(): string | null {
-  const config = configLoader.getConfig();
-  if (!config.baseUrl || config.providers.length === 0) return null;
-  return `${config.baseUrl.replace(/\/+$/, "")}/v1`;
+/**
+ * Compute the full Aperture base URL from config, or null if not configured.
+ */
+function resolveBaseUrl(): string | null {
+  const { baseUrl, providers } = configLoader.getConfig();
+  if (!baseUrl || providers.length === 0) return null;
+  return `${baseUrl.replace(/\/+$/, "")}/v1`;
+}
+
+/**
+ * Override provider registrations to route through Aperture.
+ * Preserves existing models so extensions that registered custom models
+ * before this runs don't lose them.
+ */
+function overrideProviders(
+  registry: ExtensionContext["modelRegistry"],
+  providers: string[],
+  baseUrl: string,
+): void {
+  for (const provider of providers) {
+    const models = registry.getAll().filter((m) => m.provider === provider);
+
+    registry.registerProvider(provider, {
+      baseUrl,
+      apiKey: "-",
+      ...(models.length > 0 && { api: models[0].api, models }),
+    });
+  }
+}
+
+/**
+ * Apply Aperture configuration to the model registry.
+ * Returns the list of providers that were overridden, or empty if no-op.
+ */
+function applyAperture(registry: ExtensionContext["modelRegistry"]): string[] {
+  const url = resolveBaseUrl();
+  if (!url) return [];
+
+  const { providers } = configLoader.getConfig();
+  overrideProviders(registry, providers, url);
+  return providers;
 }
 
 export default async function (pi: ExtensionAPI): Promise<void> {
   await configLoader.load();
 
-  const config = configLoader.getConfig();
-  let lastRegisteredProviders = [...config.providers];
+  let lastRegisteredProviders = [...configLoader.getConfig().providers];
 
-  // At load time, pi.registerProvider() queue is flushed by the runner.
-  const baseUrl = getApertureBaseUrl();
-  if (baseUrl) {
-    for (const provider of config.providers) {
-      pi.registerProvider(provider, { baseUrl, apiKey: "-" });
-    }
-  }
+  // Apply after all extensions have registered their providers and models.
+  pi.events.on("before_agent_start", async (data) => {
+    const ctx = data as ExtensionContext;
+    if (!ctx?.modelRegistry) return;
+    applyAperture(ctx.modelRegistry);
+  });
 
   const onSetupComplete = (ctx: ExtensionContext) => {
-    const cfg = configLoader.getConfig();
-    const removedProviders = lastRegisteredProviders.filter(
-      (p) => !cfg.providers.includes(p),
+    const { providers } = configLoader.getConfig();
+    const removed = lastRegisteredProviders.filter(
+      (p) => !providers.includes(p),
     );
 
-    const url = getApertureBaseUrl();
-    if (url) {
-      for (const provider of cfg.providers) {
-        ctx.modelRegistry.registerProvider(provider, {
-          baseUrl: url,
-          apiKey: "-",
-        });
-      }
-    }
-    lastRegisteredProviders = [...cfg.providers];
+    applyAperture(ctx.modelRegistry);
+    lastRegisteredProviders = [...providers];
 
-    // The active model is a snapshot. If it belongs to a provider we just
-    // reconfigured, re-resolve it so the new baseUrl takes effect.
-    if (ctx.model && cfg.providers.includes(ctx.model.provider)) {
+    // Re-resolve active model if it belongs to a reconfigured provider.
+    if (ctx.model && providers.includes(ctx.model.provider)) {
       const updated = ctx.modelRegistry.find(ctx.model.provider, ctx.model.id);
       if (updated) {
         ctx.ui.notify(
@@ -64,9 +90,9 @@ export default async function (pi: ExtensionAPI): Promise<void> {
       }
     }
 
-    if (removedProviders.length > 0) {
+    if (removed.length > 0) {
       ctx.ui.notify(
-        `Removed providers (${removedProviders.join(", ")}) will revert after /reload`,
+        `Removed providers (${removed.join(", ")}) will revert after /reload`,
         "warning",
       );
     }
