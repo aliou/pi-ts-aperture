@@ -55,7 +55,9 @@
     "prepare": "[ -d .git ] && husky || true",
     "changeset": "changeset",
     "version": "changeset version",
-    "release": "pnpm changeset publish"
+    "release": "pnpm changeset publish",
+    "test": "vitest run tests/e2e.test.ts",
+    "test:watch": "vitest watch tests/"
   },
   "devDependencies": {
     "@aliou/biome-plugins": "^0.3.2",
@@ -64,8 +66,10 @@
     "@mariozechner/pi-coding-agent": "0.52.12",
     "@sinclair/typebox": "^0.34.48",
     "@types/node": "^25.0.10",
+    "@vitest/coverage-v8": "^4.0.18",
     "husky": "^9.1.7",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18"
   },
   "pnpm": {
     "overrides": {
