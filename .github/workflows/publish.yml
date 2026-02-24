@@ -49,25 +49,25 @@ jobs:
       - name: Get release info
         id: release-info
         run: |
-          pnpm changeset status --output=release.json 2>/dev/null || echo '{"releases":[]}' > release.json
+          pnpm changeset status --output=release.json
           node <<NODE
           const fs = require('fs');
           const release = JSON.parse(fs.readFileSync('release.json', 'utf8'));
           const releases = release.releases?.filter(r => r.type !== 'none') || [];
 
-          let title = 'Version Packages';
-          let commit = 'Version Packages';
-          if (releases.length >= 1) {
-            const version = releases[0].newVersion;
-            title = version;
-            commit = version;
+          if (releases.length === 0) {
+            console.log('No releases to publish');
+            process.exit(1);
           }
+
+          const version = releases[0].newVersion;
+          const title = version;
+          const commit = version;
 
           fs.appendFileSync(process.env.GITHUB_OUTPUT, 'title=' + title + '\n');
           fs.appendFileSync(process.env.GITHUB_OUTPUT, 'commit=' + commit + '\n');
           NODE
-          rm -f release.json
-        continue-on-error: true
+        shell: bash
 
       - name: Create Release PR or Publish
         id: changesets
