@@ -1,5 +1,11 @@
 # @aliou/pi-ts-aperture
 
+## 0.2.2
+
+### Patch Changes
+
+- 909e72c: Fix model preservation when overriding providers - delay registration to before_agent_start event so models from other extensions are not lost
+
 ## 0.2.1
 
 ### Patch Changes
