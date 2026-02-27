@@ -10,6 +10,7 @@ import type {
   ExtensionAPI,
   ExtensionContext,
 } from "@mariozechner/pi-coding-agent";
+import { VERSION } from "@mariozechner/pi-coding-agent";
 import { registerApertureSettings } from "./commands/settings";
 import { registerSetupCommand } from "./commands/setup";
 import { configLoader } from "./config";
@@ -29,6 +30,7 @@ function resolveBaseUrl(): string | null {
  * before this runs don't lose them.
  */
 function overrideProviders(
+  pi: ExtensionAPI,
   registry: ExtensionContext["modelRegistry"],
   providers: string[],
   baseUrl: string,
@@ -36,7 +38,7 @@ function overrideProviders(
   for (const provider of providers) {
     const models = registry.getAll().filter((m) => m.provider === provider);
 
-    registry.registerProvider(provider, {
+    pi.registerProvider(provider, {
       baseUrl,
       apiKey: "-",
       ...(models.length > 0 && { api: models[0].api, models }),
@@ -48,16 +50,20 @@ function overrideProviders(
  * Apply Aperture configuration to the model registry.
  * Returns the list of providers that were overridden, or empty if no-op.
  */
-function applyAperture(registry: ExtensionContext["modelRegistry"]): string[] {
+function applyAperture(
+  pi: ExtensionAPI,
+  registry: ExtensionContext["modelRegistry"],
+): string[] {
   const url = resolveBaseUrl();
   if (!url) return [];
 
   const { providers } = configLoader.getConfig();
-  overrideProviders(registry, providers, url);
+  overrideProviders(pi, registry, providers, url);
   return providers;
 }
 
 export default async function (pi: ExtensionAPI): Promise<void> {
+  console.log(`[pi-ts-aperture] loaded on pi ${VERSION}`);
   await configLoader.load();
 
   let lastRegisteredProviders = [...configLoader.getConfig().providers];
@@ -66,7 +72,7 @@ export default async function (pi: ExtensionAPI): Promise<void> {
   pi.events.on("before_agent_start", async (data) => {
     const ctx = data as ExtensionContext;
     if (!ctx?.modelRegistry) return;
-    applyAperture(ctx.modelRegistry);
+    applyAperture(pi, ctx.modelRegistry);
   });
 
   const onSetupComplete = (ctx: ExtensionContext) => {
@@ -75,7 +81,7 @@ export default async function (pi: ExtensionAPI): Promise<void> {
       (p) => !providers.includes(p),
     );
 
-    applyAperture(ctx.modelRegistry);
+    applyAperture(pi, ctx.modelRegistry);
     lastRegisteredProviders = [...providers];
 
     // Re-resolve active model if it belongs to a reconfigured provider.
@@ -90,11 +96,8 @@ export default async function (pi: ExtensionAPI): Promise<void> {
       }
     }
 
-    if (removed.length > 0) {
-      ctx.ui.notify(
-        `Removed providers (${removed.join(", ")}) will revert after /reload`,
-        "warning",
-      );
+    for (const p of removed) {
+      pi.unregisterProvider(p);
     }
   };
 

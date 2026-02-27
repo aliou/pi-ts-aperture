@@ -5,8 +5,8 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
-  '@mariozechner/pi-ai': 0.52.12
-  '@mariozechner/pi-tui': 0.52.12
+  '@mariozechner/pi-ai': 0.55.3
+  '@mariozechner/pi-tui': 0.55.3
 
 importers:
 
@@ -14,13 +14,13 @@ importers:
     dependencies:
       '@aliou/pi-utils-settings':
         specifier: ^0.4.0
-        version: 0.4.0(@mariozechner/pi-coding-agent@0.52.12(ws@8.19.0)(zod@3.25.76))
+        version: 0.4.0(@mariozechner/pi-coding-agent@0.55.3(ws@8.19.0)(zod@3.25.76))
       '@mariozechner/pi-ai':
-        specifier: 0.52.12
-        version: 0.52.12(ws@8.19.0)(zod@3.25.76)
+        specifier: 0.55.3
+        version: 0.55.3(ws@8.19.0)(zod@3.25.76)
       '@mariozechner/pi-tui':
-        specifier: 0.52.12
-        version: 0.52.12
+        specifier: 0.55.3
+        version: 0.55.3
     devDependencies:
       '@aliou/biome-plugins':
         specifier: ^0.3.2
@@ -32,8 +32,8 @@ importers:
         specifier: ^2.27.11
         version: 2.29.8(@types/node@25.2.3)
       '@mariozechner/pi-coding-agent':
-        specifier: 0.52.12
-        version: 0.52.12(ws@8.19.0)(zod@3.25.76)
+        specifier: 0.55.3
+        version: 0.55.3(ws@8.19.0)(zod@3.25.76)
       '@sinclair/typebox':
         specifier: ^0.34.48
         version: 0.34.48
@@ -624,22 +624,22 @@ packages:
     resolution: {integrity: sha512-faGUlTcXka5l7rv0lP3K3vGW/ejRuOS24RR2aSFWREUQqzjgdsuWNo/IiPqL3kWRGt6Ahl2+qcDAwtdeWeuGUw==}
     hasBin: true
 
-  '@mariozechner/pi-agent-core@0.52.12':
-    resolution: {integrity: sha512-fBQdwLMvTteHUP9nJxMjtMpEHH4I8tdGnkerOoCFnS9y03AHdqy96IhtL+zZjw9N3dmVCOVqh8gwGjAGLZT31Q==}
+  '@mariozechner/pi-agent-core@0.55.3':
+    resolution: {integrity: sha512-rqbfpQ9BrP6BDiW+Ps3A8Z/p9+Md/pAfc/ECq8JP6cwnZL/jQgU355KWZKtF8zM9az1p0Q9hIWi9cQygVo6Auw==}
     engines: {node: '>=20.0.0'}
 
-  '@mariozechner/pi-ai@0.52.12':
-    resolution: {integrity: sha512-oF7OMJu1aUx7MXJeJoJ/3JDXzD2a5SqK9nHVK3mCA8DRQaykv9g+wcFZaANcCl0vAR2QSDr5KN3ZMARlFNWiVg==}
-    engines: {node: '>=20.0.0'}
-    hasBin: true
-
-  '@mariozechner/pi-coding-agent@0.52.12':
-    resolution: {integrity: sha512-6Zmh57vUoRiN+rfRJxWErII/CNC5/3yX5nCU7tK+Eud2Ko+RcVZoBccwjdIUzsJib3Liw/yv9T1EWvz6ZdGbhw==}
+  '@mariozechner/pi-ai@0.55.3':
+    resolution: {integrity: sha512-f9jWoDzJR9Wy/H8JPMbjoM4WvVUeFZ65QdYA9UHIfoOopDfwWE8F8JHQOj5mmmILMacXuzsqA3J7MYqNWZRvvQ==}
     engines: {node: '>=20.0.0'}
     hasBin: true
 
-  '@mariozechner/pi-tui@0.52.12':
-    resolution: {integrity: sha512-QQ4LUlAYKN2BvT3EMU63+kYLlIkyr706+rUFBGWvkiT8ZyMy5if3oaVJpO5qAndsMB+MaUnttIBPh3iHiaJ01g==}
+  '@mariozechner/pi-coding-agent@0.55.3':
+    resolution: {integrity: sha512-5SFbB7/BIp/Crjre7UNjUeNfpoU1KSW/i6LXa+ikJTBqI5LukWq2avE5l0v0M8Pg/dt1go2XCLrNFlQJiQDSPQ==}
+    engines: {node: '>=20.0.0'}
+    hasBin: true
+
+  '@mariozechner/pi-tui@0.55.3':
+    resolution: {integrity: sha512-Gh4wkYgiSPCJJaB/4wEWSL7Ga8bxSq1Crp1RPRT4vKybE/DG0W/MQr5VJDvktarxtJrD16ixScwE4dzdox/PIA==}
     engines: {node: '>=20.0.0'}
 
   '@mistralai/mistralai@1.10.0':
@@ -1045,6 +1045,9 @@ packages:
   '@types/node@25.2.3':
     resolution: {integrity: sha512-m0jEgYlYz+mDJZ2+F4v8D1AyQb+QzsNqRuI7xg1VQX/KlKS0qT9r1Mo16yo5F/MtifXFgaofIFsdFMox2SxIbQ==}
 
+  '@types/yauzl@2.10.3':
+    resolution: {integrity: sha512-oJoftv0LSuaDZE3Le4DbKX+KS9G36NzOeSap90UIK0yMA/NhKJhqlSGtNDORNRaIbQfzjXDrQa0ytJ6mNRGz/Q==}
+
   '@vitest/coverage-v8@4.0.18':
     resolution: {integrity: sha512-7i+N2i0+ME+2JFZhfuz7Tg/FqKtilHjGyGvoHYQ6iLV0zahbsJ9sljC9OcFcPDbhYKCet+sG8SsVqlyGvPflZg==}
     peerDependencies:
@@ -1155,6 +1158,7 @@ packages:
   basic-ftp@5.1.0:
     resolution: {integrity: sha512-RkaJzeJKDbaDWTIPiJwubyljaEPwpVWkm9Rt5h9Nd6h7tEXTJ3VB4qxdZBioV7JO5yLUaOKwz7vDOzlncUsegw==}
     engines: {node: '>=10.0.0'}
+    deprecated: Security vulnerability fixed in 5.2.0, please upgrade
 
   better-path-resolve@1.0.0:
     resolution: {integrity: sha512-pbnl5XzGBdrFU/wT4jqmJVPn2B6UHPBOhzMQkY/SPUPB6QtUXtmBHBIwCbXJol93mOpGMnQyP/+BB19q04xj7g==}
@@ -1176,6 +1180,9 @@ packages:
   braces@3.0.3:
     resolution: {integrity: sha512-yQbXgO/OSZVD2IsiLlro+7Hf6Q18EJrKSEsdoMzKePKXct3gvD8oLcOQdIzGupr5Fj+EDe8gO/lxc1BzfMpxvA==}
     engines: {node: '>=8'}
+
+  buffer-crc32@0.2.13:
+    resolution: {integrity: sha512-VO9Ht/+p3SN7SKWqcrgEzjGbRSJYTx+Q1pTQC0wrWqHx0vpJraQ6GtHx8tvcg1rlK1byhU5gccxgOgj7B0TDkQ==}
 
   buffer-equal-constant-time@1.0.1:
     resolution: {integrity: sha512-zRpUiDwd/xk6ADqPMATG8vc9VPrkck7T07OIx0gnjmJAnHnTVXNQG3vfvWNuiZIkwu9KrKdA1iJKfsfTVxE6NA==}
@@ -1263,6 +1270,9 @@ packages:
   emoji-regex@9.2.2:
     resolution: {integrity: sha512-L18DaJsXSUk2+42pv8mLs5jJT2hqFkFE4j21wOmgbUqsZ2hL72NsUU785g9RXgo3s0ZNgVl42TiHp3ZtOv/Vyg==}
 
+  end-of-stream@1.4.5:
+    resolution: {integrity: sha512-ooEGc6HP26xXq/N+GCGOT0JKCLDGrq2bQUZrQ7gyrJiZANJ/8YDTxTpQBXGMn+WbIQXNVpyWymm7KYVICQnyOg==}
+
   enquirer@2.4.1:
     resolution: {integrity: sha512-rRqJg/6gd538VHvR3PSrdRBb/1Vy2YfzHqzvbhGIQpDRKIa4FgV/54b5Q1xYSxOOwKvjXweS26E0Q+nAMwp2pQ==}
     engines: {node: '>=8.6'}
@@ -1310,6 +1320,11 @@ packages:
   extendable-error@0.1.7:
     resolution: {integrity: sha512-UOiS2in6/Q0FK0R0q6UY9vYpQ21mr/Qn1KOnte7vsACuNJf514WvCCUHSRCPcgjPT2bAhNIJdlE6bVap1GKmeg==}
 
+  extract-zip@2.0.1:
+    resolution: {integrity: sha512-GDhU9ntwuKyGXdZBUgTIe+vXnWj0fppUEtMDL0+idd5Sta8TGpHssn/eusA9mrPr9qNDym6SxAYZjNvCn/9RBg==}
+    engines: {node: '>= 10.17.0'}
+    hasBin: true
+
   fast-deep-equal@3.1.3:
     resolution: {integrity: sha512-f3qQ9oQy9j2AhBe/H9VC91wLmKBCCU/gDOnKNAYG5hswO7BLKj09Hc5HYNz9cGI++xlpDCIgDaitVs03ATR84Q==}
 
@@ -1326,6 +1341,9 @@ packages:
 
   fastq@1.20.1:
     resolution: {integrity: sha512-GGToxJ/w1x32s/D2EKND7kTil4n8OVk/9mycTc4VDza13lOvpUZTGX3mFSCtV9ksdGBVzvsyAVLM6mHFThxXxw==}
+
+  fd-slicer@1.1.0:
+    resolution: {integrity: sha512-cE1qsB/VwyQozZ+q1dGxR8LBYNZeofhEdUNGSMbQD3Gw2lAzX9Zb3uIU6Ebc/Fmyjo9AWWfnn0AUCHqtevs/8g==}
 
   fdir@6.5.0:
     resolution: {integrity: sha512-tIbYtZbucOs0BRGqPJkshJUYdL+SDH7dVM8gjy+ERp3WAUjLEFJE+02kanyHtwjWOnwrKYBiwAmM0p4kLJAnXg==}
@@ -1388,6 +1406,10 @@ packages:
   get-east-asian-width@1.4.0:
     resolution: {integrity: sha512-QZjmEOC+IT1uk6Rx0sX22V6uHWVwbdbxf1faPqJ1QhLdGgsRGCZoyaQBm/piRdJy/D2um6hM1UP7ZEeQ4EkP+Q==}
     engines: {node: '>=18'}
+
+  get-stream@5.2.0:
+    resolution: {integrity: sha512-nBF+F1rAZVCu/p7rjzgA+Yb4lfYXrpl7a6VmJrU8wF9I1CKvP/QwPNZHnOlwbTkY6dvtFIzFMSyQXbLoTQPRpA==}
+    engines: {node: '>=8'}
 
   get-uri@6.0.5:
     resolution: {integrity: sha512-b1O07XYq8eRuVzBNgJLstU6FYc1tS6wnMtF1I1D9lE8LxZSOGZ7LhxN54yPP6mGw5f2CkXY2BQUL9Fx41qvcIg==}
@@ -1555,6 +1577,9 @@ packages:
   jws@4.0.1:
     resolution: {integrity: sha512-EKI/M/yqPncGUUh44xz0PxSidXFr/+r0pA70+gIYhjv+et7yxM+s29Y+VGDkovRofQem0fs7Uvf4+YmAdyRduA==}
 
+  koffi@2.15.1:
+    resolution: {integrity: sha512-mnc0C0crx/xMSljb5s9QbnLrlFHprioFO1hkXyuSuO/QtbpLDa0l/uM21944UfQunMKmp3/r789DTDxVyyH6aA==}
+
   locate-path@5.0.0:
     resolution: {integrity: sha512-t7hw9pI+WvuwNJXwk5zVHpyhIqzg2qTlklJOf0mVxGSbe3Fp2VieZcduNYjaLDoy6p9uGpQEGWG87WpMKlNq8g==}
     engines: {node: '>=8'}
@@ -1607,9 +1632,9 @@ packages:
     resolution: {integrity: sha512-Lbgzdk0h4juoQ9fCKXW4by0UJqj+nOOrI9MJ1sSj4nI8aI2eo1qmvQEie4VD1glsS250n15LsWsYtCugiStS5A==}
     engines: {node: '>=18'}
 
-  minimatch@10.2.1:
-    resolution: {integrity: sha512-MClCe8IL5nRRmawL6ib/eT4oLyeKMGCghibcDWK+J0hh0Q8kqSdia6BvbRMVk6mPa6WqUa5uR2oxt6C5jd533A==}
-    engines: {node: 20 || >=22}
+  minimatch@10.2.4:
+    resolution: {integrity: sha512-oRjTw/97aTBN0RHbYCdtF1MQfvusSIBQM0IZEgzl6426+8jSC0nF1a/GmnVLpfB9yyr6g6FTqWqiZVbxrtaCIg==}
+    engines: {node: 18 || 20 || >=22}
 
   minimatch@9.0.5:
     resolution: {integrity: sha512-G6T0ZX48xgozx7587koeX9Ys2NYy6Gmv//P89sEte9V9whIapMNF4idKxnW2QtCcLiTWlb/wfCabAtAFWhhBow==}
@@ -1653,6 +1678,9 @@ packages:
 
   obug@2.1.1:
     resolution: {integrity: sha512-uTqF9MuPraAQ+IsnPf366RG4cP9RtUi7MLO1N3KEc+wb0a6yKpeL0lmk2IB1jY5KHPAlTc6T/JRdC/YqxHNwkQ==}
+
+  once@1.4.0:
+    resolution: {integrity: sha512-lNaJgI+2Q5URQBkccEKHTQOPaXdUxnZZElQTZY0MFUAuaEqe1E+Nyvgdz/aIyNi6Z9MzO5dv1H8n58/GELp3+w==}
 
   openai@6.10.0:
     resolution: {integrity: sha512-ITxOGo7rO3XRMiKA5l7tQ43iNNu+iXGFAcf2t+aWVzzqRaS0i7m1K2BhxNdaveB+5eENhO0VY1FkiZzhBk4v3A==}
@@ -1742,6 +1770,9 @@ packages:
   pathe@2.0.3:
     resolution: {integrity: sha512-WUjGcAqP1gQacoQe+OBJsFA7Ld4DyXuUIjZ5cc75cLHvJ7dtNsTugphxIADwspS+AraAUePCKrSVtPLFj/F88w==}
 
+  pend@1.2.0:
+    resolution: {integrity: sha512-F3asv42UuXchdzt+xXqfW1OGlVBe+mxa2mqI0pg5yAHZPvFmY3Y6drSf/GQ1A86WgWEN9Kzh/WrgKa6iGcHXLg==}
+
   picocolors@1.1.1:
     resolution: {integrity: sha512-xceH2snhtb5M9liqDsmEw56le376mTZkEX/jEb/RxNFyegNul7eNslCXP9FDj/Lcu0X8KEyMceP2ntpaHrDEVA==}
 
@@ -1779,6 +1810,9 @@ packages:
 
   proxy-from-env@1.1.0:
     resolution: {integrity: sha512-D+zkORCbA9f1tdWRK0RaCR3GPv50cMxcrz4X8k5LTSUD1Dkw47mKJEZQNunItRTkWwgtaUSo1RVFRIG9ZXiFYg==}
+
+  pump@3.0.3:
+    resolution: {integrity: sha512-todwxLMY7/heScKmntwQG8CXVkWUOdYxIvY2s0VWAAMh/nd8SoYiRaKjlr7+iCs984f2P8zvrfWcDDYVb73NfA==}
 
   quansync@0.2.11:
     resolution: {integrity: sha512-AifT7QEbW9Nri4tAwR5M/uzpBuqfZf+zwaEM/QkzEjj7NBuFD2rBuy0K3dE+8wltbezDV7JMA0WfnCPYRSYbXA==}
@@ -2074,6 +2108,9 @@ packages:
     resolution: {integrity: sha512-si7QWI6zUMq56bESFvagtmzMdGOtoxfR+Sez11Mobfc7tm+VkUckk9bW2UeffTGVUbOksxmSw0AA2gs8g71NCQ==}
     engines: {node: '>=12'}
 
+  wrappy@1.0.2:
+    resolution: {integrity: sha512-l4Sp/DRseor9wL6EvV2+TuQn63dMkPjZ/sp9XkghTEbV9KlPS1xUsZ3u7/IQO4wxtcFB4bgpQPRcR3QCvezPcQ==}
+
   ws@8.19.0:
     resolution: {integrity: sha512-blAT2mjOEIi0ZzruJfIhb3nps74PRWTCz1IjglWEEpQl5XS/UNama6u2/rjFkDDouqr4L67ry+1aGIALViWjDg==}
     engines: {node: '>=10.0.0'}
@@ -2103,6 +2140,9 @@ packages:
     resolution: {integrity: sha512-D1mvvtDG0L5ft/jGWkLpG1+m0eQxOfaBvTNELraWj22wSVUMWxZUvYgJYcKh6jGGIkJFhH4IZPQhR4TKpc8mBw==}
     engines: {node: '>=10'}
 
+  yauzl@2.10.0:
+    resolution: {integrity: sha512-p4a9I6X6nu6IhoGmBqAcbJy1mlC4j27vEPZX9F4L4/vZT3Lyq1VkFHw/V/PUcB9Buo+DG3iHkT0x3Qya58zc3g==}
+
   yoctocolors@2.1.2:
     resolution: {integrity: sha512-CzhO+pFNo8ajLM2d2IW/R93ipy99LWjtwblvC1RsoSUMZgyLbYFr221TnSNT7GjGdYui6P459mw9JH/g/zW2ug==}
     engines: {node: '>=18'}
@@ -2121,9 +2161,9 @@ snapshots:
     dependencies:
       '@biomejs/biome': 2.4.2
 
-  '@aliou/pi-utils-settings@0.4.0(@mariozechner/pi-coding-agent@0.52.12(ws@8.19.0)(zod@3.25.76))':
+  '@aliou/pi-utils-settings@0.4.0(@mariozechner/pi-coding-agent@0.55.3(ws@8.19.0)(zod@3.25.76))':
     dependencies:
-      '@mariozechner/pi-coding-agent': 0.52.12(ws@8.19.0)(zod@3.25.76)
+      '@mariozechner/pi-coding-agent': 0.55.3(ws@8.19.0)(zod@3.25.76)
 
   '@anthropic-ai/sdk@0.73.0(zod@3.25.76)':
     dependencies:
@@ -2990,9 +3030,9 @@ snapshots:
       std-env: 3.10.0
       yoctocolors: 2.1.2
 
-  '@mariozechner/pi-agent-core@0.52.12(ws@8.19.0)(zod@3.25.76)':
+  '@mariozechner/pi-agent-core@0.55.3(ws@8.19.0)(zod@3.25.76)':
     dependencies:
-      '@mariozechner/pi-ai': 0.52.12(ws@8.19.0)(zod@3.25.76)
+      '@mariozechner/pi-ai': 0.55.3(ws@8.19.0)(zod@3.25.76)
     transitivePeerDependencies:
       - '@modelcontextprotocol/sdk'
       - aws-crt
@@ -3002,7 +3042,7 @@ snapshots:
       - ws
       - zod
 
-  '@mariozechner/pi-ai@0.52.12(ws@8.19.0)(zod@3.25.76)':
+  '@mariozechner/pi-ai@0.55.3(ws@8.19.0)(zod@3.25.76)':
     dependencies:
       '@anthropic-ai/sdk': 0.73.0(zod@3.25.76)
       '@aws-sdk/client-bedrock-runtime': 3.991.0
@@ -3026,22 +3066,23 @@ snapshots:
       - ws
       - zod
 
-  '@mariozechner/pi-coding-agent@0.52.12(ws@8.19.0)(zod@3.25.76)':
+  '@mariozechner/pi-coding-agent@0.55.3(ws@8.19.0)(zod@3.25.76)':
     dependencies:
       '@mariozechner/jiti': 2.6.5
-      '@mariozechner/pi-agent-core': 0.52.12(ws@8.19.0)(zod@3.25.76)
-      '@mariozechner/pi-ai': 0.52.12(ws@8.19.0)(zod@3.25.76)
-      '@mariozechner/pi-tui': 0.52.12
+      '@mariozechner/pi-agent-core': 0.55.3(ws@8.19.0)(zod@3.25.76)
+      '@mariozechner/pi-ai': 0.55.3(ws@8.19.0)(zod@3.25.76)
+      '@mariozechner/pi-tui': 0.55.3
       '@silvia-odwyer/photon-node': 0.3.4
       chalk: 5.6.2
       cli-highlight: 2.1.11
       diff: 8.0.3
+      extract-zip: 2.0.1
       file-type: 21.3.0
       glob: 13.0.5
       hosted-git-info: 9.0.2
       ignore: 7.0.5
       marked: 15.0.12
-      minimatch: 10.2.1
+      minimatch: 10.2.4
       proper-lockfile: 4.1.2
       yaml: 2.8.2
     optionalDependencies:
@@ -3055,11 +3096,12 @@ snapshots:
       - ws
       - zod
 
-  '@mariozechner/pi-tui@0.52.12':
+  '@mariozechner/pi-tui@0.55.3':
     dependencies:
       '@types/mime-types': 2.1.4
       chalk: 5.6.2
       get-east-asian-width: 1.4.0
+      koffi: 2.15.1
       marked: 15.0.12
       mime-types: 3.0.2
 
@@ -3519,6 +3561,11 @@ snapshots:
     dependencies:
       undici-types: 7.16.0
 
+  '@types/yauzl@2.10.3':
+    dependencies:
+      '@types/node': 25.2.3
+    optional: true
+
   '@vitest/coverage-v8@4.0.18(vitest@4.0.18(@types/node@25.2.3)(yaml@2.8.2))':
     dependencies:
       '@bcoe/v8-coverage': 1.0.2
@@ -3649,6 +3696,8 @@ snapshots:
     dependencies:
       fill-range: 7.1.1
 
+  buffer-crc32@0.2.13: {}
+
   buffer-equal-constant-time@1.0.1: {}
 
   chai@6.2.2: {}
@@ -3723,6 +3772,10 @@ snapshots:
 
   emoji-regex@9.2.2: {}
 
+  end-of-stream@1.4.5:
+    dependencies:
+      once: 1.4.0
+
   enquirer@2.4.1:
     dependencies:
       ansi-colors: 4.1.3
@@ -3785,6 +3838,16 @@ snapshots:
 
   extendable-error@0.1.7: {}
 
+  extract-zip@2.0.1:
+    dependencies:
+      debug: 4.4.3
+      get-stream: 5.2.0
+      yauzl: 2.10.0
+    optionalDependencies:
+      '@types/yauzl': 2.10.3
+    transitivePeerDependencies:
+      - supports-color
+
   fast-deep-equal@3.1.3: {}
 
   fast-glob@3.3.3:
@@ -3804,6 +3867,10 @@ snapshots:
   fastq@1.20.1:
     dependencies:
       reusify: 1.1.0
+
+  fd-slicer@1.1.0:
+    dependencies:
+      pend: 1.2.0
 
   fdir@6.5.0(picomatch@4.0.3):
     optionalDependencies:
@@ -3877,6 +3944,10 @@ snapshots:
 
   get-east-asian-width@1.4.0: {}
 
+  get-stream@5.2.0:
+    dependencies:
+      pump: 3.0.3
+
   get-uri@6.0.5:
     dependencies:
       basic-ftp: 5.1.0
@@ -3900,7 +3971,7 @@ snapshots:
 
   glob@13.0.5:
     dependencies:
-      minimatch: 10.2.1
+      minimatch: 10.2.4
       minipass: 7.1.2
       path-scurry: 2.0.1
 
@@ -4056,6 +4127,8 @@ snapshots:
       jwa: 2.0.1
       safe-buffer: 5.2.1
 
+  koffi@2.15.1: {}
+
   locate-path@5.0.0:
     dependencies:
       p-locate: 4.1.0
@@ -4099,7 +4172,7 @@ snapshots:
     dependencies:
       mime-db: 1.54.0
 
-  minimatch@10.2.1:
+  minimatch@10.2.4:
     dependencies:
       brace-expansion: 5.0.2
 
@@ -4134,6 +4207,10 @@ snapshots:
   object-assign@4.1.1: {}
 
   obug@2.1.1: {}
+
+  once@1.4.0:
+    dependencies:
+      wrappy: 1.0.2
 
   openai@6.10.0(ws@8.19.0)(zod@3.25.76):
     optionalDependencies:
@@ -4214,6 +4291,8 @@ snapshots:
 
   pathe@2.0.3: {}
 
+  pend@1.2.0: {}
+
   picocolors@1.1.1: {}
 
   picomatch@2.3.1: {}
@@ -4265,6 +4344,11 @@ snapshots:
       - supports-color
 
   proxy-from-env@1.1.0: {}
+
+  pump@3.0.3:
+    dependencies:
+      end-of-stream: 1.4.5
+      once: 1.4.0
 
   quansync@0.2.11: {}
 
@@ -4527,6 +4611,8 @@ snapshots:
       string-width: 5.1.2
       strip-ansi: 7.1.2
 
+  wrappy@1.0.2: {}
+
   ws@8.19.0: {}
 
   y18n@5.0.8: {}
@@ -4544,6 +4630,11 @@ snapshots:
       string-width: 4.2.3
       y18n: 5.0.8
       yargs-parser: 20.2.9
+
+  yauzl@2.10.0:
+    dependencies:
+      buffer-crc32: 0.2.13
+      fd-slicer: 1.1.0
 
   yoctocolors@2.1.2: {}
 
