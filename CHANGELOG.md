@@ -1,5 +1,11 @@
 # @aliou/pi-ts-aperture
 
+## 0.2.3
+
+### Patch Changes
+
+- 3119e9a: Plug provider unregistration - call pi.unregisterProvider() immediately when providers are removed via setup/settings, instead of warning that a /reload is required. Switch to pi.registerProvider() for registration. Bump peer dep to >=0.55.3.
+
 ## 0.2.2
 
 ### Patch Changes
