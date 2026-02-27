@@ -32,9 +32,9 @@
     "@aliou/pi-utils-settings": "^0.4.0"
   },
   "peerDependencies": {
-    "@mariozechner/pi-ai": ">=0.52.12",
-    "@mariozechner/pi-coding-agent": ">=0.52.12",
-    "@mariozechner/pi-tui": ">=0.51.0"
+    "@mariozechner/pi-ai": ">=0.55.3",
+    "@mariozechner/pi-coding-agent": ">=0.55.3",
+    "@mariozechner/pi-tui": ">=0.55.3"
   },
   "peerDependenciesMeta": {
     "@mariozechner/pi-coding-agent": {
@@ -63,7 +63,7 @@
     "@aliou/biome-plugins": "^0.3.2",
     "@biomejs/biome": "^2.3.13",
     "@changesets/cli": "^2.27.11",
-    "@mariozechner/pi-coding-agent": "0.52.12",
+    "@mariozechner/pi-coding-agent": "0.55.3",
     "@sinclair/typebox": "^0.34.48",
     "@types/node": "^25.0.10",
     "@vitest/coverage-v8": "^4.0.18",
