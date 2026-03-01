@@ -62,16 +62,37 @@ function applyAperture(
   return providers;
 }
 
+/**
+ * Re-resolve the active model from the registry and update it via pi.setModel().
+ * Call this after updating the registry to ensure the active model uses the new configuration.
+ * Returns true if the model was updated.
+ */
+function refreshActiveModel(pi: ExtensionAPI, ctx: ExtensionContext): boolean {
+  if (!ctx.model) return false;
+
+  const updated = ctx.modelRegistry.find(ctx.model.provider, ctx.model.id);
+  if (!updated) return false;
+
+  pi.setModel(updated);
+  return true;
+}
+
 export default async function (pi: ExtensionAPI): Promise<void> {
   await configLoader.load();
 
   let lastRegisteredProviders = [...configLoader.getConfig().providers];
 
   // Apply after all extensions have registered their providers and models.
-  pi.events.on("before_agent_start", async (data) => {
-    const ctx = data as ExtensionContext;
+  pi.on("before_agent_start", async (_event, ctx) => {
     if (!ctx?.modelRegistry) return;
-    applyAperture(pi, ctx.modelRegistry);
+
+    const overriddenProviders = applyAperture(pi, ctx.modelRegistry);
+
+    // Re-resolve active model if it belongs to a reconfigured provider.
+    // The model was selected before before_agent_start fired, so we need to update it.
+    if (ctx.model && overriddenProviders.includes(ctx.model.provider)) {
+      refreshActiveModel(pi, ctx);
+    }
   });
 
   const onSetupComplete = (ctx: ExtensionContext) => {
@@ -85,13 +106,11 @@ export default async function (pi: ExtensionAPI): Promise<void> {
 
     // Re-resolve active model if it belongs to a reconfigured provider.
     if (ctx.model && providers.includes(ctx.model.provider)) {
-      const updated = ctx.modelRegistry.find(ctx.model.provider, ctx.model.id);
-      if (updated) {
+      if (refreshActiveModel(pi, ctx)) {
         ctx.ui.notify(
-          `[aperture] re-routing ${ctx.model.id} through ${updated.baseUrl}`,
+          `[aperture] re-routing ${ctx.model.id} through ${ctx.model.baseUrl}`,
           "info",
         );
-        pi.setModel(updated);
       }
     }
 
