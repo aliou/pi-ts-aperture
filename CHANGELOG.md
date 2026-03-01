@@ -1,5 +1,11 @@
 # @aliou/pi-ts-aperture
 
+## 0.2.4
+
+### Patch Changes
+
+- d988f99: Remove debug log
+
 ## 0.2.3
 
 ### Patch Changes
