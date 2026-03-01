@@ -63,7 +63,6 @@ function applyAperture(
 }
 
 export default async function (pi: ExtensionAPI): Promise<void> {
-  console.log(`[pi-ts-aperture] loaded on pi ${VERSION}`);
   await configLoader.load();
 
   let lastRegisteredProviders = [...configLoader.getConfig().providers];
