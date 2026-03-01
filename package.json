@@ -1,7 +1,7 @@
 {
   "name": "@aliou/pi-ts-aperture",
   "description": "Route Pi LLM providers through Tailscale Aperture",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "type": "module",
   "license": "MIT",
   "private": false,
