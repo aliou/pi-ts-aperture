@@ -1,9 +1,6 @@
 name: Publish
 
 on:
-  push:
-    branches:
-      - main
   workflow_run:
     workflows: ["CI"]
     types: [completed]
@@ -56,8 +53,12 @@ jobs:
           const release = JSON.parse(fs.readFileSync('release.json', 'utf8'));
           const releases = release.releases?.filter(r => r.type !== 'none') || [];
 
-          let title = 'Version Packages';
-          let commit = 'Version Packages';
+          const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          const packageName = pkg.name || 'unknown-package';
+          const fallbackVersion = pkg.version || '0.0.0';
+
+          let title = 'Updating ' + packageName + ' to version ' + fallbackVersion;
+          let commit = packageName + '@' + fallbackVersion;
           if (releases.length === 1) {
             const { name, newVersion } = releases[0];
             title = 'Updating ' + name + ' to version ' + newVersion;
@@ -80,8 +81,8 @@ jobs:
         with:
           version: pnpm changeset version
           publish: pnpm changeset publish
-          title: ${{ steps.release-info.outputs.title || 'Version Packages' }}
-          commit: ${{ steps.release-info.outputs.commit || 'Version Packages' }}
+          title: ${{ steps.release-info.outputs.title }}
+          commit: ${{ steps.release-info.outputs.commit }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_CONFIG_PROVENANCE: true
