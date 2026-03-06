@@ -1,5 +1,11 @@
 # @aliou/pi-ts-aperture
 
+## 0.3.1
+
+### Patch Changes
+
+- 8b885ea: bump @aliou/pi-utils-settings to ^0.10.0 (local scope fix)
+
 ## 0.3.0
 
 ### Minor Changes
