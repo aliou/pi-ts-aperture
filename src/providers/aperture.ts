@@ -4,13 +4,6 @@ import type {
   ProviderModelConfig,
 } from "@mariozechner/pi-coding-agent";
 import { configLoader } from "../config";
-import { fetchApertureProviderModels } from "../lib/aperture-api";
-import {
-  clearProviderModelsCache,
-  getProviderModelsCache,
-  setProviderModelsCache,
-} from "../state/provider-model-cache";
-import { mergeModels, toModelConfig } from "./model-config";
 
 /**
  * Preserve provenance similarly to pi-synthetic so downstream providers can
@@ -20,12 +13,6 @@ const APERTURE_PROVENANCE_HEADERS = {
   Referer: "https://pi.dev",
   "X-Title": "npm:@aliou/pi-ts-aperture",
 };
-
-/**
- * Providers for which we bootstrap models at startup (before first turn)
- * to make CLI model selection deterministic.
- */
-const BOOTSTRAP_DISCOVERY_PROVIDERS = new Set(["openrouter"]);
 
 /** Returns configured gateway URL without trailing slash. */
 export function resolveGatewayUrl(): string | null {
@@ -57,100 +44,41 @@ function resolveProviderHeaders(
   };
 }
 
-async function getOrLoadProviderModelsCache(
-  gatewayUrl: string,
-  providers: string[],
-): Promise<Map<string, string[]>> {
-  const current = getProviderModelsCache();
-  if (current) return current;
-
-  const loaded = await fetchApertureProviderModels(gatewayUrl, providers);
-  setProviderModelsCache(loaded);
-  return loaded;
-}
-
-export function resetApertureModelsCache(): void {
-  clearProviderModelsCache();
-}
-
 /**
- * Apply Aperture override to configured providers:
- * - provider baseUrl -> aperture /v1 endpoint
- * - apiKey -> dummy token (Aperture injects real key server-side)
- * - headers -> provenance + provider/model headers
+ * Apply Aperture override to configured providers.
+ *
+ * Only patches baseUrl, apiKey, and headers. Models are left exactly as
+ * registered by Pi built-ins or other extensions -- Aperture never touches
+ * model definitions.
+ *
+ * Providers with no models in the registry are skipped (nothing to reroute).
  */
 export async function applyAperture(
   pi: ExtensionAPI,
   registry: ExtensionContext["modelRegistry"],
 ): Promise<string[]> {
   const baseUrl = resolveApertureProviderBaseUrl();
-  const gatewayUrl = resolveGatewayUrl();
-  if (!baseUrl || !gatewayUrl) return [];
+  if (!baseUrl) return [];
 
   const { providers } = configLoader.getConfig();
-
-  let modelCache: Map<string, string[]>;
-  try {
-    modelCache = await getOrLoadProviderModelsCache(gatewayUrl, providers);
-  } catch {
-    modelCache = new Map();
-  }
 
   for (const provider of providers) {
     const existingModels = registry
       .getAll()
       .filter((m) => m.provider === provider) as ProviderModelConfig[];
 
-    const models = mergeModels(existingModels, modelCache.get(provider));
+    if (existingModels.length === 0) continue;
 
     pi.registerProvider(provider, {
       baseUrl,
       apiKey: "-",
-      headers: resolveProviderHeaders(models),
-      ...(models.length > 0 && { api: models[0].api, models }),
+      headers: resolveProviderHeaders(existingModels),
+      api: existingModels[0].api,
+      models: existingModels,
     });
   }
 
   return providers;
-}
-
-/**
- * Pre-register selected providers from Aperture model discovery so CLI model
- * resolution works even when a model is not present in Pi built-ins.
- */
-export async function bootstrapProvidersFromAperture(
-  pi: ExtensionAPI,
-): Promise<void> {
-  const baseUrl = resolveApertureProviderBaseUrl();
-  const gatewayUrl = resolveGatewayUrl();
-  if (!baseUrl || !gatewayUrl) return;
-
-  const { providers } = configLoader.getConfig();
-
-  let modelCache: Map<string, string[]>;
-  try {
-    modelCache = await fetchApertureProviderModels(gatewayUrl, providers);
-    setProviderModelsCache(modelCache);
-  } catch {
-    return;
-  }
-
-  for (const provider of providers) {
-    if (!BOOTSTRAP_DISCOVERY_PROVIDERS.has(provider)) continue;
-
-    const modelIds = modelCache.get(provider) ?? [];
-    if (modelIds.length === 0) continue;
-
-    const models = modelIds.map((id) => toModelConfig(id));
-
-    pi.registerProvider(provider, {
-      baseUrl,
-      apiKey: "-",
-      api: "openai-completions",
-      headers: resolveProviderHeaders(models),
-      models,
-    });
-  }
 }
 
 /** Re-resolve and set current model after provider registry updates. */
