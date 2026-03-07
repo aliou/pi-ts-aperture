@@ -3,7 +3,6 @@
  *
  * Keeps the entry point focused on orchestration:
  * - load config
- * - bootstrap provider/model visibility
  * - register lifecycle hooks
  * - register user commands
  */
@@ -15,12 +14,7 @@ import type {
 import { registerApertureSettings } from "./commands/settings";
 import { registerSetupCommand } from "./commands/setup";
 import { configLoader } from "./config";
-import {
-  applyAperture,
-  bootstrapProvidersFromAperture,
-  refreshActiveModel,
-  resetApertureModelsCache,
-} from "./providers/aperture";
+import { applyAperture, refreshActiveModel } from "./providers/aperture";
 
 function registerApertureLifecycleHook(pi: ExtensionAPI): void {
   pi.on("before_agent_start", async (_event, ctx) => {
@@ -44,7 +38,6 @@ function createConfigChangeHandler(
       (provider) => !providers.includes(provider),
     );
 
-    resetApertureModelsCache();
     void applyAperture(pi, ctx.modelRegistry);
     lastRegisteredProviders = [...providers];
 
@@ -66,7 +59,6 @@ function createConfigChangeHandler(
 
 export default async function (pi: ExtensionAPI): Promise<void> {
   await configLoader.load();
-  await bootstrapProvidersFromAperture(pi);
 
   registerApertureLifecycleHook(pi);
 
