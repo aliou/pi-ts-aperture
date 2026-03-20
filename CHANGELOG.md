@@ -1,5 +1,11 @@
 # @aliou/pi-ts-aperture
 
+## 0.3.2
+
+### Patch Changes
+
+- 3427061: update Pi deps to 0.61.0
+
 ## 0.3.1
 
 ### Patch Changes
