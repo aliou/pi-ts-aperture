@@ -19,7 +19,6 @@ jobs:
       contents: write
       packages: write
       pull-requests: write
-      id-token: write
 
     steps:
       - name: Checkout
@@ -37,9 +36,6 @@ jobs:
           registry-url: "https://registry.npmjs.org"
           scope: "@aliou"
           cache: "pnpm"
-
-      - name: Upgrade npm for OIDC support
-        run: npm install -g npm@latest
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -85,4 +81,3 @@ jobs:
           commit: ${{ steps.release-info.outputs.commit }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_CONFIG_PROVENANCE: true
