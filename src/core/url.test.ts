@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import type { ApertureConfig } from "../../src/core/types";
+import type { ApertureConfig } from "./types";
 import {
   normalizeInputUrl,
   resolveGatewayUrl,
   resolveProviderBaseUrl,
-} from "../../src/core/url";
+} from "./url";
 
 describe("normalizeInputUrl", () => {
   it("returns empty string for empty input", () => {
