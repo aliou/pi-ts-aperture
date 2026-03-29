@@ -1,7 +1,7 @@
 /**
- * End-to-end tests for pi-ts-aperture.
+ * End-to-end tests for pi-ts-aperture using RPC mode.
  *
- * Spawns the real PI CLI and verifies that:
+ * Spawns the real PI CLI in RPC mode and verifies that:
  * 1. Models are correctly enumerated without aperture
  * 2. After configuring aperture, the same models are still present
  * 3. Model metadata is preserved through the override
@@ -106,10 +106,6 @@ describe("pi-ts-aperture e2e", () => {
     process.env.ANTHROPIC_API_KEY ??= "sk-test-anthropic";
     process.env.OPENAI_API_KEY ??= "sk-test-openai";
 
-    // Avoid npm permission issues in temp dirs.
-    process.env.NPM_CONFIG_PREFIX = join(testRoot, "npm-global");
-    mkdirSync(process.env.NPM_CONFIG_PREFIX, { recursive: true });
-
     setupTestProvider(paths.testProviderDir, paths.testProviderEntry);
   });
 
@@ -192,12 +188,12 @@ describe("pi-ts-aperture e2e", () => {
       (m) => m.id === "test-model-1" && m.provider === "test-provider",
     );
     expect(model1).toBeDefined();
-    expect(model1?.thinking).toBe("no");
+    expect(model1?.reasoning).toBe(false);
 
     const model2 = models.find(
       (m) => m.id === "test-model-2" && m.provider === "test-provider",
     );
     expect(model2).toBeDefined();
-    expect(model2?.thinking).toBe("yes");
+    expect(model2?.reasoning).toBe(true);
   });
 });
