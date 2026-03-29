@@ -28,3 +28,18 @@ export async function checkApertureHealth(
     return { ok: false, error: msg };
   }
 }
+
+export async function fetchGatewayModelIds(baseUrl: string): Promise<string[]> {
+  const url = `${baseUrl.replace(/\/+$/, "")}/v1/models`;
+  try {
+    const res = await fetch(url, {
+      method: "GET",
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) return [];
+    const body = (await res.json()) as { data?: { id: string }[] };
+    return body.data?.map((m) => m.id) ?? [];
+  } catch {
+    return [];
+  }
+}

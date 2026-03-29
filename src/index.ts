@@ -17,10 +17,23 @@ import { configLoader } from "./config";
 import { applyAperture, refreshActiveModel } from "./providers/aperture";
 
 function registerApertureLifecycleHook(pi: ExtensionAPI): void {
+  const warnedModels = new Set<string>();
+
   pi.on("before_agent_start", async (_event, ctx) => {
     if (!ctx?.modelRegistry) return;
 
-    const overriddenProviders = await applyAperture(pi, ctx.modelRegistry);
+    const { providers: overriddenProviders, missingModels } =
+      await applyAperture(pi, ctx.modelRegistry);
+
+    const newMissing = missingModels.filter((id) => !warnedModels.has(id));
+    if (newMissing.length > 0) {
+      for (const id of newMissing) warnedModels.add(id);
+      ctx.ui.notify(
+        `[aperture] models not available on gateway: ${newMissing.join(", ")}. Add them to the gateway configuration.`,
+        "warning",
+      );
+    }
+
     if (!ctx.model || !overriddenProviders.includes(ctx.model.provider)) return;
 
     await refreshActiveModel(pi, ctx);
@@ -38,7 +51,14 @@ function createConfigChangeHandler(
       (provider) => !providers.includes(provider),
     );
 
-    void applyAperture(pi, ctx.modelRegistry);
+    void applyAperture(pi, ctx.modelRegistry).then(({ missingModels }) => {
+      if (missingModels.length > 0) {
+        ctx.ui.notify(
+          `[aperture] models not available on gateway: ${missingModels.join(", ")}. Add them to the gateway configuration.`,
+          "warning",
+        );
+      }
+    });
     lastRegisteredProviders = [...providers];
 
     if (ctx.model && providers.includes(ctx.model.provider)) {
