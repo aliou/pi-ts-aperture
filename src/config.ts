@@ -10,16 +10,19 @@ import { ConfigLoader } from "@aliou/pi-utils-settings";
 export interface ApertureConfig {
   baseUrl?: string;
   providers?: string[];
+  checkGatewayModels?: string[];
 }
 
 export interface ResolvedConfig {
   baseUrl: string;
   providers: string[];
+  checkGatewayModels: string[];
 }
 
 const DEFAULT_CONFIG: ResolvedConfig = {
   baseUrl: "",
   providers: [],
+  checkGatewayModels: [],
 };
 
 export const configLoader = new ConfigLoader<ApertureConfig, ResolvedConfig>(
