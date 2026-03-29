@@ -4,6 +4,7 @@ import type {
   ProviderModelConfig,
 } from "@mariozechner/pi-coding-agent";
 import { configLoader } from "../config";
+import { fetchGatewayModelIds } from "../lib/health";
 
 /**
  * Preserve provenance similarly to pi-synthetic so downstream providers can
@@ -56,9 +57,9 @@ function resolveProviderHeaders(
 export async function applyAperture(
   pi: ExtensionAPI,
   registry: ExtensionContext["modelRegistry"],
-): Promise<string[]> {
+): Promise<{ providers: string[]; missingModels: string[] }> {
   const baseUrl = resolveApertureProviderBaseUrl();
-  if (!baseUrl) return [];
+  if (!baseUrl) return { providers: [], missingModels: [] };
 
   const { providers } = configLoader.getConfig();
 
@@ -78,7 +79,23 @@ export async function applyAperture(
     });
   }
 
-  return providers;
+  const gatewayUrl = resolveGatewayUrl();
+  const gatewayModelIds = gatewayUrl
+    ? await fetchGatewayModelIds(gatewayUrl)
+    : [];
+
+  let missingModels: string[] = [];
+  if (gatewayModelIds.length > 0) {
+    const routedModelIds = registry
+      .getAll()
+      .filter((m) => providers.includes(m.provider))
+      .map((m) => m.id);
+    missingModels = routedModelIds.filter(
+      (id) => !gatewayModelIds.includes(id),
+    );
+  }
+
+  return { providers, missingModels };
 }
 
 /** Re-resolve and set current model after provider registry updates. */
