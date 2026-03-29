@@ -4,18 +4,18 @@ import {
   buildApplyPlan,
   planConfigChange,
   resolveProviderHeaders,
-} from "../../src/core/plan";
-import type { ApertureConfig, ModelInfo } from "../../src/core/types";
+} from "./plan";
+import type { ApertureConfig, Api, Model } from "./types";
 
 describe("resolveProviderHeaders", () => {
   it("includes provenance headers", () => {
-    const models: ModelInfo[] = [{ id: "gpt-4", provider: "openai" }];
+    const models: Model<Api>[] = [{ id: "gpt-4", provider: "openai" }];
     const headers = resolveProviderHeaders(models);
     expect(headers).toMatchObject(APERTURE_PROVENANCE_HEADERS);
   });
 
   it("merges model headers when present", () => {
-    const models: ModelInfo[] = [
+    const models: Model<Api>[] = [
       { id: "gpt-4", provider: "openai", headers: { "X-Custom": "value" } },
     ];
     const headers = resolveProviderHeaders(models);
@@ -26,7 +26,7 @@ describe("resolveProviderHeaders", () => {
   });
 
   it("model headers take precedence over provenance headers", () => {
-    const models: ModelInfo[] = [
+    const models: Model<Api>[] = [
       { id: "gpt-4", provider: "openai", headers: { Referer: "custom" } },
     ];
     const headers = resolveProviderHeaders(models);
@@ -34,7 +34,7 @@ describe("resolveProviderHeaders", () => {
   });
 
   it("uses first model with headers", () => {
-    const models: ModelInfo[] = [
+    const models: Model<Api>[] = [
       { id: "gpt-4", provider: "openai" },
       { id: "gpt-3", provider: "openai", headers: { "X-Auth": "token" } },
       { id: "gpt-4o", provider: "openai", headers: { "X-Other": "other" } },
@@ -45,7 +45,7 @@ describe("resolveProviderHeaders", () => {
   });
 
   it("returns only provenance headers when no model has headers", () => {
-    const models: ModelInfo[] = [
+    const models: Model<Api>[] = [
       { id: "gpt-4", provider: "openai" },
       { id: "gpt-3", provider: "openai" },
     ];
@@ -70,14 +70,14 @@ describe("buildApplyPlan", () => {
   });
 
   it("skips providers with no models in registry", () => {
-    const registryModels: ModelInfo[] = [{ id: "gpt-4", provider: "openai" }];
+    const registryModels: Model<Api>[] = [{ id: "gpt-4", provider: "openai" }];
     const plan = buildApplyPlan(baseConfig, registryModels, baseUrl, []);
     expect(plan.registrations).toHaveLength(1);
     expect(plan.registrations[0].provider).toBe("openai");
   });
 
   it("creates registrations for configured providers with models", () => {
-    const registryModels: ModelInfo[] = [
+    const registryModels: Model<Api>[] = [
       { id: "gpt-4", provider: "openai", api: "openai-completions" },
       { id: "claude-3", provider: "anthropic", api: "anthropic-messages" },
     ];
@@ -88,19 +88,19 @@ describe("buildApplyPlan", () => {
   });
 
   it("registration has correct baseUrl", () => {
-    const registryModels: ModelInfo[] = [{ id: "gpt-4", provider: "openai" }];
+    const registryModels: Model<Api>[] = [{ id: "gpt-4", provider: "openai" }];
     const plan = buildApplyPlan(baseConfig, registryModels, baseUrl, []);
     expect(plan.registrations[0].baseUrl).toBe(baseUrl);
   });
 
   it("registration has apiKey set to dash", () => {
-    const registryModels: ModelInfo[] = [{ id: "gpt-4", provider: "openai" }];
+    const registryModels: Model<Api>[] = [{ id: "gpt-4", provider: "openai" }];
     const plan = buildApplyPlan(baseConfig, registryModels, baseUrl, []);
     expect(plan.registrations[0].apiKey).toBe("-");
   });
 
   it("registration includes merged headers", () => {
-    const registryModels: ModelInfo[] = [
+    const registryModels: Model<Api>[] = [
       { id: "gpt-4", provider: "openai", headers: { "X-Custom": "value" } },
     ];
     const plan = buildApplyPlan(baseConfig, registryModels, baseUrl, []);
@@ -111,7 +111,7 @@ describe("buildApplyPlan", () => {
   });
 
   it("registration uses first model's api", () => {
-    const registryModels: ModelInfo[] = [
+    const registryModels: Model<Api>[] = [
       { id: "gpt-4", provider: "openai", api: "openai-completions" },
       { id: "gpt-3", provider: "openai", api: "openai-chat" },
     ];
@@ -120,13 +120,13 @@ describe("buildApplyPlan", () => {
   });
 
   it("registration defaults api when not specified", () => {
-    const registryModels: ModelInfo[] = [{ id: "gpt-4", provider: "openai" }];
+    const registryModels: Model<Api>[] = [{ id: "gpt-4", provider: "openai" }];
     const plan = buildApplyPlan(baseConfig, registryModels, baseUrl, []);
     expect(plan.registrations[0].api).toBe("openai-completions");
   });
 
   it("registration includes all models for provider", () => {
-    const registryModels: ModelInfo[] = [
+    const registryModels: Model<Api>[] = [
       { id: "gpt-4", provider: "openai" },
       { id: "gpt-3", provider: "openai" },
       { id: "gpt-4o", provider: "openai" },
@@ -136,7 +136,7 @@ describe("buildApplyPlan", () => {
   });
 
   it("computes missing models when gateway IDs provided", () => {
-    const registryModels: ModelInfo[] = [
+    const registryModels: Model<Api>[] = [
       { id: "gpt-4", provider: "openai" },
       { id: "gpt-3", provider: "openai" },
     ];
@@ -151,13 +151,13 @@ describe("buildApplyPlan", () => {
   });
 
   it("missingModels is empty when gateway IDs empty", () => {
-    const registryModels: ModelInfo[] = [{ id: "gpt-4", provider: "openai" }];
+    const registryModels: Model<Api>[] = [{ id: "gpt-4", provider: "openai" }];
     const plan = buildApplyPlan(baseConfig, registryModels, baseUrl, []);
     expect(plan.missingModels).toEqual([]);
   });
 
   it("missingModels is empty when all models present on gateway", () => {
-    const registryModels: ModelInfo[] = [
+    const registryModels: Model<Api>[] = [
       { id: "gpt-4", provider: "openai" },
       { id: "gpt-3", provider: "openai" },
     ];
@@ -176,7 +176,7 @@ describe("buildApplyPlan", () => {
       baseUrl: "https://aperture.example.com",
       providers: ["openai"],
     };
-    const registryModels: ModelInfo[] = [
+    const registryModels: Model<Api>[] = [
       { id: "gpt-4", provider: "openai" },
       { id: "claude-3", provider: "anthropic" },
     ];
