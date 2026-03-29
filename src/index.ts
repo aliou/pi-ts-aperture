@@ -14,6 +14,7 @@ import type {
 import { registerApertureSettings } from "./commands/settings";
 import { registerSetupCommand } from "./commands/setup";
 import { configLoader } from "./config";
+import { planConfigChange } from "./core";
 import { applyAperture, refreshActiveModel } from "./providers/aperture";
 
 function registerApertureLifecycleHook(pi: ExtensionAPI): void {
@@ -47,8 +48,11 @@ function createConfigChangeHandler(
 
   return (ctx: ExtensionContext) => {
     const { providers } = configLoader.getConfig();
-    const removedProviders = lastRegisteredProviders.filter(
-      (provider) => !providers.includes(provider),
+
+    const plan = planConfigChange(
+      lastRegisteredProviders,
+      providers,
+      ctx.model?.provider,
     );
 
     void applyAperture(pi, ctx.modelRegistry).then(({ missingModels }) => {
@@ -61,7 +65,7 @@ function createConfigChangeHandler(
     });
     lastRegisteredProviders = [...providers];
 
-    if (ctx.model && providers.includes(ctx.model.provider)) {
+    if (plan.shouldRefreshModel) {
       void refreshActiveModel(pi, ctx).then((updated) => {
         if (!updated) return;
         ctx.ui.notify(
@@ -71,7 +75,7 @@ function createConfigChangeHandler(
       });
     }
 
-    for (const provider of removedProviders) {
+    for (const provider of plan.removedProviders) {
       pi.unregisterProvider(provider);
     }
   };

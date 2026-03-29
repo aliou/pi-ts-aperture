@@ -16,16 +16,8 @@ import { getSettingsListTheme } from "@mariozechner/pi-coding-agent";
 import type { Component, TUI } from "@mariozechner/pi-tui";
 import { Input, Key, matchesKey } from "@mariozechner/pi-tui";
 import { configLoader } from "../config";
+import { normalizeInputUrl } from "../core";
 import { checkApertureHealth } from "../lib/health";
-
-function normalizeUrl(url: string): string {
-  let result = url.trim();
-  if (!result) return result;
-  if (!result.startsWith("http://") && !result.startsWith("https://")) {
-    result = `http://${result}`;
-  }
-  return result.replace(/\/v1\/?$/, "").replace(/\/+$/, "");
-}
 
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
@@ -147,7 +139,7 @@ class UrlPrompt implements Component {
     this.input.onSubmit = () => {
       const value = this.input.getValue().trim();
       if (!value) return;
-      this.done(normalizeUrl(value));
+      this.done(normalizeInputUrl(value));
     };
     this.input.onEscape = () => {
       this.done(undefined);
