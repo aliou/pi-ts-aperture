@@ -1,10 +1,8 @@
 import type {
   ExtensionAPI,
   ExtensionContext,
-  ProviderModelConfig,
 } from "@mariozechner/pi-coding-agent";
 import { configLoader } from "../config";
-import type { ModelInfo } from "../core";
 import {
   buildApplyPlan,
   resolveGatewayUrl,
@@ -26,19 +24,16 @@ export { resolveGatewayUrl } from "../core";
 export async function applyAperture(
   pi: ExtensionAPI,
   registry: ExtensionContext["modelRegistry"],
-): Promise<{ providers: string[]; missingModels: string[] }> {
+): Promise<{ providers: string[]; gatewayUrl: string | null }> {
   const config = configLoader.getConfig();
   const baseUrl = resolveProviderBaseUrl(config);
-  if (!baseUrl) return { providers: [], missingModels: [] };
+  if (!baseUrl) return { providers: [], gatewayUrl: null };
 
   const gatewayUrl = resolveGatewayUrl(config);
-  const gatewayModelIds = gatewayUrl
-    ? await fetchGatewayModelIds(gatewayUrl)
-    : [];
 
-  const registryModels = registry.getAll() as unknown as ModelInfo[];
+  const registryModels = registry.getAll();
 
-  const plan = buildApplyPlan(config, registryModels, baseUrl, gatewayModelIds);
+  const plan = buildApplyPlan(config, registryModels, baseUrl, []);
 
   for (const reg of plan.registrations) {
     pi.registerProvider(reg.provider, {
@@ -46,11 +41,28 @@ export async function applyAperture(
       apiKey: reg.apiKey,
       headers: reg.headers,
       api: reg.api,
-      models: reg.models as unknown as ProviderModelConfig[],
+      models: reg.models,
     });
   }
 
-  return { providers: config.providers, missingModels: plan.missingModels };
+  return { providers: config.providers, gatewayUrl };
+}
+
+/**
+ * Fetch gateway models and return missing ones relative to the plan.
+ */
+export async function checkGatewayModels(
+  gatewayUrl: string,
+  registry: ExtensionContext["modelRegistry"],
+): Promise<{ missingModels: string[] }> {
+  const config = configLoader.getConfig();
+  const baseUrl = resolveProviderBaseUrl(config);
+  if (!baseUrl) return { missingModels: [] };
+
+  const gatewayModelIds = await fetchGatewayModelIds(gatewayUrl);
+  const registryModels = registry.getAll();
+  const plan = buildApplyPlan(config, registryModels, baseUrl, gatewayModelIds);
+  return { missingModels: plan.missingModels };
 }
 
 /** Re-resolve and set current model after provider registry updates. */

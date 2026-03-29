@@ -4,9 +4,10 @@
 
 import type {
   ApertureConfig,
+  Api,
   ApplyPlan,
   ConfigChangePlan,
-  ModelInfo,
+  Model,
   ProviderRegistration,
 } from "./types";
 
@@ -24,7 +25,7 @@ export const APERTURE_PROVENANCE_HEADERS = {
  * Merges provenance headers with the first model's headers (if any).
  */
 export function resolveProviderHeaders(
-  models: ModelInfo[],
+  models: Model<Api>[],
 ): Record<string, string> {
   const modelHeaders = models.find((m) => m.headers)?.headers ?? {};
   return {
@@ -43,7 +44,7 @@ export function resolveProviderHeaders(
  */
 export function buildApplyPlan(
   config: ApertureConfig,
-  registryModels: ModelInfo[],
+  registryModels: Model<Api>[],
   providerBaseUrl: string,
   gatewayModelIds: string[],
 ): ApplyPlan {

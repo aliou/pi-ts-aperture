@@ -1,17 +1,13 @@
 /**
- * Plain data types used by core functions. No Pi imports.
+ * Plain data types used by core functions.
+ * Model is re-exported from @mariozechner/pi-ai for internal use.
  */
-
-export interface ModelInfo {
-  id: string;
-  provider: string;
-  api?: string;
-  headers?: Record<string, string>;
-}
+import type { Api, Model } from "@mariozechner/pi-ai";
 
 export interface ApertureConfig {
   baseUrl: string;
   providers: string[];
+  checkGatewayModels: string[];
 }
 
 export interface ProviderRegistration {
@@ -20,8 +16,11 @@ export interface ProviderRegistration {
   apiKey: string;
   headers: Record<string, string>;
   api: string;
-  models: ModelInfo[];
+  models: Model<Api>[];
 }
+
+// Re-export Model for use in other core files
+export type { Model, Api };
 
 export interface ApplyPlan {
   registrations: ProviderRegistration[];
