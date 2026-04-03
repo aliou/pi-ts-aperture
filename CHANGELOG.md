@@ -1,5 +1,46 @@
 # @aliou/pi-ts-aperture
 
+## 0.4.0
+
+### Minor Changes
+
+- 2240e43: Extract pure core functions from Pi glue.
+
+  Move decision-making logic into pure functions in src/core/:
+
+  - URL helpers: normalizeInputUrl, resolveGatewayUrl, resolveProviderBaseUrl
+  - Plan builders: buildApplyPlan, planConfigChange
+
+  All core logic is now unit-testable with no Pi dependencies.
+
+- 80ef5c2: Add per-provider gateway model checking.
+
+  Validates which models are available on the gateway per configured provider.
+
+- 5e2d45f: Add gateway model checking to settings UI.
+
+  Shows model availability status in the settings interface.
+
+- 748d8e1: Rewrite setup wizard with Wizard + FuzzyMultiSelector.
+
+  Improved UX for configuring Aperture with better multi-select support.
+
+### Patch Changes
+
+- c60bd7f: Co-locate unit tests with source files.
+
+  Moves core unit tests from tests/core/ to src/core/\*.test.ts.
+
+- 124404c: Rewrite e2e tests to use RpcClient.
+
+  Modernizes test infrastructure for better reliability.
+
+- ccf5c1d: Replace local ModelInfo type with Model<Api> from pi-ai.
+
+  Uses Pi canonical model type instead of duplicating the shape.
+
+- 7fb1c7c: Update Pi packages to 0.64.0.
+
 ## 0.3.2
 
 ### Patch Changes
