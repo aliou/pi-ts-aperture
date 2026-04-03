@@ -13,24 +13,25 @@ concurrency:
 jobs:
   publish:
     name: Publish
-    if: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' }}
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
       packages: write
       pull-requests: write
+      id-token: write
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v5
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: "22"
           registry-url: "https://registry.npmjs.org"
@@ -81,3 +82,42 @@ jobs:
           commit: ${{ steps.release-info.outputs.commit }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_CONFIG_PROVENANCE: true
+
+      - name: Create GitHub releases
+        if: steps.changesets.outputs.published == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PUBLISHED_PACKAGES: ${{ steps.changesets.outputs.publishedPackages }}
+        run: |
+          node <<'NODE'
+          const { execSync } = require("node:child_process");
+
+          const published = JSON.parse(process.env.PUBLISHED_PACKAGES || "[]");
+
+          for (const pkg of published) {
+            const tag = `v${pkg.version}`;
+
+            const existing = execSync(`git tag --list ${tag}`, { encoding: "utf8" }).trim();
+            if (!existing) {
+              execSync(`git tag ${tag}`);
+              execSync(`git push origin ${tag}`);
+            }
+
+            let hasRelease = false;
+            try {
+              const output = execSync(`gh release view ${tag} --json tagName --jq .tagName`, {
+                stdio: ["ignore", "pipe", "ignore"],
+              }).toString().trim();
+              hasRelease = output.length > 0;
+            } catch {
+              hasRelease = false;
+            }
+
+            if (!hasRelease) {
+              execSync(`gh release create ${tag} --title ${tag} --notes "Release ${tag}"`, {
+                stdio: "inherit",
+              });
+            }
+          }
+          NODE
