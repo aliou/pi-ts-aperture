@@ -6,6 +6,7 @@ Pi extension that routes selected Pi providers through Tailscale Aperture.
 
 - `src/index.ts` - Entry point orchestration only: load config, bootstrap model visibility, register hooks, register commands.
 - `src/config.ts` - Config schema (`ApertureConfig`, `ResolvedConfig`) and `ConfigLoader` instance.
+- `src/core/` - Pure functions and types for URL normalization, plan building, and config change handling.
 - `src/providers/aperture.ts` - Core routing logic (provider endpoint override, header injection, active-model refresh).
 - `src/commands/setup.ts` - `/aperture:setup` interactive wizard (URL input + provider multi-select + health check).
 - `src/commands/settings.ts` - `/aperture:settings` settings UI via `registerSettingsCommand`.
@@ -22,6 +23,7 @@ Pi extension that routes selected Pi providers through Tailscale Aperture.
   - `X-Title: npm:@aliou/pi-ts-aperture`
 - URLs are normalized on input: scheme is added when missing, trailing `/v1` is stripped (re-appended during provider registration).
 - Providers with no models in the registry are skipped (nothing to reroute).
+- Optional per-provider gateway model verification (`checkGatewayModels` config) warns at startup if configured models are missing from the Aperture gateway.
 
 ## Dependencies
 
