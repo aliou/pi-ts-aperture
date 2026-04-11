@@ -1,0 +1,636 @@
+{
+  "object": "list",
+  "data": [
+    {
+      "id": "anthropic/claude-haiku-4.5",
+      "object": "model",
+      "created": 1775925494,
+      "metadata": {
+        "provider": {
+          "id": "openrouter",
+          "name": "OpenRouter",
+          "description": ""
+        }
+      },
+      "owned_by": "ts-llm-proxy",
+      "pricing": {
+        "input": "0.00000100",
+        "input_cache_read": "0.00000010",
+        "input_cache_write": "0.00000125",
+        "output": "0.00000500",
+        "web_search": "0.01000000"
+      }
+    },
+    {
+      "id": "anthropic/claude-opus-4.6",
+      "object": "model",
+      "created": 1775925494,
+      "metadata": {
+        "provider": {
+          "id": "openrouter",
+          "name": "OpenRouter",
+          "description": ""
+        }
+      },
+      "owned_by": "ts-llm-proxy",
+      "pricing": {
+        "input": "0.00000500",
+        "input_cache_read": "0.00000050",
+        "input_cache_write": "0.00000625",
+        "output": "0.00002500",
+        "web_search": "0.01000000"
+      }
+    },
+    {
+      "id": "anthropic/claude-sonnet-4.5",
+      "object": "model",
+      "created": 1775925494,
+      "metadata": {
+        "provider": {
+          "id": "openrouter",
+          "name": "OpenRouter",
+          "description": ""
+        }
+      },
+      "owned_by": "ts-llm-proxy",
+      "pricing": {
+        "input": "0.00000300",
+        "input_cache_read": "0.00000030",
+        "input_cache_write": "0.00000375",
+        "output": "0.00001500",
+        "web_search": "0.01000000"
+      }
+    },
+    {
+      "id": "anthropic/claude-sonnet-4.6",
+      "object": "model",
+      "created": 1775925494,
+      "metadata": {
+        "provider": {
+          "id": "openrouter",
+          "name": "OpenRouter",
+          "description": ""
+        }
+      },
+      "owned_by": "ts-llm-proxy",
+      "pricing": {
+        "input": "0.00000300",
+        "input_cache_read": "0.00000030",
+        "input_cache_write": "0.00000375",
+        "output": "0.00001500",
+        "web_search": "0.01000000"
+      }
+    },
+    {
+      "id": "deepseek/deepseek-v3.2",
+      "object": "model",
+      "created": 1775925494,
+      "metadata": {
+        "provider": {
+          "id": "openrouter",
+          "name": "OpenRouter",
+          "description": ""
+        }
+      },
+      "owned_by": "ts-llm-proxy",
+      "pricing": {
+        "input": "0.00000026",
+        "input_cache_read": "0.00000013",
+        "output": "0.00000038"
+      }
+    },
+    {
+      "id": "google/gemini-2.0-flash-001",
+      "object": "model",
+      "created": 1775925494,
+      "metadata": {
+        "provider": {
+          "id": "openrouter",
+          "name": "OpenRouter",
+          "description": ""
+        }
+      },
+      "owned_by": "ts-llm-proxy",
+      "pricing": {
+        "image": "0.00000010",
+        "input": "0.00000010",
+        "input_cache_read": "0.00000002",
+        "input_cache_write": "0.00000008",
+        "internal_reasoning": "0.00000040",
+        "output": "0.00000040"
+      }
+    },
+    {
+      "id": "google/gemini-2.5-flash-lite",
+      "object": "model",
+      "created": 1775925494,
+      "metadata": {
+        "provider": {
+          "id": "openrouter",
+          "name": "OpenRouter",
+          "description": ""
+        }
+      },
+      "owned_by": "ts-llm-proxy",
+      "pricing": {
+        "image": "0.00000010",
+        "input": "0.00000010",
+        "input_cache_read": "0.00000001",
+        "input_cache_write": "0.00000008",
+        "internal_reasoning": "0.00000040",
+        "output": "0.00000040"
+      }
+    },
+    {
+      "id": "google/gemini-3-flash-preview",
+      "object": "model",
+      "created": 1775925494,
+      "metadata": {
+        "provider": {
+          "id": "openrouter",
+          "name": "OpenRouter",
+          "description": ""
+        }
+      },
+      "owned_by": "ts-llm-proxy",
+      "pricing": {
+        "image": "0.00000050",
+        "input": "0.00000050",
+        "input_cache_read": "0.00000005",
+        "input_cache_write": "0.00000008",
+        "internal_reasoning": "0.00000300",
+        "output": "0.00000300"
+      }
+    },
+    {
+      "id": "google/gemini-3.1-flash-image-preview",
+      "object": "model",
+      "created": 1775925494,
+      "metadata": {
+        "provider": {
+          "id": "openrouter",
+          "name": "OpenRouter",
+          "description": ""
+        }
+      },
+      "owned_by": "ts-llm-proxy",
+      "pricing": {
+        "input": "0.00000050",
+        "output": "0.00000300"
+      }
+    },
+    {
+      "id": "google/gemini-3.1-pro-preview",
+      "object": "model",
+      "created": 1775925494,
+      "metadata": {
+        "provider": {
+          "id": "openrouter",
+          "name": "OpenRouter",
+          "description": ""
+        }
+      },
+      "owned_by": "ts-llm-proxy",
+      "pricing": {
+        "image": "0.00000200",
+        "input": "0.00000200",
+        "input_cache_read": "0.00000020",
+        "input_cache_write": "0.00000038",
+        "internal_reasoning": "0.00001200",
+        "output": "0.00001200"
+      }
+    },
+    {
+      "id": "minimax/minimax-m2.5",
+      "object": "model",
+      "created": 1775925494,
+      "metadata": {
+        "provider": {
+          "id": "openrouter",
+          "name": "OpenRouter",
+          "description": ""
+        }
+      },
+      "owned_by": "ts-llm-proxy",
+      "pricing": {
+        "input": "0.00000020",
+        "input_cache_read": "0.00000010",
+        "output": "0.00000117"
+      }
+    },
+    {
+      "id": "mistralai/mistral-medium-3.1",
+      "object": "model",
+      "created": 1775925494,
+      "metadata": {
+        "provider": {
+          "id": "openrouter",
+          "name": "OpenRouter",
+          "description": ""
+        }
+      },
+      "owned_by": "ts-llm-proxy",
+      "pricing": {
+        "input": "0.00000040",
+        "input_cache_read": "0.00000004",
+        "output": "0.00000200"
+      }
+    },
+    {
+      "id": "moonshotai/kimi-k2.5",
+      "object": "model",
+      "created": 1775925494,
+      "metadata": {
+        "provider": {
+          "id": "openrouter",
+          "name": "OpenRouter",
+          "description": ""
+        }
+      },
+      "owned_by": "ts-llm-proxy",
+      "pricing": {
+        "input": "0.00000045",
+        "input_cache_read": "0.00000022",
+        "output": "0.00000220"
+      }
+    },
+    {
+      "id": "openai/gpt-5.2",
+      "object": "model",
+      "created": 1775925494,
+      "metadata": {
+        "provider": {
+          "id": "openrouter",
+          "name": "OpenRouter",
+          "description": ""
+        }
+      },
+      "owned_by": "ts-llm-proxy",
+      "pricing": {
+        "input": "0.00000175",
+        "input_cache_read": "0.00000017",
+        "output": "0.00001400",
+        "web_search": "0.01000000"
+      }
+    },
+    {
+      "id": "qwen/qwen3-coder",
+      "object": "model",
+      "created": 1775925494,
+      "metadata": {
+        "provider": {
+          "id": "openrouter",
+          "name": "OpenRouter",
+          "description": ""
+        }
+      },
+      "owned_by": "ts-llm-proxy",
+      "pricing": {
+        "input": "0.00000022",
+        "input_cache_read": "0.00000002",
+        "output": "0.00000100"
+      }
+    },
+    {
+      "id": "qwen/qwen3-max",
+      "object": "model",
+      "created": 1775925494,
+      "metadata": {
+        "provider": {
+          "id": "openrouter",
+          "name": "OpenRouter",
+          "description": ""
+        }
+      },
+      "owned_by": "ts-llm-proxy",
+      "pricing": {
+        "input": "0.00000078",
+        "input_cache_read": "0.00000016",
+        "output": "0.00000390"
+      }
+    },
+    {
+      "id": "qwen/qwen3.5-397b-a17b",
+      "object": "model",
+      "created": 1775925494,
+      "metadata": {
+        "provider": {
+          "id": "openrouter",
+          "name": "OpenRouter",
+          "description": ""
+        }
+      },
+      "owned_by": "ts-llm-proxy",
+      "pricing": {
+        "input": "0.00000039",
+        "output": "0.00000234"
+      }
+    },
+    {
+      "id": "qwen/qwen3.5-plus-02-15",
+      "object": "model",
+      "created": 1775925494,
+      "metadata": {
+        "provider": {
+          "id": "openrouter",
+          "name": "OpenRouter",
+          "description": ""
+        }
+      },
+      "owned_by": "ts-llm-proxy",
+      "pricing": {
+        "input": "0.00000026",
+        "output": "0.00000156"
+      }
+    },
+    {
+      "id": "x-ai/grok-4",
+      "object": "model",
+      "created": 1775925494,
+      "metadata": {
+        "provider": {
+          "id": "openrouter",
+          "name": "OpenRouter",
+          "description": ""
+        }
+      },
+      "owned_by": "ts-llm-proxy",
+      "pricing": {
+        "input": "0.00000300",
+        "input_cache_read": "0.00000075",
+        "output": "0.00001500",
+        "web_search": "0.00500000"
+      }
+    },
+    {
+      "id": "x-ai/grok-4.1-fast",
+      "object": "model",
+      "created": 1775925494,
+      "metadata": {
+        "provider": {
+          "id": "openrouter",
+          "name": "OpenRouter",
+          "description": ""
+        }
+      },
+      "owned_by": "ts-llm-proxy",
+      "pricing": {
+        "input": "0.00000020",
+        "input_cache_read": "0.00000005",
+        "output": "0.00000050",
+        "web_search": "0.00500000"
+      }
+    },
+    {
+      "id": "z-ai/glm-5",
+      "object": "model",
+      "created": 1775925494,
+      "metadata": {
+        "provider": {
+          "id": "openrouter",
+          "name": "OpenRouter",
+          "description": ""
+        }
+      },
+      "owned_by": "ts-llm-proxy",
+      "pricing": {
+        "input": "0.00000072",
+        "output": "0.00000230"
+      }
+    },
+    {
+      "id": "hf:MiniMaxAI/MiniMax-M2.1",
+      "object": "model",
+      "created": 1775925494,
+      "metadata": {
+        "provider": {
+          "id": "synthetic",
+          "name": "Synthetic",
+          "description": ""
+        }
+      },
+      "owned_by": "ts-llm-proxy"
+    },
+    {
+      "id": "hf:MiniMaxAI/MiniMax-M2.5",
+      "object": "model",
+      "created": 1775925494,
+      "metadata": {
+        "provider": {
+          "id": "synthetic",
+          "name": "Synthetic",
+          "description": ""
+        }
+      },
+      "owned_by": "ts-llm-proxy"
+    },
+    {
+      "id": "hf:Qwen/Qwen3-235B-A22B-Thinking-2507",
+      "object": "model",
+      "created": 1775925494,
+      "metadata": {
+        "provider": {
+          "id": "synthetic",
+          "name": "Synthetic",
+          "description": ""
+        }
+      },
+      "owned_by": "ts-llm-proxy"
+    },
+    {
+      "id": "hf:Qwen/Qwen3-Coder-480B-A35B-Instruct",
+      "object": "model",
+      "created": 1775925494,
+      "metadata": {
+        "provider": {
+          "id": "synthetic",
+          "name": "Synthetic",
+          "description": ""
+        }
+      },
+      "owned_by": "ts-llm-proxy"
+    },
+    {
+      "id": "hf:Qwen/Qwen3.5-397B-A17B",
+      "object": "model",
+      "created": 1775925494,
+      "metadata": {
+        "provider": {
+          "id": "synthetic",
+          "name": "Synthetic",
+          "description": ""
+        }
+      },
+      "owned_by": "ts-llm-proxy"
+    },
+    {
+      "id": "hf:deepseek-ai/DeepSeek-R1-0528",
+      "object": "model",
+      "created": 1775925494,
+      "metadata": {
+        "provider": {
+          "id": "synthetic",
+          "name": "Synthetic",
+          "description": ""
+        }
+      },
+      "owned_by": "ts-llm-proxy"
+    },
+    {
+      "id": "hf:deepseek-ai/DeepSeek-V3",
+      "object": "model",
+      "created": 1775925494,
+      "metadata": {
+        "provider": {
+          "id": "synthetic",
+          "name": "Synthetic",
+          "description": ""
+        }
+      },
+      "owned_by": "ts-llm-proxy"
+    },
+    {
+      "id": "hf:deepseek-ai/DeepSeek-V3.2",
+      "object": "model",
+      "created": 1775925494,
+      "metadata": {
+        "provider": {
+          "id": "synthetic",
+          "name": "Synthetic",
+          "description": ""
+        }
+      },
+      "owned_by": "ts-llm-proxy"
+    },
+    {
+      "id": "hf:meta-llama/Llama-3.3-70B-Instruct",
+      "object": "model",
+      "created": 1775925494,
+      "metadata": {
+        "provider": {
+          "id": "synthetic",
+          "name": "Synthetic",
+          "description": ""
+        }
+      },
+      "owned_by": "ts-llm-proxy"
+    },
+    {
+      "id": "hf:moonshotai/Kimi-K2-Instruct-0905",
+      "object": "model",
+      "created": 1775925494,
+      "metadata": {
+        "provider": {
+          "id": "synthetic",
+          "name": "Synthetic",
+          "description": ""
+        }
+      },
+      "owned_by": "ts-llm-proxy"
+    },
+    {
+      "id": "hf:moonshotai/Kimi-K2-Thinking",
+      "object": "model",
+      "created": 1775925494,
+      "metadata": {
+        "provider": {
+          "id": "synthetic",
+          "name": "Synthetic",
+          "description": ""
+        }
+      },
+      "owned_by": "ts-llm-proxy"
+    },
+    {
+      "id": "hf:moonshotai/Kimi-K2.5",
+      "object": "model",
+      "created": 1775925494,
+      "metadata": {
+        "provider": {
+          "id": "synthetic",
+          "name": "Synthetic",
+          "description": ""
+        }
+      },
+      "owned_by": "ts-llm-proxy"
+    },
+    {
+      "id": "hf:nvidia/Kimi-K2.5-NVFP4",
+      "object": "model",
+      "created": 1775925494,
+      "metadata": {
+        "provider": {
+          "id": "synthetic",
+          "name": "Synthetic",
+          "description": ""
+        }
+      },
+      "owned_by": "ts-llm-proxy"
+    },
+    {
+      "id": "hf:nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4",
+      "object": "model",
+      "created": 1775925494,
+      "metadata": {
+        "provider": {
+          "id": "synthetic",
+          "name": "Synthetic",
+          "description": ""
+        }
+      },
+      "owned_by": "ts-llm-proxy"
+    },
+    {
+      "id": "hf:openai/gpt-oss-120b",
+      "object": "model",
+      "created": 1775925494,
+      "metadata": {
+        "provider": {
+          "id": "synthetic",
+          "name": "Synthetic",
+          "description": ""
+        }
+      },
+      "owned_by": "ts-llm-proxy"
+    },
+    {
+      "id": "hf:zai-org/GLM-4.7",
+      "object": "model",
+      "created": 1775925494,
+      "metadata": {
+        "provider": {
+          "id": "synthetic",
+          "name": "Synthetic",
+          "description": ""
+        }
+      },
+      "owned_by": "ts-llm-proxy"
+    },
+    {
+      "id": "hf:zai-org/GLM-4.7-Flash",
+      "object": "model",
+      "created": 1775925494,
+      "metadata": {
+        "provider": {
+          "id": "synthetic",
+          "name": "Synthetic",
+          "description": ""
+        }
+      },
+      "owned_by": "ts-llm-proxy"
+    },
+    {
+      "id": "hf:zai-org/GLM-5",
+      "object": "model",
+      "created": 1775925494,
+      "metadata": {
+        "provider": {
+          "id": "synthetic",
+          "name": "Synthetic",
+          "description": ""
+        }
+      },
+      "owned_by": "ts-llm-proxy"
+    }
+  ]
+}

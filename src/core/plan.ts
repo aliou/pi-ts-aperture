@@ -7,9 +7,11 @@ import type {
   Api,
   ApplyPlan,
   ConfigChangePlan,
+  GatewayModelInfo,
   Model,
   ProviderRegistration,
 } from "./types";
+import { APERTURE_PROVIDER_NAME } from "./types";
 
 /**
  * Preserve provenance similarly to pi-synthetic so downstream providers can
@@ -35,7 +37,7 @@ export function resolveProviderHeaders(
 }
 
 /**
- * Builds a plan for applying Aperture configuration.
+ * Builds a plan for applying Aperture in override mode.
  *
  * Groups registry models by configured provider, builds registrations,
  * and computes missing models (if gateway model IDs are provided).
@@ -83,25 +85,90 @@ export function buildApplyPlan(
 }
 
 /**
+ * Build a single provider registration for Aperture-as-provider mode.
+ *
+ * Every field on the returned `Model` objects comes from the gateway's
+ * `/v1/models` response (with the provenance/name defaults this extension
+ * controls). Fields the gateway stays silent about are left unset --
+ * downstream Pi code handles missing metadata gracefully.
+ *
+ * Returns null when the gateway returned no models; the caller should skip
+ * registration (and optionally unregister an existing "aperture" provider).
+ */
+export function buildApertureProviderPlan(
+  providerBaseUrl: string,
+  gatewayModels: GatewayModelInfo[],
+): ProviderRegistration | null {
+  if (gatewayModels.length === 0) return null;
+
+  const models: Model<Api>[] = gatewayModels.map((gm) => {
+    // Model<Api> fields are intentionally loose here -- we pass through only
+    // the gateway-provided data, leaving everything else unset. We build into
+    // a Record so TypeScript doesn't try to validate the partial shape.
+    const m: Record<string, unknown> = {
+      id: gm.id,
+      name: gm.name ?? gm.id,
+      provider: APERTURE_PROVIDER_NAME,
+    };
+    if (gm.contextWindow !== undefined) m.contextWindow = gm.contextWindow;
+    if (gm.maxTokens !== undefined) m.maxTokens = gm.maxTokens;
+    if (gm.input !== undefined) m.input = gm.input;
+    if (gm.reasoning !== undefined) m.reasoning = gm.reasoning;
+    if (gm.cost !== undefined) m.cost = gm.cost;
+    if (gm.api !== undefined) m.api = gm.api;
+    return m as unknown as Model<Api>;
+  });
+
+  return {
+    provider: APERTURE_PROVIDER_NAME,
+    baseUrl: providerBaseUrl,
+    apiKey: "-",
+    headers: { ...APERTURE_PROVENANCE_HEADERS },
+    api: "openai-completions",
+    models,
+  };
+}
+
+/**
+ * Snapshot of Aperture-owned provider registrations at a given point in
+ * time. Used by `planConfigChange` to decide which providers to unregister
+ * and whether the currently active model should be refreshed after a
+ * config change.
+ */
+export interface ApertureRegistrationState {
+  mode: "override" | "provider";
+  /** For override mode: list of providers routed. Empty in provider mode. */
+  providers: string[];
+}
+
+/**
+ * Returns the set of provider names currently registered / about to be
+ * registered by this extension, given its mode. In override mode that's
+ * whatever the user routes; in provider mode it's just "aperture".
+ */
+function registeredProviders(state: ApertureRegistrationState): string[] {
+  return state.mode === "override" ? state.providers : [APERTURE_PROVIDER_NAME];
+}
+
+/**
  * Plans the effects of a configuration change.
  *
- * @param prevProviders - Providers that were previously configured
- * @param nextProviders - Providers that are now configured
- * @param activeModelProvider - Provider of the currently active model (if any)
- * @returns ConfigChangePlan with removed providers and refresh decision
+ * Computes:
+ * - providers to unregister (were owned by aperture before but aren't now)
+ * - whether to re-resolve the current model (its provider is still ours)
  */
 export function planConfigChange(
-  prevProviders: string[],
-  nextProviders: string[],
+  prev: ApertureRegistrationState,
+  next: ApertureRegistrationState,
   activeModelProvider?: string,
 ): ConfigChangePlan {
-  const removedProviders = prevProviders.filter(
-    (provider) => !nextProviders.includes(provider),
-  );
+  const prevSet = new Set(registeredProviders(prev));
+  const nextSet = new Set(registeredProviders(next));
+
+  const removedProviders = [...prevSet].filter((p) => !nextSet.has(p));
 
   const shouldRefreshModel =
-    activeModelProvider !== undefined &&
-    nextProviders.includes(activeModelProvider);
+    activeModelProvider !== undefined && nextSet.has(activeModelProvider);
 
   return { removedProviders, shouldRefreshModel };
 }

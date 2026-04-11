@@ -21,12 +21,13 @@ export function normalizeInputUrl(raw: string): string {
 }
 
 /**
- * Returns configured gateway URL without trailing slash.
- * Returns null when baseUrl is empty or providers list is empty.
+ * Returns configured gateway URL without trailing slash, or null when
+ * baseUrl is empty. Mode-agnostic: the caller decides whether the current
+ * mode has anything to do with the URL.
  */
 export function resolveGatewayUrl(config: ApertureConfig): string | null {
-  const { baseUrl, providers } = config;
-  if (!baseUrl || providers.length === 0) return null;
+  const { baseUrl } = config;
+  if (!baseUrl) return null;
   return baseUrl.replace(/\/+$/, "");
 }
 

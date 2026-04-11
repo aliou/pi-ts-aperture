@@ -5,6 +5,12 @@
  * - load config
  * - register lifecycle hooks
  * - register user commands
+ *
+ * Two modes are supported and are mutually exclusive:
+ * - "override": existing providers (openai, anthropic, ...) are re-registered
+ *   so their traffic goes through the Aperture gateway.
+ * - "provider": a new provider named "aperture" is registered; its model list
+ *   is discovered from GET <baseUrl>/v1/models on the gateway.
  */
 
 import type {
@@ -17,6 +23,7 @@ import { configLoader } from "./config";
 import { planConfigChange, resolveProviderBaseUrl } from "./core";
 import {
   applyAperture,
+  applyApertureProvider,
   checkGatewayModels,
   refreshActiveModel,
 } from "./providers/aperture";
@@ -43,14 +50,15 @@ function registerApertureLifecycleHook(
   pi.on("before_agent_start", async (_event, ctx) => {
     if (!ctx?.modelRegistry) return;
 
-    const { providers: overriddenProviders, gatewayUrl } = await applyAperture(
+    const { mode, providers, gatewayUrl } = await applyAperture(
       pi,
       ctx.modelRegistry,
     );
 
     if (
+      mode === "override" &&
       ctx.model &&
-      overriddenProviders.includes(ctx.model.provider) &&
+      providers.includes(ctx.model.provider) &&
       gatewayUrl !== null &&
       configLoader.getConfig().checkGatewayModels.includes(ctx.model.provider)
     ) {
@@ -61,28 +69,30 @@ function registerApertureLifecycleHook(
       notifyMissingModelsOnce(ctx, missingModels, warnedModels);
     }
 
-    if (!ctx.model || !overriddenProviders.includes(ctx.model.provider)) return;
+    if (!ctx.model || !providers.includes(ctx.model.provider)) return;
 
     await refreshActiveModel(pi, ctx);
   });
 
-  // Also check when user switches to a model whose provider uses aperture
+  // Also check when user switches to a model whose provider is routed through
+  // aperture (override mode only -- provider-mode models come from the
+  // gateway by definition, so there's nothing to cross-check).
   pi.on("model_select", async (_event, ctx) => {
     if (!ctx?.model) return;
 
     const config = configLoader.getConfig();
+    if (config.mode !== "override") return;
     if (!config.providers.includes(ctx.model.provider)) return;
+    if (!config.checkGatewayModels.includes(ctx.model.provider)) return;
 
     const gatewayUrl = resolveProviderBaseUrl(config)?.replace("/v1", "");
     if (!gatewayUrl) return;
 
-    if (config.checkGatewayModels.includes(ctx.model.provider)) {
-      const { missingModels } = await checkGatewayModels(
-        gatewayUrl,
-        ctx.modelRegistry,
-      );
-      notifyMissingModelsOnce(ctx, missingModels, warnedModels);
-    }
+    const { missingModels } = await checkGatewayModels(
+      gatewayUrl,
+      ctx.modelRegistry,
+    );
+    notifyMissingModelsOnce(ctx, missingModels, warnedModels);
   });
 }
 
@@ -90,20 +100,24 @@ function createConfigChangeHandler(
   pi: ExtensionAPI,
   warnedModels: Set<string>,
 ): (ctx: ExtensionContext) => void {
-  let lastRegisteredProviders = [...configLoader.getConfig().providers];
+  let lastState = {
+    mode: configLoader.getConfig().mode,
+    providers: [...configLoader.getConfig().providers],
+  };
 
   return (ctx: ExtensionContext) => {
-    const { providers } = configLoader.getConfig();
+    const current = configLoader.getConfig();
+    const nextState = {
+      mode: current.mode,
+      providers: [...current.providers],
+    };
 
-    const plan = planConfigChange(
-      lastRegisteredProviders,
-      providers,
-      ctx.model?.provider,
-    );
+    const plan = planConfigChange(lastState, nextState, ctx.model?.provider);
 
     void applyAperture(pi, ctx.modelRegistry).then(
-      async ({ providers, gatewayUrl }) => {
+      async ({ mode, providers, gatewayUrl }) => {
         if (
+          mode === "override" &&
           ctx.model &&
           providers.includes(ctx.model.provider) &&
           gatewayUrl !== null &&
@@ -119,7 +133,8 @@ function createConfigChangeHandler(
         }
       },
     );
-    lastRegisteredProviders = [...providers];
+
+    lastState = nextState;
 
     if (plan.shouldRefreshModel) {
       void refreshActiveModel(pi, ctx).then((updated) => {
@@ -141,6 +156,16 @@ export default async function (pi: ExtensionAPI): Promise<void> {
   await configLoader.load();
 
   const warnedModels = new Set<string>();
+
+  // Provider mode: the "aperture" provider's model list comes entirely from
+  // the gateway, so we can register it eagerly at extension load time --
+  // ahead of any `before_agent_start` event. This matters because RPC
+  // callers (e.g. `listModels`) may query the registry before the agent
+  // runs. Override mode, in contrast, has to wait for other extensions to
+  // register their providers, so its apply stays in the lifecycle hook.
+  if (configLoader.getConfig().mode === "provider") {
+    await applyApertureProvider(pi);
+  }
 
   registerApertureLifecycleHook(pi, warnedModels);
 

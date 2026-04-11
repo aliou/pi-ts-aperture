@@ -6,6 +6,14 @@ import {
   resolveProviderBaseUrl,
 } from "./url";
 
+const base = (overrides: Partial<ApertureConfig>): ApertureConfig => ({
+  mode: "override",
+  baseUrl: "",
+  providers: [],
+  checkGatewayModels: [],
+  ...overrides,
+});
+
 describe("normalizeInputUrl", () => {
   it("returns empty string for empty input", () => {
     expect(normalizeInputUrl("")).toBe("");
@@ -64,67 +72,60 @@ describe("normalizeInputUrl", () => {
 
 describe("resolveGatewayUrl", () => {
   it("returns null when baseUrl is empty", () => {
-    const config: ApertureConfig = { baseUrl: "", providers: ["openai"] };
-    expect(resolveGatewayUrl(config)).toBeNull();
+    expect(resolveGatewayUrl(base({ providers: ["openai"] }))).toBeNull();
   });
 
-  it("returns null when providers is empty", () => {
-    const config: ApertureConfig = {
-      baseUrl: "https://example.com",
-      providers: [],
-    };
-    expect(resolveGatewayUrl(config)).toBeNull();
-  });
-
-  it("returns null when both baseUrl and providers are empty", () => {
-    const config: ApertureConfig = { baseUrl: "", providers: [] };
-    expect(resolveGatewayUrl(config)).toBeNull();
+  it("returns URL even when providers list is empty (provider mode)", () => {
+    expect(
+      resolveGatewayUrl(
+        base({ mode: "provider", baseUrl: "https://example.com" }),
+      ),
+    ).toBe("https://example.com");
   });
 
   it("returns URL without trailing slash", () => {
-    const config: ApertureConfig = {
-      baseUrl: "https://example.com/",
-      providers: ["openai"],
-    };
-    expect(resolveGatewayUrl(config)).toBe("https://example.com");
+    expect(
+      resolveGatewayUrl(
+        base({ baseUrl: "https://example.com/", providers: ["openai"] }),
+      ),
+    ).toBe("https://example.com");
   });
 
   it("returns URL as-is when no trailing slash", () => {
-    const config: ApertureConfig = {
-      baseUrl: "https://example.com",
-      providers: ["openai"],
-    };
-    expect(resolveGatewayUrl(config)).toBe("https://example.com");
+    expect(
+      resolveGatewayUrl(
+        base({ baseUrl: "https://example.com", providers: ["openai"] }),
+      ),
+    ).toBe("https://example.com");
   });
 
   it("strips multiple trailing slashes", () => {
-    const config: ApertureConfig = {
-      baseUrl: "https://example.com///",
-      providers: ["openai"],
-    };
-    expect(resolveGatewayUrl(config)).toBe("https://example.com");
+    expect(
+      resolveGatewayUrl(
+        base({ baseUrl: "https://example.com///", providers: ["openai"] }),
+      ),
+    ).toBe("https://example.com");
   });
 });
 
 describe("resolveProviderBaseUrl", () => {
   it("returns null when gateway URL cannot be resolved", () => {
-    const config: ApertureConfig = { baseUrl: "", providers: ["openai"] };
-    expect(resolveProviderBaseUrl(config)).toBeNull();
+    expect(resolveProviderBaseUrl(base({ providers: ["openai"] }))).toBeNull();
   });
 
   it("appends /v1 to gateway URL", () => {
-    const config: ApertureConfig = {
-      baseUrl: "https://example.com",
-      providers: ["openai"],
-    };
-    expect(resolveProviderBaseUrl(config)).toBe("https://example.com/v1");
+    expect(
+      resolveProviderBaseUrl(
+        base({ baseUrl: "https://example.com", providers: ["openai"] }),
+      ),
+    ).toBe("https://example.com/v1");
   });
 
   it("handles trailing slashes correctly", () => {
-    const config: ApertureConfig = {
-      baseUrl: "https://example.com/",
-      providers: ["openai"],
-    };
-    expect(resolveProviderBaseUrl(config)).toBe("https://example.com/v1");
+    expect(
+      resolveProviderBaseUrl(
+        base({ baseUrl: "https://example.com/", providers: ["openai"] }),
+      ),
+    ).toBe("https://example.com/v1");
   });
 });
