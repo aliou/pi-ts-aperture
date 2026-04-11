@@ -282,6 +282,27 @@ describe("pi-ts-aperture e2e", () => {
         "hf:openai/gpt-oss-120b",
       ]);
 
+      // Model with gateway-emitted pricing: per-token string -> per-million.
+      const haiku = apertureModels.find(
+        (m) => m.id === "anthropic/claude-haiku-4.5",
+      );
+      expect(haiku?.cost?.input).toBeCloseTo(1.0, 6);
+      expect(haiku?.cost?.output).toBeCloseTo(5.0, 6);
+      expect(haiku?.cost?.cacheRead).toBeCloseTo(0.1, 6);
+      expect(haiku?.cost?.cacheWrite).toBeCloseTo(1.25, 6);
+
+      // Model without a pricing block: cost gets the $0 default (Pi's Model
+      // requires cost -- see the notes on APERTURE_MODEL_DEFAULTS).
+      const bare = apertureModels.find(
+        (m) => m.id === "hf:openai/gpt-oss-120b",
+      );
+      expect(bare?.cost).toEqual({
+        input: 0,
+        output: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+      });
+
       // The test-provider's own models must still be intact -- aperture in
       // provider mode never touches other providers.
       const testModels = models.filter((m) => m.provider === "test-provider");

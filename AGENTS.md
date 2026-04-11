@@ -42,9 +42,21 @@ Pi extension that routes selected Pi providers through Tailscale Aperture.
   - `X-Title: npm:@aliou/pi-ts-aperture`
 - URLs are normalized on input: scheme is added when missing, trailing `/v1` is stripped (re-appended during provider registration).
 - Aperture pricing (`"0.00000100"` = $1/M tokens) is parsed as decimal
-  strings and multiplied by 1e6 to match Pi's per-million cost convention.
-  Wire-only pricing fields (`image`, `web_search`, `internal_reasoning`)
-  are dropped because Pi's `Model.cost` has no slot for them.
+  strings and multiplied by 1e6 to match Pi's per-million cost convention
+  (see `calculateCost` in `@mariozechner/pi-ai/dist/models.js` which divides
+  `model.cost.input / 1_000_000`).
+- Wire-only pricing fields (`image`, `web_search`, `internal_reasoning`) are
+  dropped. Pi's `Model<TApi>.cost` is strictly typed as
+  `{ input, output, cacheRead, cacheWrite }` and `calculateCost` only sums
+  those four -- there is nowhere else in `Model<TApi>` or `Usage` to put
+  per-image, per-search, or per-reasoning-token pricing.
+- `Model<TApi>` fields are all non-optional (except `headers` and `compat`).
+  `buildApertureProviderPlan` therefore fills every required field, using
+  values from the gateway when present and `APERTURE_MODEL_DEFAULTS`
+  otherwise. Defaults are picked to keep the extension usable (200k context
+  window, 8192 max tokens, $0 cost, text-only input, `openai-completions`
+  api) and never cross-reference pi-ai's built-in catalogue -- the gateway
+  is the sole source of truth for real metadata.
 
 ## Dependencies
 

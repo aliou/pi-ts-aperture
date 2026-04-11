@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  APERTURE_MODEL_DEFAULTS,
   APERTURE_PROVENANCE_HEADERS,
   buildApertureProviderPlan,
   buildApplyPlan,
@@ -228,7 +229,7 @@ describe("buildApertureProviderPlan", () => {
     }
   });
 
-  it("propagates only gateway-sourced fields", () => {
+  it("propagates gateway-sourced fields verbatim", () => {
     const reg = buildApertureProviderPlan(baseUrl, [
       {
         id: "rich",
@@ -239,12 +240,12 @@ describe("buildApertureProviderPlan", () => {
         cost: { input: 1, output: 5, cacheRead: 0.1, cacheWrite: 1.25 },
       },
     ]);
-    const m = reg?.models[0] as Record<string, unknown>;
-    expect(m.contextWindow).toBe(128000);
-    expect(m.maxTokens).toBe(16384);
-    expect(m.input).toEqual(["text", "image"]);
-    expect(m.reasoning).toBe(true);
-    expect(m.cost).toEqual({
+    const m = reg?.models[0];
+    expect(m?.contextWindow).toBe(128000);
+    expect(m?.maxTokens).toBe(16384);
+    expect(m?.input).toEqual(["text", "image"]);
+    expect(m?.reasoning).toBe(true);
+    expect(m?.cost).toEqual({
       input: 1,
       output: 5,
       cacheRead: 0.1,
@@ -252,22 +253,49 @@ describe("buildApertureProviderPlan", () => {
     });
   });
 
-  it("omits fields the gateway does not emit", () => {
+  it("fills required Model fields with safe defaults when gateway stays silent", () => {
     const reg = buildApertureProviderPlan(baseUrl, [{ id: "bare" }]);
-    const m = reg?.models[0] as Record<string, unknown>;
-    expect(m.contextWindow).toBeUndefined();
-    expect(m.maxTokens).toBeUndefined();
-    expect(m.input).toBeUndefined();
-    expect(m.reasoning).toBeUndefined();
-    expect(m.cost).toBeUndefined();
+    const m = reg?.models[0];
+    expect(m?.contextWindow).toBe(APERTURE_MODEL_DEFAULTS.contextWindow);
+    expect(m?.maxTokens).toBe(APERTURE_MODEL_DEFAULTS.maxTokens);
+    expect(m?.input).toEqual([...APERTURE_MODEL_DEFAULTS.input]);
+    expect(m?.reasoning).toBe(APERTURE_MODEL_DEFAULTS.reasoning);
+    expect(m?.cost).toEqual(APERTURE_MODEL_DEFAULTS.cost);
+    expect(m?.api).toBe(APERTURE_MODEL_DEFAULTS.api);
+    expect(m?.baseUrl).toBe(baseUrl);
+  });
+
+  it("merges partial gateway cost with defaults for missing dimensions", () => {
+    const reg = buildApertureProviderPlan(baseUrl, [
+      { id: "partial", cost: { input: 3, output: 15 } },
+    ]);
+    expect(reg?.models[0].cost).toEqual({
+      input: 3,
+      output: 15,
+      cacheRead: 0,
+      cacheWrite: 0,
+    });
+  });
+
+  it("sanitizes unknown input modalities down to the literal type", () => {
+    const reg = buildApertureProviderPlan(baseUrl, [
+      { id: "weird", input: ["text", "audio", "video", "image"] as string[] },
+    ]);
+    expect(reg?.models[0].input).toEqual(["text", "image"]);
+  });
+
+  it("falls back to ['text'] when the gateway emits only unknown modalities", () => {
+    const reg = buildApertureProviderPlan(baseUrl, [
+      { id: "x", input: ["audio"] as string[] },
+    ]);
+    expect(reg?.models[0].input).toEqual(["text"]);
   });
 
   it("lets gateway override the api wire protocol", () => {
     const reg = buildApertureProviderPlan(baseUrl, [
       { id: "weird", api: "anthropic-messages" },
     ]);
-    const m = reg?.models[0] as Record<string, unknown>;
-    expect(m.api).toBe("anthropic-messages");
+    expect(reg?.models[0].api).toBe("anthropic-messages");
   });
 });
 

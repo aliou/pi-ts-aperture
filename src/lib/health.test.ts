@@ -49,15 +49,19 @@ describe("parseGatewayModelsResponse (aperture fixture)", () => {
   });
 
   it("drops wire-only pricing fields (image, web_search, internal_reasoning)", () => {
+    // Pi's `Model<TApi>.cost` type is strictly
+    // `{ input, output, cacheRead, cacheWrite }` and `calculateCost` only
+    // sums those four dimensions (see
+    // `@mariozechner/pi-ai/dist/types.d.ts:282` and `models.js:26`), so
+    // image / web_search / internal_reasoning have nowhere to live.
     const gemini = models.find((m) => m.id === "google/gemini-2.0-flash-001");
     expect(gemini?.cost).toBeDefined();
-    expect((gemini?.cost as Record<string, unknown>).image).toBeUndefined();
-    expect(
-      (gemini?.cost as Record<string, unknown>).web_search,
-    ).toBeUndefined();
-    expect(
-      (gemini?.cost as Record<string, unknown>).internal_reasoning,
-    ).toBeUndefined();
+    const costKeys = Object.keys(
+      gemini?.cost ?? ({} as Record<string, unknown>),
+    );
+    expect(costKeys.sort()).toEqual(
+      ["cacheRead", "cacheWrite", "input", "output"].sort(),
+    );
   });
 
   it("leaves cost undefined when the gateway emits no pricing block", () => {
