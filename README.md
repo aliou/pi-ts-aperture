@@ -1,3 +1,5 @@
+![banner](https://assets.aliou.me/pi-extensions/banners/pi-ts-aperture.png)
+
 # pi-ts-aperture
 
 Route Pi LLM providers through [Tailscale Aperture](https://tailscale.com/docs/features/aperture), a managed AI gateway on your tailnet.
