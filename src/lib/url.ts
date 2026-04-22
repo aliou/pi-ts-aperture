@@ -2,7 +2,7 @@
  * Pure URL helpers.
  */
 
-import type { ApertureConfig } from "./types";
+import type { ApertureConfig } from "./config";
 
 /**
  * Normalizes a user-input URL:
@@ -26,7 +26,7 @@ export function normalizeInputUrl(raw: string): string {
  */
 export function resolveGatewayUrl(config: ApertureConfig): string | null {
   const { baseUrl, providers } = config;
-  if (!baseUrl || providers.length === 0) return null;
+  if (!baseUrl || providers?.length === 0) return null;
   return baseUrl.replace(/\/+$/, "");
 }
 
