@@ -22,6 +22,7 @@ Pi extension that routes selected Pi providers through Tailscale Aperture.
 - Provider requests include provenance headers:
   - `Referer: https://pi.dev`
   - `X-Title: npm:@aliou/pi-ts-aperture`
+- Provider requests include a `x-session-id` header set to the Pi session ID. This groups all requests from the same Pi session together in the Aperture dashboard.
 - URLs are normalized on input: scheme is added when missing, trailing `/v1` is stripped (re-appended during provider registration).
 - Providers with no models in the registry are skipped (nothing to reroute).
 - Optional per-provider gateway model verification (`checkGatewayModels` config) warns at startup if configured models are missing from the Aperture gateway.

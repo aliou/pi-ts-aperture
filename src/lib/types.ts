@@ -2,9 +2,21 @@
  * Internal types for Aperture extension.
  */
 
-import type { Api, Model } from "@mariozechner/pi-ai";
+import type {
+  Api,
+  AssistantMessageEventStream,
+  Context,
+  Model,
+  SimpleStreamOptions,
+} from "@mariozechner/pi-ai";
 
-export type { Model, Api };
+export type {
+  Api,
+  AssistantMessageEventStream,
+  Context,
+  Model,
+  SimpleStreamOptions,
+};
 
 /**
  * Dependencies for ApertureRuntime.sync()
@@ -18,6 +30,11 @@ export interface SyncDeps {
       headers: Record<string, string>;
       api: string;
       models: Model<Api>[];
+      streamSimple?: (
+        model: Model<Api>,
+        context: Context,
+        options?: SimpleStreamOptions,
+      ) => AssistantMessageEventStream;
     },
   ) => void;
   getModels: () => Model<Api>[];

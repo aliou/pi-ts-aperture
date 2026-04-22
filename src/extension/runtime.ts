@@ -4,9 +4,18 @@
  * Handles provider registration, unregistration, and gateway model checking.
  */
 
+import { getApiProvider } from "@mariozechner/pi-ai";
 import { configLoader } from "../lib/config";
 import { fetchGatewayModelIds } from "../lib/gateway";
-import type { Api, CheckDeps, Model, SyncDeps } from "../lib/types";
+import type {
+  Api,
+  AssistantMessageEventStream,
+  CheckDeps,
+  Context,
+  Model,
+  SimpleStreamOptions,
+  SyncDeps,
+} from "../lib/types";
 import { resolveProviderBaseUrl } from "../lib/url";
 
 /**
@@ -46,12 +55,29 @@ export class ApertureRuntime {
       );
       if (providerModels.length === 0) continue;
 
+      const api = providerModels[0].api ?? "openai-completions";
+      const builtIn = getApiProvider(api);
+
       deps.registerProvider(providerName, {
         baseUrl,
         apiKey: "-",
         headers: resolveProviderHeaders(providerModels),
-        api: providerModels[0].api ?? "openai-completions",
+        api,
         models: providerModels,
+        streamSimple: builtIn
+          ? (
+              model: Model<Api>,
+              context: Context,
+              options?: SimpleStreamOptions,
+            ): AssistantMessageEventStream =>
+              builtIn.streamSimple(model, context, {
+                ...options,
+                headers: {
+                  ...options?.headers,
+                  "x-session-id": options?.sessionId ?? "",
+                },
+              })
+          : undefined,
       });
 
       this.registeredProviders.add(providerName);
