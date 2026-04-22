@@ -17,12 +17,12 @@ import type {
   ExtensionContext,
 } from "@mariozechner/pi-coding-agent";
 import { getSettingsListTheme } from "@mariozechner/pi-coding-agent";
-import type { ApertureConfig, ResolvedConfig } from "../config";
-import { configLoader } from "../config";
+import type { ApertureConfig, ResolvedConfig } from "../lib/config";
+import { configLoader } from "../lib/config";
 
 export function registerApertureSettings(
   pi: ExtensionAPI,
-  onConfigChange: (ctx: ExtensionContext) => void,
+  onSync: (ctx: ExtensionContext) => void,
 ): void {
   registerSettingsCommand<ApertureConfig, ResolvedConfig>(pi, {
     commandName: "aperture:settings",
@@ -129,7 +129,7 @@ export function registerApertureSettings(
       return updated;
     },
     onSave: (ctx) => {
-      onConfigChange(ctx);
+      onSync(ctx);
     },
   });
 }

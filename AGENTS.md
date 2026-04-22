@@ -4,13 +4,14 @@ Pi extension that routes selected Pi providers through Tailscale Aperture.
 
 ## Structure
 
-- `src/index.ts` - Entry point orchestration only: load config, bootstrap model visibility, register hooks, register commands.
-- `src/config.ts` - Config schema (`ApertureConfig`, `ResolvedConfig`) and `ConfigLoader` instance.
-- `src/core/` - Pure functions and types for URL normalization, plan building, and config change handling.
-- `src/providers/aperture.ts` - Core routing logic (provider endpoint override, header injection, active-model refresh).
+- `src/index.ts` - Entry point orchestration: load config, register lifecycle hooks, wire commands.
+- `src/lib/config.ts` - Config schema (`ApertureConfig`, `ResolvedConfig`) and `configLoader` instance.
+- `src/lib/url.ts` - URL normalization helpers (`normalizeInputUrl`, `resolveGatewayUrl`, `resolveProviderBaseUrl`).
+- `src/lib/gateway.ts` - Gateway health check (`checkApertureHealth`) and model ID fetching (`fetchGatewayModelIds`).
+- `src/lib/types.ts` - Internal types including `SyncDeps` and `CheckDeps` interfaces for dependency injection.
+- `src/extension/runtime.ts` - `ApertureRuntime` class with `sync()` and `checkMissingModels()` methods.
 - `src/commands/setup.ts` - `/aperture:setup` interactive wizard (URL input + provider multi-select + health check).
 - `src/commands/settings.ts` - `/aperture:settings` settings UI via `registerSettingsCommand`.
-- `src/lib/health.ts` - Health check helper for setup wizard.
 
 ## Key decisions
 
@@ -24,6 +25,7 @@ Pi extension that routes selected Pi providers through Tailscale Aperture.
 - URLs are normalized on input: scheme is added when missing, trailing `/v1` is stripped (re-appended during provider registration).
 - Providers with no models in the registry are skipped (nothing to reroute).
 - Optional per-provider gateway model verification (`checkGatewayModels` config) warns at startup if configured models are missing from the Aperture gateway.
+- Removed providers trigger unregistration with a notification to `/reload` for native provider recovery.
 
 ## Dependencies
 

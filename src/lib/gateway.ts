@@ -1,8 +1,5 @@
 /**
- * Health check for the Aperture gateway.
- *
- * Hits GET <baseUrl>/v1/models to verify the gateway is reachable.
- * Uses native fetch (no extra dependencies).
+ * Gateway health and model checking.
  */
 
 export interface HealthCheckResult {

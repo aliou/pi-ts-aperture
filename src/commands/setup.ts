@@ -20,9 +20,9 @@ import type {
 } from "@mariozechner/pi-coding-agent";
 import type { Component, TUI } from "@mariozechner/pi-tui";
 import { Input } from "@mariozechner/pi-tui";
-import { configLoader } from "../config";
-import { normalizeInputUrl } from "../core";
-import { checkApertureHealth } from "../lib/health";
+import { configLoader } from "../lib/config";
+import { checkApertureHealth } from "../lib/gateway";
+import { normalizeInputUrl } from "../lib/url";
 
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
@@ -133,7 +133,7 @@ class UrlStep implements Component {
 
 export function registerSetupCommand(
   pi: ExtensionAPI,
-  onConfigChange: (ctx: ExtensionContext) => void,
+  onSync: (ctx: ExtensionContext) => void,
 ): void {
   pi.registerCommand("aperture:setup", {
     description: "Configure Tailscale Aperture integration",
@@ -222,7 +222,7 @@ export function registerSetupCommand(
         providers,
         checkGatewayModels,
       });
-      onConfigChange(ctx);
+      onSync(ctx);
       ctx.ui.notify(
         `Aperture configured: ${providers.length} provider(s) via ${baseUrl}`,
         "info",
