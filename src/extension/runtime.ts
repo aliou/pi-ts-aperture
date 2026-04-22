@@ -63,7 +63,6 @@ export class ApertureRuntime {
         apiKey: "-",
         headers: resolveProviderHeaders(providerModels),
         api,
-        models: providerModels,
         streamSimple: builtIn
           ? (
               model: Model<Api>,

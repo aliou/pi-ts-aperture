@@ -29,7 +29,6 @@ export interface SyncDeps {
       apiKey: string;
       headers: Record<string, string>;
       api: string;
-      models: Model<Api>[];
       streamSimple?: (
         model: Model<Api>,
         context: Context,
