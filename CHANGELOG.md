@@ -1,5 +1,16 @@
 # @aliou/pi-ts-aperture
 
+## 0.5.0
+
+### Minor Changes
+
+- b51d282: Rewrite extension architecture. Moves core logic to `src/lib/`, introduces `ApertureRuntime` class with dependency injection, replaces lifecycle hooks with `session_start` + `onSync` callback pattern, and adds provider unregistration with user notification.
+- 00ba115: Add `streamSimple` wrapper that sends `x-session-id` header with the Pi session ID. This groups all requests from the same Pi session together in the Aperture dashboard.
+
+### Patch Changes
+
+- cda19d3: Drop `models` from `registerProvider` call. Rely on the baseUrl-override path instead, which preserves built-in model definitions (reasoning, compat, thinking levels) and only updates the endpoint URL.
+
 ## 0.4.0
 
 ### Minor Changes
