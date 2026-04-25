@@ -5,8 +5,8 @@
  */
 
 import { getApiProvider } from "@mariozechner/pi-ai";
-import { configLoader } from "../lib/config";
-import { fetchGatewayModels } from "../lib/gateway";
+import { configLoader } from "../../lib/config";
+import { fetchGatewayModels } from "../../lib/gateway";
 import type {
   Api,
   AssistantMessageEventStream,
@@ -15,8 +15,8 @@ import type {
   Model,
   SimpleStreamOptions,
   SyncDeps,
-} from "../lib/types";
-import { resolveProviderBaseUrl } from "../lib/url";
+} from "../../lib/types";
+import { resolveProviderBaseUrl } from "../../lib/url";
 
 /**
  * Preserve provenance similarly to pi-synthetic so downstream providers can

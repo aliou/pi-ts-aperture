@@ -17,8 +17,8 @@ import type {
   ExtensionContext,
 } from "@mariozechner/pi-coding-agent";
 import { getSettingsListTheme } from "@mariozechner/pi-coding-agent";
-import type { ApertureConfig, ResolvedConfig } from "../lib/config";
-import { configLoader } from "../lib/config";
+import type { ApertureConfig, ResolvedConfig } from "../../lib/config";
+import { configLoader } from "../../lib/config";
 
 export function registerApertureSettings(
   pi: ExtensionAPI,

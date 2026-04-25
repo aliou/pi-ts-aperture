@@ -1,16 +1,16 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import { configLoader } from "../lib/config";
-import { fetchGatewayModels } from "../lib/gateway";
-import type { Api, Model } from "../lib/types";
+import { configLoader } from "../../lib/config";
+import { fetchGatewayModels } from "../../lib/gateway";
+import type { Api, Model } from "../../lib/types";
 import { ApertureRuntime } from "./runtime";
 
-vi.mock("../lib/config", () => ({
+vi.mock("../../lib/config", () => ({
   configLoader: {
     getConfig: vi.fn(),
   },
 }));
 
-vi.mock("../lib/gateway", () => ({
+vi.mock("../../lib/gateway", () => ({
   fetchGatewayModels: vi.fn(),
 }));
 
