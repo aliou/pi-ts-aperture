@@ -1,21 +1,19 @@
 /**
- * Pi extension for Tailscale Aperture integration.
+ * Aperture provider extension.
  *
- * Entry point orchestration:
- * - Load config
- * - Register session_start hook for provider registration
- * - Register user commands
+ * Routes selected Pi providers through Tailscale Aperture.
+ * Registers the setup wizard and settings commands.
  */
 
 import type {
   ExtensionAPI,
   ExtensionContext,
 } from "@mariozechner/pi-coding-agent";
-import { registerApertureSettings } from "./commands/settings";
-import { registerSetupCommand } from "./commands/setup";
-import { ApertureRuntime } from "./extension/runtime";
-import { configLoader } from "./lib/config";
-import { resolveGatewayUrl } from "./lib/url";
+import { configLoader } from "../../lib/config";
+import { resolveGatewayUrl } from "../../lib/url";
+import { ApertureRuntime } from "./runtime";
+import { registerApertureSettings } from "./settings-command";
+import { registerSetupCommand } from "./setup-command";
 
 export default async function (pi: ExtensionAPI): Promise<void> {
   await configLoader.load();
