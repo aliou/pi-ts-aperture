@@ -49,6 +49,10 @@ function copyModelConfig(
 export class ApertureProviderRuntime {
   private registered = false;
   private requestModelIds = new Map<string, string>();
+  private upstreamProviders = new Map<
+    string,
+    { id: string; name?: string } | undefined
+  >();
 
   async sync(deps: ProviderSyncDeps): Promise<void> {
     const gatewayModels = await fetchGatewayModels(deps.gatewayUrl);
@@ -58,9 +62,14 @@ export class ApertureProviderRuntime {
       .getModels()
       .filter((m) => m.provider !== PROVIDER_NAME);
     const requestModelIds = new Map<string, string>();
+    const upstreamProviders = new Map<
+      string,
+      { id: string; name?: string } | undefined
+    >();
     const models = gatewayModels.map((gatewayModel) => {
       const apertureModelId = getApertureModelId(gatewayModel);
       requestModelIds.set(apertureModelId, gatewayModel.id);
+      upstreamProviders.set(apertureModelId, gatewayModel.provider);
 
       const match =
         registryModels.find(
@@ -73,6 +82,7 @@ export class ApertureProviderRuntime {
         : buildDefaultModelConfig(apertureModelId);
     });
     this.requestModelIds = requestModelIds;
+    this.upstreamProviders = upstreamProviders;
 
     const builtIn = getApiProvider("openai-completions");
 
@@ -96,6 +106,10 @@ export class ApertureProviderRuntime {
                 headers: {
                   ...options?.headers,
                   "x-session-id": options?.sessionId ?? "",
+                  "x-upstream-provider-id":
+                    this.upstreamProviders.get(model.id)?.id ?? "",
+                  "x-upstream-provider-name":
+                    this.upstreamProviders.get(model.id)?.name ?? "",
                 },
               },
             )
