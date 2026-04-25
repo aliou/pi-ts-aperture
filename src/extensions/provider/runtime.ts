@@ -3,7 +3,7 @@ import type {
   ProviderConfig,
   ProviderModelConfig,
 } from "@mariozechner/pi-coding-agent";
-import { fetchGatewayModelIds } from "../../lib/gateway";
+import { fetchGatewayModels, type GatewayModel } from "../../lib/gateway";
 import { buildDefaultModelConfig } from "../../lib/model-defaults";
 import type {
   Api,
@@ -27,9 +27,16 @@ interface ProviderSyncDeps {
   baseUrl: string;
 }
 
-function copyModelConfig(model: Model<Api>): ProviderModelConfig {
+function getApertureModelId(model: GatewayModel): string {
+  return model.provider ? `${model.provider.id}/${model.id}` : model.id;
+}
+
+function copyModelConfig(
+  model: Model<Api>,
+  gatewayModel: GatewayModel,
+): ProviderModelConfig {
   return {
-    id: model.id,
+    id: getApertureModelId(gatewayModel),
     name: model.name,
     reasoning: model.reasoning,
     input: model.input,
@@ -41,18 +48,31 @@ function copyModelConfig(model: Model<Api>): ProviderModelConfig {
 
 export class ApertureProviderRuntime {
   private registered = false;
+  private requestModelIds = new Map<string, string>();
 
   async sync(deps: ProviderSyncDeps): Promise<void> {
-    const gatewayModelIds = await fetchGatewayModelIds(deps.gatewayUrl);
-    if (gatewayModelIds.length === 0) return;
+    const gatewayModels = await fetchGatewayModels(deps.gatewayUrl);
+    if (gatewayModels.length === 0) return;
 
     const registryModels = deps
       .getModels()
       .filter((m) => m.provider !== PROVIDER_NAME);
-    const models = gatewayModelIds.map((id) => {
-      const match = registryModels.find((m) => m.id === id);
-      return match ? copyModelConfig(match) : buildDefaultModelConfig(id);
+    const requestModelIds = new Map<string, string>();
+    const models = gatewayModels.map((gatewayModel) => {
+      const apertureModelId = getApertureModelId(gatewayModel);
+      requestModelIds.set(apertureModelId, gatewayModel.id);
+
+      const match =
+        registryModels.find(
+          (m) =>
+            m.id === gatewayModel.id &&
+            m.provider === gatewayModel.provider?.id,
+        ) ?? registryModels.find((m) => m.id === gatewayModel.id);
+      return match
+        ? copyModelConfig(match, gatewayModel)
+        : buildDefaultModelConfig(apertureModelId);
     });
+    this.requestModelIds = requestModelIds;
 
     const builtIn = getApiProvider("openai-completions");
 
@@ -68,13 +88,17 @@ export class ApertureProviderRuntime {
             context: Context,
             options?: SimpleStreamOptions,
           ): AssistantMessageEventStream =>
-            builtIn.streamSimple(model, context, {
-              ...options,
-              headers: {
-                ...options?.headers,
-                "x-session-id": options?.sessionId ?? "",
+            builtIn.streamSimple(
+              { ...model, id: this.requestModelIds.get(model.id) ?? model.id },
+              context,
+              {
+                ...options,
+                headers: {
+                  ...options?.headers,
+                  "x-session-id": options?.sessionId ?? "",
+                },
               },
-            })
+            )
         : undefined,
     });
 

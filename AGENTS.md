@@ -33,7 +33,8 @@ Pi extension that routes selected Pi providers through Tailscale Aperture.
 - Optional per-provider gateway model verification (`checkGatewayModels` config) warns at startup if configured models are missing from the Aperture gateway.
 - Removed providers trigger unregistration with a notification to `/reload` for native provider recovery.
 - Provider mode uses `openai-completions` API for all models regardless of original provider API type.
-- Provider mode model metadata is copied from matching registry models (by ID). Unrecognized models get safe defaults (128k context, 8k output, text-only, no reasoning, zero cost).
+- Provider mode model IDs are exposed as `provider/modelId` when Aperture returns `metadata.provider.id`; the provider prefix is stripped before requests are sent to Aperture.
+- Provider mode model metadata is copied from matching registry models (by provider ID and model ID, then by model ID fallback). Unrecognized models get safe defaults (128k context, 8k output, text-only, no reasoning, zero cost).
 
 ## Dependencies
 
