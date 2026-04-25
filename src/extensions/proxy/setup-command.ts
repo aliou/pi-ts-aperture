@@ -110,6 +110,7 @@ export function registerSetupCommand(
         baseUrl,
         providers,
         checkGatewayModels,
+        apertureProvider: config.apertureProvider,
       });
       onSync(ctx);
       ctx.ui.notify(

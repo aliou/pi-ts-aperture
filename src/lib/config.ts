@@ -11,18 +11,21 @@ export interface ApertureConfig {
   baseUrl?: string;
   providers?: string[];
   checkGatewayModels?: string[];
+  apertureProvider?: boolean;
 }
 
 export interface ResolvedConfig {
   baseUrl: string;
   providers: string[];
   checkGatewayModels: string[];
+  apertureProvider: boolean;
 }
 
 const DEFAULT_CONFIG: ResolvedConfig = {
   baseUrl: "",
   providers: [],
   checkGatewayModels: [],
+  apertureProvider: false,
 };
 
 export const configLoader = new ConfigLoader<ApertureConfig, ResolvedConfig>(
