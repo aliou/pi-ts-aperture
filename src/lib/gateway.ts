@@ -7,6 +7,27 @@ export interface HealthCheckResult {
   error?: string;
 }
 
+export interface GatewayModel {
+  id: string;
+  providerId: string;
+  provider?: {
+    id: string;
+    name?: string;
+  };
+}
+
+interface GatewayModelResponse {
+  data?: {
+    id: string;
+    metadata?: {
+      provider?: {
+        id?: string;
+        name?: string;
+      };
+    };
+  }[];
+}
+
 export async function checkApertureHealth(
   baseUrl: string,
 ): Promise<HealthCheckResult> {
@@ -26,11 +47,6 @@ export async function checkApertureHealth(
   }
 }
 
-export interface GatewayModel {
-  id: string;
-  providerId: string;
-}
-
 export async function fetchGatewayModels(
   baseUrl: string,
 ): Promise<GatewayModel[]> {
@@ -41,21 +57,30 @@ export async function fetchGatewayModels(
       signal: AbortSignal.timeout(5000),
     });
     if (!res.ok) return [];
-    const body = (await res.json()) as {
-      data?: {
-        id: string;
-        metadata?: { provider?: { id?: string } };
-      }[];
-    };
+    const body = (await res.json()) as GatewayModelResponse;
     return (
       body.data
-        ?.map((m) => ({
-          id: m.id,
-          providerId: m.metadata?.provider?.id ?? "",
-        }))
+        ?.map((m) => {
+          const providerId = m.metadata?.provider?.id ?? "";
+          return {
+            id: m.id,
+            providerId,
+            provider: providerId
+              ? {
+                  id: providerId,
+                  name: m.metadata?.provider?.name,
+                }
+              : undefined,
+          };
+        })
         .filter((m) => m.providerId.length > 0) ?? []
     );
   } catch {
     return [];
   }
+}
+
+export async function fetchGatewayModelIds(baseUrl: string): Promise<string[]> {
+  const models = await fetchGatewayModels(baseUrl);
+  return models.map((m) => m.id);
 }
