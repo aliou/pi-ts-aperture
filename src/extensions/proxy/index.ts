@@ -1,5 +1,5 @@
 /**
- * Aperture provider extension.
+ * Aperture proxy extension.
  *
  * Routes selected Pi providers through Tailscale Aperture.
  * Registers the setup wizard and settings commands.
@@ -10,6 +10,7 @@ import type {
   ExtensionContext,
 } from "@mariozechner/pi-coding-agent";
 import { configLoader } from "../../lib/config";
+import { emitConfigSync } from "../../lib/sync-bus";
 import { resolveGatewayUrl } from "../../lib/url";
 import { ApertureRuntime } from "./runtime";
 import { registerApertureSettings } from "./settings-command";
@@ -25,6 +26,8 @@ export default async function (pi: ExtensionAPI): Promise<void> {
 
   // Sync function used by commands after config changes
   const onSync = (ctx: ExtensionContext): void => {
+    emitConfigSync();
+
     const config = configLoader.getConfig();
 
     // Unregister providers that were removed from config

@@ -36,6 +36,8 @@ export function registerApertureSettings(
       const settingsTheme = getSettingsListTheme();
 
       const providers = tabConfig?.providers ?? resolved.providers;
+      const apertureProvider =
+        tabConfig?.apertureProvider ?? resolved.apertureProvider;
 
       const checkGatewayModels: string[] =
         tabConfig?.checkGatewayModels ?? resolved.checkGatewayModels;
@@ -93,6 +95,14 @@ export function registerApertureSettings(
           label: "Providers",
           items: [
             {
+              id: "apertureProvider",
+              label: "Register aperture provider",
+              description:
+                "Register a dedicated aperture provider with models from the gateway",
+              currentValue: apertureProvider ? "enabled" : "disabled",
+              values: ["enabled", "disabled"],
+            },
+            {
               id: "providers",
               label: "Routed providers",
               description: "LLM providers routed through Aperture",
@@ -123,6 +133,8 @@ export function registerApertureSettings(
       const updated = structuredClone(config);
       if (id === "baseUrl") {
         updated.baseUrl = newValue;
+      } else if (id === "apertureProvider") {
+        updated.apertureProvider = newValue === "enabled";
       } else {
         setNestedValue(updated, id, newValue);
       }

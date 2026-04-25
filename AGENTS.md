@@ -4,12 +4,16 @@ Pi extension that routes selected Pi providers through Tailscale Aperture.
 
 ## Structure
 
-- `src/extensions/proxy/index.ts` - Entry point: load config, register lifecycle hooks, wire commands.
-- `src/extensions/proxy/runtime.ts` - `ApertureRuntime` class with `sync()` and `checkMissingModels()` methods.
+- `src/extensions/proxy/index.ts` - Entry point: proxy mode (overrides existing providers' `baseUrl`).
+- `src/extensions/proxy/runtime.ts` - `ApertureRuntime` class for proxy mode.
 - `src/extensions/proxy/setup-command.ts` - `/aperture:setup` command registration.
 - `src/extensions/proxy/setup-wizard.ts` - `UrlStep` TUI component for the setup wizard.
 - `src/extensions/proxy/settings-command.ts` - `/aperture:settings` settings UI via `registerSettingsCommand`.
+- `src/extensions/provider/index.ts` - Entry point: provider mode (registers `"aperture"` provider).
+- `src/extensions/provider/runtime.ts` - `ApertureProviderRuntime` class for provider mode.
 - `src/lib/config.ts` - Config schema (`ApertureConfig`, `ResolvedConfig`) and `configLoader` instance.
+- `src/lib/model-defaults.ts` - Default model config for unknown gateway models.
+- `src/lib/sync-bus.ts` - Shared config sync event bus.
 - `src/lib/url.ts` - URL normalization helpers (`normalizeInputUrl`, `resolveGatewayUrl`, `resolveProviderBaseUrl`).
 - `src/lib/gateway.ts` - Gateway health check (`checkApertureHealth`) and model ID fetching (`fetchGatewayModelIds`).
 - `src/lib/types.ts` - Internal types including `SyncDeps` and `CheckDeps` interfaces for dependency injection.
@@ -28,6 +32,8 @@ Pi extension that routes selected Pi providers through Tailscale Aperture.
 - Providers with no models in the registry are skipped (nothing to reroute).
 - Optional per-provider gateway model verification (`checkGatewayModels` config) warns at startup if configured models are missing from the Aperture gateway.
 - Removed providers trigger unregistration with a notification to `/reload` for native provider recovery.
+- Provider mode uses `openai-completions` API for all models regardless of original provider API type.
+- Provider mode model metadata is copied from matching registry models (by ID). Unrecognized models get safe defaults (128k context, 8k output, text-only, no reasoning, zero cost).
 
 ## Dependencies
 
