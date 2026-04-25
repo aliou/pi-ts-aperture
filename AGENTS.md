@@ -4,11 +4,11 @@ Pi extension that routes selected Pi providers through Tailscale Aperture.
 
 ## Structure
 
-- `src/extensions/provider/index.ts` - Entry point: load config, register lifecycle hooks, wire commands.
-- `src/extensions/provider/runtime.ts` - `ApertureRuntime` class with `sync()` and `checkMissingModels()` methods.
-- `src/extensions/provider/setup-command.ts` - `/aperture:setup` command registration.
-- `src/extensions/provider/setup-wizard.ts` - `UrlStep` TUI component for the setup wizard.
-- `src/extensions/provider/settings-command.ts` - `/aperture:settings` settings UI via `registerSettingsCommand`.
+- `src/extensions/proxy/index.ts` - Entry point: load config, register lifecycle hooks, wire commands.
+- `src/extensions/proxy/runtime.ts` - `ApertureRuntime` class with `sync()` and `checkMissingModels()` methods.
+- `src/extensions/proxy/setup-command.ts` - `/aperture:setup` command registration.
+- `src/extensions/proxy/setup-wizard.ts` - `UrlStep` TUI component for the setup wizard.
+- `src/extensions/proxy/settings-command.ts` - `/aperture:settings` settings UI via `registerSettingsCommand`.
 - `src/lib/config.ts` - Config schema (`ApertureConfig`, `ResolvedConfig`) and `configLoader` instance.
 - `src/lib/url.ts` - URL normalization helpers (`normalizeInputUrl`, `resolveGatewayUrl`, `resolveProviderBaseUrl`).
 - `src/lib/gateway.ts` - Gateway health check (`checkApertureHealth`) and model ID fetching (`fetchGatewayModelIds`).
