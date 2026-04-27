@@ -1,5 +1,11 @@
 # @aliou/pi-ts-aperture
 
+## 0.5.1
+
+### Patch Changes
+
+- e3fbc00: Fix gateway model checks to match models by provider and limit warning output per provider.
+
 ## 0.5.0
 
 ### Minor Changes
