@@ -26,7 +26,14 @@ export async function checkApertureHealth(
   }
 }
 
-export async function fetchGatewayModelIds(baseUrl: string): Promise<string[]> {
+export interface GatewayModel {
+  id: string;
+  providerId: string;
+}
+
+export async function fetchGatewayModels(
+  baseUrl: string,
+): Promise<GatewayModel[]> {
   const url = `${baseUrl.replace(/\/+$/, "")}/v1/models`;
   try {
     const res = await fetch(url, {
@@ -34,8 +41,20 @@ export async function fetchGatewayModelIds(baseUrl: string): Promise<string[]> {
       signal: AbortSignal.timeout(5000),
     });
     if (!res.ok) return [];
-    const body = (await res.json()) as { data?: { id: string }[] };
-    return body.data?.map((m) => m.id) ?? [];
+    const body = (await res.json()) as {
+      data?: {
+        id: string;
+        metadata?: { provider?: { id?: string } };
+      }[];
+    };
+    return (
+      body.data
+        ?.map((m) => ({
+          id: m.id,
+          providerId: m.metadata?.provider?.id ?? "",
+        }))
+        .filter((m) => m.providerId.length > 0) ?? []
+    );
   } catch {
     return [];
   }

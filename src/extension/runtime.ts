@@ -6,7 +6,7 @@
 
 import { getApiProvider } from "@mariozechner/pi-ai";
 import { configLoader } from "../lib/config";
-import { fetchGatewayModelIds } from "../lib/gateway";
+import { fetchGatewayModels } from "../lib/gateway";
 import type {
   Api,
   AssistantMessageEventStream,
@@ -26,6 +26,8 @@ const APERTURE_PROVENANCE_HEADERS = {
   Referer: "https://pi.dev",
   "X-Title": "npm:@aliou/pi-ts-aperture",
 };
+
+const MAX_MISSING_MODELS_PER_PROVIDER = 5;
 
 function resolveProviderHeaders(models: Model<Api>[]): Record<string, string> {
   const modelHeaders = models.find((m) => m.headers)?.headers ?? {};
@@ -87,23 +89,43 @@ export class ApertureRuntime {
     const config = configLoader.getConfig();
     if (config.checkGatewayModels.length === 0) return;
 
-    const gatewayModelIds = await fetchGatewayModelIds(gatewayUrl);
-    if (gatewayModelIds.length === 0) return;
+    const gatewayModels = await fetchGatewayModels(gatewayUrl);
+    if (gatewayModels.length === 0) return;
 
     const allModels = deps.getModels();
     const checkedProviders = new Set(config.checkGatewayModels);
+    const gatewayModelKeys = new Set(
+      gatewayModels.map((m) => `${m.providerId}:${m.id}`),
+    );
 
     const routedModels = allModels.filter((m) =>
       checkedProviders.has(m.provider),
     );
     const missingModels = routedModels.filter(
-      (m) => !gatewayModelIds.includes(m.id),
+      (m) => !gatewayModelKeys.has(`${m.provider}:${m.id}`),
     );
 
     if (missingModels.length > 0) {
-      const ids = missingModels.map((m) => m.id).join(", ");
+      const missingByProvider = new Map<string, Model<Api>[]>();
+      for (const model of missingModels) {
+        const providerModels = missingByProvider.get(model.provider) ?? [];
+        providerModels.push(model);
+        missingByProvider.set(model.provider, providerModels);
+      }
+
+      const summary = Array.from(missingByProvider.entries())
+        .map(([provider, models]) => {
+          const shownModels = models
+            .slice(0, MAX_MISSING_MODELS_PER_PROVIDER)
+            .map((m) => m.id);
+          const remainingCount = models.length - shownModels.length;
+          const more = remainingCount > 0 ? `, ${remainingCount} more` : "";
+          return `${provider}: ${shownModels.join(", ")}${more}`;
+        })
+        .join("; ");
+
       deps.notify(
-        `[aperture] models not available on gateway: ${ids}. Add them to the gateway configuration.`,
+        `[aperture] models not available on gateway: ${summary}. Add them to the gateway configuration.`,
         "warning",
       );
     }
