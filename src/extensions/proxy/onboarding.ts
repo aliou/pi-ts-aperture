@@ -72,12 +72,19 @@ class FilterableChecklist implements Component {
 
   constructor(
     private readonly settingsTheme: SettingsTheme,
-    private readonly items: ChecklistItem[],
+    items: ChecklistItem[],
     private readonly onToggle: (id: string) => void,
     private readonly onSubToggle: (id: string) => void,
     private readonly onContinue: () => void,
     private readonly hintExtra = "",
-  ) {}
+  ) {
+    this.items = items;
+  }
+
+  /** Update items in place (preserves search state). */
+  updateItems(items: ChecklistItem[]): void {
+    this.items = items;
+  }
 
   invalidate() {}
 
@@ -460,18 +467,7 @@ class ProxyProvidersStep implements Component {
         "g: gateway check",
       );
     } else {
-      // Refresh items (checked state may have changed)
-      this.checklist = new FilterableChecklist(
-        this.settingsTheme,
-        this.buildItems(),
-        (id) => this.toggleProvider(id),
-        (id) => this.toggleGatewayCheck(id),
-        () => {
-          this.saveState();
-          this.onSelect();
-        },
-        "g: gateway check",
-      );
+      this.checklist.updateItems(this.buildItems());
     }
 
     return [
@@ -878,16 +874,7 @@ class DedicatedProvidersStep implements Component {
         },
       );
     } else {
-      this.checklist = new FilterableChecklist(
-        this.settingsTheme,
-        this.buildItems(),
-        (id) => this.toggleProvider(id),
-        () => {},
-        () => {
-          this.saveState();
-          this.onSelect();
-        },
-      );
+      this.checklist.updateItems(this.buildItems());
     }
 
     return [
