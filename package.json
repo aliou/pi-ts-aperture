@@ -30,7 +30,7 @@
     "video": "https://assets.aliou.me/pi-extensions/demos/pi-ts-aperture.mp4"
   },
   "dependencies": {
-    "@aliou/pi-utils-settings": "^0.12.0"
+    "@aliou/pi-utils-settings": "^0.15.1"
   },
   "peerDependencies": {
     "@mariozechner/pi-ai": "0.64.0",
@@ -63,6 +63,7 @@
   },
   "devDependencies": {
     "@aliou/biome-plugins": "^0.3.2",
+    "@aliou/pi-utils-ui": "^0.4.1",
     "@biomejs/biome": "^2.3.13",
     "@changesets/cli": "^2.27.11",
     "@mariozechner/pi-coding-agent": "0.64.0",

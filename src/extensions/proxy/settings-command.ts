@@ -2,23 +2,41 @@
  * aperture:settings -- settings UI for Aperture configuration.
  *
  * Sections:
- * - Connection: base URL
- * - Providers: list of providers routed through Aperture
+ * - Connection: base URL (editable)
+ * - Mode: dedicated or proxy
+ * - Proxy: upstream providers list with gateway check sub-options
+ * - Dedicated: (empty for now)
+ * - Setup: onboarding status and re-enable action
  */
 
 import {
-  ArrayEditor,
   registerSettingsCommand,
+  SettingsDetailEditor,
+  type SettingsDetailField,
   type SettingsSection,
-  setNestedValue,
 } from "@aliou/pi-utils-settings";
 import type {
   ExtensionAPI,
   ExtensionContext,
 } from "@mariozechner/pi-coding-agent";
 import { getSettingsListTheme } from "@mariozechner/pi-coding-agent";
-import type { ApertureConfig, ResolvedConfig } from "../../lib/config";
+import type {
+  ApertureConfig,
+  ApertureMode,
+  ResolvedConfig,
+} from "../../lib/config";
 import { configLoader } from "../../lib/config";
+import { normalizeInputUrl } from "../../lib/url";
+
+const MODE_LABELS: Record<ApertureMode, string> = {
+  dedicated: "Dedicated Aperture provider",
+  proxy: "Proxy existing providers",
+};
+
+function getModeFromLabel(label: string): ApertureMode {
+  if (label === MODE_LABELS.dedicated) return "dedicated";
+  return "proxy";
+}
 
 export function registerApertureSettings(
   pi: ExtensionAPI,
@@ -33,14 +51,12 @@ export function registerApertureSettings(
       resolved: ResolvedConfig,
       { setDraft },
     ): SettingsSection[] => {
-      const settingsTheme = getSettingsListTheme();
-
-      const providers = tabConfig?.providers ?? resolved.providers;
-      const apertureProvider =
-        tabConfig?.apertureProvider ?? resolved.apertureProvider;
-
-      const checkGatewayModels: string[] =
-        tabConfig?.checkGatewayModels ?? resolved.checkGatewayModels;
+      const baseUrl = tabConfig?.baseUrl ?? resolved.baseUrl;
+      const mode = tabConfig?.mode ?? resolved.mode;
+      const onboardingDone =
+        tabConfig?.onboardingDone ?? resolved.onboardingDone;
+      const upstreamProviders =
+        tabConfig?.proxy?.upstreamProviders ?? resolved.proxy.upstreamProviders;
 
       return [
         {
@@ -51,79 +67,152 @@ export function registerApertureSettings(
               label: "Base URL",
               description:
                 "Aperture gateway URL on your tailnet (e.g. http://ai.pango-lin.ts.net)",
-              currentValue:
-                (tabConfig?.baseUrl ?? resolved.baseUrl) || "(not set)",
-              values: undefined,
-              submenu: undefined,
-            },
-            {
-              id: "checkGatewayModels",
-              label: "Gateway model checking",
-              description:
-                "Providers for which gateway model availability is checked",
-              currentValue:
-                checkGatewayModels.length > 0
-                  ? `${checkGatewayModels.length} provider(s)`
-                  : "disabled",
-              values: undefined,
-              submenu: (_val, submenuDone) => {
-                let latest = [...checkGatewayModels];
-                return new ArrayEditor({
-                  label: "Gateway-checked providers",
-                  items: [...checkGatewayModels],
-                  theme: settingsTheme,
-                  onSave: (items) => {
-                    latest = items;
-                    const updated = structuredClone(
-                      tabConfig ?? {},
-                    ) as ApertureConfig;
-                    setNestedValue(updated, "checkGatewayModels", items);
-                    setDraft(updated);
+              currentValue: baseUrl || "(not set)",
+              submenu: (
+                _val: string,
+                submenuDone: (selectedValue?: string) => void,
+              ) => {
+                let currentUrl = baseUrl;
+
+                const fields: SettingsDetailField[] = [
+                  {
+                    type: "text",
+                    id: "baseUrl",
+                    label: "Base URL",
+                    getValue: () => currentUrl,
+                    setValue: (value) => {
+                      currentUrl = value;
+                      const updated = structuredClone(
+                        tabConfig ?? {},
+                      ) as ApertureConfig;
+                      updated.baseUrl = normalizeInputUrl(value);
+                      setDraft(updated);
+                    },
+                    validate: (value) => {
+                      if (!value.trim()) return "URL cannot be empty";
+                      return null;
+                    },
+                    displayValue: (value) => value || "(not set)",
+                    emptyValueText: "(not set)",
                   },
-                  onDone: () =>
-                    submenuDone(
-                      latest.length > 0
-                        ? `${latest.length} provider(s)`
-                        : "disabled",
-                    ),
+                ];
+
+                return new SettingsDetailEditor({
+                  title: "Base URL",
+                  fields,
+                  theme: getSettingsListTheme(),
+                  onDone: (summary) =>
+                    submenuDone(summary ?? (baseUrl || "(not set)")),
+                  getDoneSummary: () => currentUrl || "(not set)",
                 });
               },
             },
           ],
         },
         {
-          label: "Providers",
+          label: "Mode",
           items: [
             {
-              id: "apertureProvider",
-              label: "Register aperture provider",
+              id: "mode",
+              label: "Mode",
               description:
-                "Register a dedicated aperture provider with models from the gateway",
-              currentValue: apertureProvider ? "enabled" : "disabled",
-              values: ["enabled", "disabled"],
+                mode === "dedicated"
+                  ? "A standalone aperture provider with models from the gateway"
+                  : "Existing Pi providers rerouted through Aperture",
+              currentValue: MODE_LABELS[mode],
+              values: [MODE_LABELS.dedicated, MODE_LABELS.proxy],
             },
+          ],
+        },
+        {
+          label: "Proxy",
+          items: [
             {
-              id: "providers",
-              label: "Routed providers",
-              description: "LLM providers routed through Aperture",
-              currentValue: `${providers.length} provider(s)`,
-              submenu: (_val, submenuDone) => {
-                let latest = [...providers];
-                return new ArrayEditor({
-                  label: "Providers",
-                  items: [...providers],
-                  theme: settingsTheme,
-                  onSave: (items) => {
-                    latest = items;
-                    const updated = structuredClone(
-                      tabConfig ?? {},
-                    ) as ApertureConfig;
-                    setNestedValue(updated, "providers", items);
-                    setDraft(updated);
-                  },
-                  onDone: () => submenuDone(`${latest.length} provider(s)`),
-                });
-              },
+              id: "proxy.upstreamProviders",
+              label: "Upstream providers",
+              description:
+                mode === "proxy"
+                  ? "Providers routed through Aperture in proxy mode"
+                  : "Not applicable in dedicated mode",
+              currentValue:
+                mode === "proxy"
+                  ? upstreamProviders.length > 0
+                    ? `${upstreamProviders.length} provider(s)`
+                    : "none"
+                  : "n/a",
+              submenu:
+                mode === "proxy"
+                  ? (
+                      _val: string,
+                      submenuDone: (selectedValue?: string) => void,
+                    ) => {
+                      const theme = getSettingsListTheme();
+                      const providers = structuredClone(upstreamProviders);
+
+                      const fields: SettingsDetailField[] = providers.map(
+                        (p, i) => ({
+                          type: "boolean" as const,
+                          id: `provider.${p.id}.shouldCheckGatewayModels`,
+                          label: `${p.id} \u2014 verify gateway models`,
+                          getValue: () => p.shouldCheckGatewayModels as boolean,
+                          setValue: (value: boolean) => {
+                            const provider = providers[i];
+                            if (provider)
+                              provider.shouldCheckGatewayModels = value;
+                            const updated = structuredClone(
+                              tabConfig ?? {},
+                            ) as ApertureConfig;
+                            updated.proxy = { upstreamProviders: providers };
+                            setDraft(updated);
+                          },
+                          trueLabel: "on",
+                          falseLabel: "off",
+                        }),
+                      );
+
+                      return new SettingsDetailEditor({
+                        title: () => `Upstream Providers (${providers.length})`,
+                        fields,
+                        theme,
+                        onDone: () =>
+                          submenuDone(
+                            providers.length > 0
+                              ? `${providers.length} provider(s)`
+                              : "none",
+                          ),
+                        getDoneSummary: () =>
+                          providers.length > 0
+                            ? `${providers.length} provider(s)`
+                            : "none",
+                        emptyStateText: "No proxy providers configured",
+                      });
+                    }
+                  : undefined,
+            },
+          ],
+        },
+        {
+          label: "Dedicated",
+          items: [
+            {
+              id: "dedicated.info",
+              label: "Settings",
+              description: "No dedicated provider settings yet",
+              currentValue: "none",
+            },
+          ],
+        },
+        {
+          label: "Setup",
+          items: [
+            {
+              id: "onboardingDone",
+              label: "Onboarding",
+              description: onboardingDone
+                ? "Setup has been completed. Disable to re-run /aperture:setup on next reload."
+                : "Setup is pending. Run /aperture:setup to configure Aperture.",
+              currentValue: onboardingDone ? "completed" : "pending",
+              values: ["completed", "pending"],
             },
           ],
         },
@@ -131,17 +220,29 @@ export function registerApertureSettings(
     },
     onSettingChange: (id, newValue, config) => {
       const updated = structuredClone(config);
-      if (id === "baseUrl") {
+      if (id === "mode") {
+        updated.mode = getModeFromLabel(newValue);
+      } else if (id === "baseUrl") {
         updated.baseUrl = newValue;
-      } else if (id === "apertureProvider") {
-        updated.apertureProvider = newValue === "enabled";
-      } else {
-        setNestedValue(updated, id, newValue);
+      } else if (id === "onboardingDone") {
+        updated.onboardingDone = newValue === "completed";
       }
       return updated;
     },
     onSave: (ctx) => {
-      onSync(ctx);
+      const config = configLoader.getConfig();
+      if (config.mode === "proxy") {
+        onSync(ctx);
+      } else if (config.mode === "dedicated") {
+        ctx.ui.notify(
+          "[aperture] reloading in 2s to apply dedicated mode changes...",
+          "info",
+        );
+        setTimeout(() => {
+          ctx.ui.notify("[aperture] reloading in 1s...", "info");
+          setTimeout(() => void ctx.reload(), 1000);
+        }, 1000);
+      }
     },
   });
 }

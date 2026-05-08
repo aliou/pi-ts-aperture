@@ -8,8 +8,9 @@ import type { ApertureConfig } from "./config";
  * Normalizes a user-input URL:
  * - Trims whitespace
  * - Adds http:// scheme if missing
- * - Strips trailing /v1 or /v1/
- * - Strips trailing slashes
+ * - Parses with URL constructor and extracts origin (scheme + host + port)
+ * - This handles full URLs like "http://ai.host.ts.net/v1/models" -> "http://ai.host.ts.net"
+ * - Also handles bare hosts like "ai.host.ts.net" -> "http://ai.host.ts.net"
  */
 export function normalizeInputUrl(raw: string): string {
   let result = raw.trim();
@@ -17,7 +18,14 @@ export function normalizeInputUrl(raw: string): string {
   if (!result.startsWith("http://") && !result.startsWith("https://")) {
     result = `http://${result}`;
   }
-  return result.replace(/\/v1\/?$/, "").replace(/\/+$/, "");
+  try {
+    const parsed = new URL(result);
+    // Return just the origin (scheme + host + port), discarding path/query/fragment
+    return parsed.origin;
+  } catch {
+    // Fallback for unparseable input: strip /v1 and trailing slashes
+    return result.replace(/\/v1\/?$/, "").replace(/\/+$/, "");
+  }
 }
 
 /**

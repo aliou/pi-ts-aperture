@@ -7,7 +7,7 @@ import type {
   WizardStepContext,
 } from "@aliou/pi-utils-settings";
 import type { Component, TUI } from "@mariozechner/pi-tui";
-import { Input } from "@mariozechner/pi-tui";
+import { Input, Key, matchesKey } from "@mariozechner/pi-tui";
 import { checkApertureHealth } from "../../lib/gateway";
 import { normalizeInputUrl } from "../../lib/url";
 
@@ -57,7 +57,7 @@ export class UrlStep implements Component {
 
   private submit(): void {
     const value = this.input.getValue().trim();
-    if (!value || this.state === "checking") return;
+    if (!value || this.state === "checking" || this.state === "ok") return;
 
     const url = normalizeInputUrl(value);
     this.state = "checking";
@@ -77,7 +77,6 @@ export class UrlStep implements Component {
         this.onUrl(url);
         this.wizCtx.markComplete();
         this.tui.requestRender();
-        setTimeout(() => this.wizCtx.goNext(), 400);
       } else {
         this.state = "error";
         this.errorMessage = res.error ?? "unknown error";
@@ -99,7 +98,7 @@ export class UrlStep implements Component {
       const spinner = SPINNER_FRAMES[this.frame];
       lines.push(this.theme.hint(`  ${spinner} Checking connection...`));
     } else if (this.state === "ok") {
-      lines.push(this.theme.hint("  Connected."));
+      lines.push(this.theme.hint("  Connected. Press Enter to continue."));
     } else if (this.state === "error") {
       lines.push(this.theme.hint(`  Could not connect: ${this.errorMessage}`));
       lines.push(this.theme.hint("  Fix the URL and press Enter to retry."));
@@ -112,6 +111,15 @@ export class UrlStep implements Component {
 
   handleInput(data: string): void {
     if (this.state === "checking") return;
+
+    if (this.state === "ok") {
+      // Only Enter advances from the "ok" state. No re-submission.
+      if (matchesKey(data, Key.enter)) {
+        this.wizCtx.goNext();
+      }
+      return;
+    }
+
     this.state = "idle";
     this.input.handleInput(data);
   }

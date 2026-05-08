@@ -2,6 +2,7 @@
  * Aperture proxy extension.
  *
  * Routes selected Pi providers through Tailscale Aperture.
+ * Only active when config.mode === "proxy".
  * Registers the setup wizard and settings commands.
  */
 
@@ -21,7 +22,7 @@ export default async function (pi: ExtensionAPI): Promise<void> {
 
   const runtime = new ApertureRuntime();
   let lastRegisteredProviders: string[] = [
-    ...configLoader.getConfig().providers,
+    ...configLoader.getConfig().proxy.upstreamProviders.map((p) => p.id),
   ];
 
   // Sync function used by commands after config changes
@@ -30,69 +31,82 @@ export default async function (pi: ExtensionAPI): Promise<void> {
 
     const config = configLoader.getConfig();
 
-    // Unregister providers that were removed from config
-    const prevProviders = lastRegisteredProviders;
-    const nextProviders = config.providers;
-    const toRemove = runtime.getProvidersToUnregister(
-      prevProviders,
-      nextProviders,
-    );
-    for (const provider of toRemove) {
-      pi.unregisterProvider(provider);
-      ctx.ui.notify(
-        `[aperture] unregistered ${provider}. Run /reload to use the native provider.`,
-        "info",
+    // Only apply proxy changes when in proxy mode
+    if (config.mode === "proxy") {
+      // Unregister providers that were removed from config
+      const prevProviders = lastRegisteredProviders;
+      const nextProviders = config.proxy.upstreamProviders.map((p) => p.id);
+      const toRemove = runtime.getProvidersToUnregister(
+        prevProviders,
+        nextProviders,
       );
-    }
-
-    // Re-register providers
-    void runtime
-      .sync({
-        registerProvider: pi.registerProvider.bind(pi),
-        getModels: () => ctx.modelRegistry.getAll(),
-      })
-      .then(() => {
-        // Refresh active model if it's from a registered provider
-        if (
-          ctx.model &&
-          ctx.modelRegistry.find(ctx.model.provider, ctx.model.id)
-        ) {
-          const updated = ctx.modelRegistry.find(
-            ctx.model.provider,
-            ctx.model.id,
-          );
-          if (updated && config.providers.includes(ctx.model.provider)) {
-            void pi.setModel(updated);
-          }
-        }
-      });
-
-    // Check for missing models on gateway if configured
-    if (config.checkGatewayModels.length > 0) {
-      const gatewayUrl = resolveGatewayUrl(config);
-      if (gatewayUrl) {
-        void runtime.checkMissingModels(
-          {
-            getModels: () => ctx.modelRegistry.getAll(),
-            notify: (msg, type) => ctx.ui.notify(msg, type),
-          },
-          gatewayUrl,
+      for (const provider of toRemove) {
+        pi.unregisterProvider(provider);
+        ctx.ui.notify(
+          `[aperture] unregistered ${provider}. Run /reload to use the native provider.`,
+          "info",
         );
       }
-    }
 
-    lastRegisteredProviders = [...nextProviders];
+      // Re-register providers
+      void runtime
+        .sync({
+          registerProvider: pi.registerProvider.bind(pi),
+          getModels: () => ctx.modelRegistry.getAll(),
+        })
+        .then(() => {
+          // Refresh active model if it's from a registered provider
+          const active = ctx.model;
+          if (active && ctx.modelRegistry.find(active.provider, active.id)) {
+            const updated = ctx.modelRegistry.find(active.provider, active.id);
+            if (
+              updated &&
+              config.proxy.upstreamProviders.some(
+                (p) => p.id === active.provider,
+              )
+            ) {
+              void pi.setModel(updated);
+            }
+          }
+        });
+
+      // Check for missing models on gateway if configured
+      const checkedProviderIds = config.proxy.upstreamProviders
+        .filter((p) => p.shouldCheckGatewayModels)
+        .map((p) => p.id);
+      if (checkedProviderIds.length > 0) {
+        const gatewayUrl = resolveGatewayUrl(config);
+        if (gatewayUrl) {
+          void runtime.checkMissingModels(
+            {
+              getModels: () => ctx.modelRegistry.getAll(),
+              notify: (msg, type) => ctx.ui.notify(msg, type),
+            },
+            gatewayUrl,
+          );
+        }
+      }
+
+      lastRegisteredProviders = [...nextProviders];
+    }
   };
 
-  // Register providers at session start (for new sessions)
+  // Register providers at session start (for new sessions) when in proxy mode
   pi.on("session_start", (_event, ctx) => {
-    lastRegisteredProviders = [...configLoader.getConfig().providers];
-    void runtime.sync({
-      registerProvider: pi.registerProvider.bind(pi),
-      getModels: () => ctx.modelRegistry.getAll(),
-    });
+    const config = configLoader.getConfig();
+    if (config.mode === "proxy") {
+      lastRegisteredProviders = [
+        ...config.proxy.upstreamProviders.map((p) => p.id),
+      ];
+      void runtime.sync({
+        registerProvider: pi.registerProvider.bind(pi),
+        getModels: () => ctx.modelRegistry.getAll(),
+      });
+    }
   });
 
+  // Register setup command only when onboarding is pending
   registerSetupCommand(pi, onSync);
+  // Always register settings command
   registerApertureSettings(pi, onSync);
 }

@@ -1,24 +1,23 @@
 /**
- * aperture:setup -- interactive wizard for configuring Aperture.
+ * aperture:setup -- onboarding wizard for configuring Aperture.
  *
- * Steps:
- * 1. URL input (health check runs inline on Enter, auto-advances on success)
- * 2. Provider selection with per-provider "verify models" sub-option
+ * If onboarding is already completed, notifies the user to use
+ * /aperture:settings instead. Otherwise, shows the interactive
+ * setup wizard.
  */
 
-import {
-  FuzzyMultiSelector,
-  type FuzzyMultiSelectorItem,
-  getSettingsTheme,
-  Wizard,
-  type WizardStepContext,
-} from "@aliou/pi-utils-settings";
 import type {
   ExtensionAPI,
+  ExtensionCommandContext,
   ExtensionContext,
 } from "@mariozechner/pi-coding-agent";
 import { configLoader } from "../../lib/config";
-import { UrlStep } from "./setup-wizard";
+import {
+  buildOnboardedConfig,
+  createOnboardingWizard,
+  isOnboardingPending,
+  type OnboardingResult,
+} from "./onboarding";
 
 export function registerSetupCommand(
   pi: ExtensionAPI,
@@ -26,7 +25,7 @@ export function registerSetupCommand(
 ): void {
   pi.registerCommand("aperture:setup", {
     description: "Configure Tailscale Aperture integration",
-    handler: async (_args, ctx) => {
+    handler: async (_args, ctx: ExtensionCommandContext) => {
       if (!ctx.hasUI) {
         ctx.ui.notify(
           "aperture:setup requires an interactive terminal",
@@ -35,88 +34,57 @@ export function registerSetupCommand(
         return;
       }
 
-      const config = configLoader.getConfig();
-      const checkGatewayProviders = config.checkGatewayModels ?? [];
+      const globalConfig = configLoader.getRawConfig("global");
+      if (!isOnboardingPending(globalConfig)) {
+        ctx.ui.notify(
+          "[aperture] setup already completed. Use /aperture:settings to update.",
+          "info",
+        );
+        return;
+      }
 
       const knownProviders = Array.from(
         new Set(ctx.modelRegistry.getAll().map((model) => model.provider)),
       ).sort((a, b) => a.localeCompare(b));
 
-      let baseUrl = config.baseUrl;
-
-      const providerItems: FuzzyMultiSelectorItem[] = knownProviders.map(
-        (p) => ({
-          label: p,
-          checked: config.providers.includes(p),
-          subOptions: [
-            {
-              label: "verify models on gateway",
-              description:
-                "Warn at startup if this provider's models are missing from the Aperture gateway",
-              checked: checkGatewayProviders.includes(p),
-            },
-          ],
-        }),
+      const result = await ctx.ui.custom<OnboardingResult>(
+        (tui, theme, _kb, done) =>
+          createOnboardingWizard(
+            theme,
+            tui,
+            done,
+            knownProviders,
+            globalConfig,
+          ),
+        { overlay: true },
       );
 
-      const confirmed = await ctx.ui.custom<boolean | undefined>(
-        (tui, theme, _kb, done) => {
-          const settingsTheme = getSettingsTheme(theme);
+      if (!result.completed) {
+        ctx.ui.notify("[aperture] setup cancelled.", "warning");
+        return;
+      }
 
-          return new Wizard({
-            title: "Aperture Setup",
-            theme: settingsTheme,
-            minContentHeight: 16,
-            steps: [
-              {
-                label: "URL",
-                build: (wCtx: WizardStepContext) =>
-                  new UrlStep(settingsTheme, tui, baseUrl, wCtx, (url) => {
-                    baseUrl = url;
-                  }),
-              },
-              {
-                label: "Providers",
-                build: (wCtx: WizardStepContext) => {
-                  wCtx.markComplete();
-                  return new FuzzyMultiSelector({
-                    label: "Providers to route through Aperture",
-                    items: providerItems,
-                    theme: settingsTheme,
-                    showHints: false,
-                    showCount: false,
-                    maxVisible: 7,
-                  });
-                },
-              },
-            ],
-            onComplete: () => done(true),
-            onCancel: () => done(undefined),
-          });
-        },
+      const onboarded = buildOnboardedConfig(
+        result.baseUrl,
+        result.mode,
+        result.upstreamProviders,
       );
+      await configLoader.save("global", onboarded);
+      await configLoader.load();
 
-      if (!confirmed) return;
-
-      const providers = providerItems
-        .filter((i) => i.checked)
-        .map((i) => i.label);
-
-      const checkGatewayModels = providerItems
-        .filter((i) => i.checked && i.subOptions?.[0]?.checked)
-        .map((i) => i.label);
-
-      await configLoader.save("global", {
-        baseUrl,
-        providers,
-        checkGatewayModels,
-        apertureProvider: config.apertureProvider,
-      });
-      onSync(ctx);
-      ctx.ui.notify(
-        `Aperture configured: ${providers.length} provider(s) via ${baseUrl}`,
-        "info",
-      );
+      if (result.mode === "proxy") {
+        onSync(ctx);
+        ctx.ui.notify("[aperture] setup completed.", "info");
+      } else {
+        for (let i = 2; i > 0; i--) {
+          ctx.ui.notify(
+            `[aperture] setup completed. Reloading in ${i}s...`,
+            "info",
+          );
+          await new Promise((r) => setTimeout(r, 1000));
+        }
+        await ctx.reload();
+      }
     },
   });
 }
