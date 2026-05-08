@@ -21,6 +21,19 @@ function model(provider: string, id: string): Model<Api> {
   return { provider, id } as Model<Api>;
 }
 
+/** Build a resolved config for proxy mode with the given checked providers. */
+function proxyConfig(
+  upstreamProviders: { id: string; shouldCheckGatewayModels: boolean }[],
+) {
+  return {
+    baseUrl: "http://gateway.test",
+    mode: "proxy" as const,
+    onboardingDone: true,
+    proxy: { upstreamProviders },
+    dedicated: {},
+  };
+}
+
 async function check(models: Model<Api>[]) {
   const notify = vi.fn();
   const runtime = new ApertureRuntime();
@@ -38,11 +51,9 @@ async function check(models: Model<Api>[]) {
 
 describe("ApertureRuntime.checkMissingModels", () => {
   beforeEach(() => {
-    getConfig.mockReturnValue({
-      baseUrl: "http://gateway.test",
-      providers: [],
-      checkGatewayModels: ["synthetic"],
-    });
+    getConfig.mockReturnValue(
+      proxyConfig([{ id: "synthetic", shouldCheckGatewayModels: true }]),
+    );
     fetchModels.mockResolvedValue([]);
   });
 
@@ -59,11 +70,9 @@ describe("ApertureRuntime.checkMissingModels", () => {
   });
 
   test("only checks configured providers", async () => {
-    getConfig.mockReturnValue({
-      baseUrl: "http://gateway.test",
-      providers: [],
-      checkGatewayModels: ["synthetic"],
-    });
+    getConfig.mockReturnValue(
+      proxyConfig([{ id: "synthetic", shouldCheckGatewayModels: true }]),
+    );
     fetchModels.mockResolvedValue([{ providerId: "synthetic", id: "foo" }]);
 
     const notify = await check([
@@ -75,11 +84,12 @@ describe("ApertureRuntime.checkMissingModels", () => {
   });
 
   test("truncates missing models per provider", async () => {
-    getConfig.mockReturnValue({
-      baseUrl: "http://gateway.test",
-      providers: [],
-      checkGatewayModels: ["openrouter", "synthetic"],
-    });
+    getConfig.mockReturnValue(
+      proxyConfig([
+        { id: "openrouter", shouldCheckGatewayModels: true },
+        { id: "synthetic", shouldCheckGatewayModels: true },
+      ]),
+    );
     fetchModels.mockResolvedValue([{ providerId: "synthetic", id: "syn-1" }]);
 
     const notify = await check([
@@ -116,6 +126,37 @@ describe("ApertureRuntime.checkMissingModels", () => {
       model("synthetic", "bar"),
     ]);
 
+    expect(notify).not.toHaveBeenCalled();
+  });
+
+  test("skips check when mode is not proxy", async () => {
+    getConfig.mockReturnValue({
+      baseUrl: "http://gateway.test",
+      mode: "dedicated",
+      onboardingDone: true,
+      proxy: { upstreamProviders: [] },
+      dedicated: {},
+    });
+
+    const notify = await check([model("synthetic", "foo")]);
+    expect(notify).not.toHaveBeenCalled();
+  });
+
+  test("only checks providers with shouldCheckGatewayModels=true", async () => {
+    getConfig.mockReturnValue(
+      proxyConfig([
+        { id: "synthetic", shouldCheckGatewayModels: true },
+        { id: "openrouter", shouldCheckGatewayModels: false },
+      ]),
+    );
+    fetchModels.mockResolvedValue([{ providerId: "synthetic", id: "foo" }]);
+
+    const notify = await check([
+      model("synthetic", "foo"),
+      model("openrouter", "missing-openrouter"),
+    ]);
+
+    // openrouter should NOT be checked even though it's in upstreamProviders
     expect(notify).not.toHaveBeenCalled();
   });
 });

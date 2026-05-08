@@ -1,42 +1,87 @@
+import type { Api, Model } from "@mariozechner/pi-ai";
+import { getApiProvider } from "@mariozechner/pi-ai";
 import type {
   ExtensionAPI,
-  ExtensionContext,
+  ProviderModelConfig,
 } from "@mariozechner/pi-coding-agent";
 import { configLoader } from "../../lib/config";
-import { onConfigSync } from "../../lib/sync-bus";
+import { fetchGatewayModels, type GatewayModel } from "../../lib/gateway";
+import { buildDefaultModelConfig } from "../../lib/model-defaults";
+import type {
+  AssistantMessageEventStream,
+  Context,
+  SimpleStreamOptions,
+} from "../../lib/types";
 import { resolveGatewayUrl, resolveProviderBaseUrl } from "../../lib/url";
-import { ApertureProviderRuntime } from "./runtime";
+
+const PROVIDER_NAME = "aperture";
+
+const HEADERS = {
+  Referer: "https://pi.dev",
+  "X-Title": "npm:@aliou/pi-ts-aperture",
+};
+
+function getApertureModelId(model: GatewayModel): string {
+  return model.provider ? `${model.provider.id}/${model.id}` : model.id;
+}
+
+function getRequestModelId(modelId: string): string {
+  const slashIndex = modelId.indexOf("/");
+  return slashIndex === -1 ? modelId : modelId.slice(slashIndex + 1);
+}
+
+function getProviderId(modelId: string): string {
+  const slashIndex = modelId.indexOf("/");
+  return slashIndex === -1 ? "" : modelId.slice(0, slashIndex);
+}
+
+function buildProviderModelConfig(model: GatewayModel): ProviderModelConfig {
+  return buildDefaultModelConfig(getApertureModelId(model));
+}
+
+function buildStreamSimple() {
+  const builtIn = getApiProvider("openai-completions");
+  if (!builtIn) return undefined;
+
+  return (
+    model: Model<Api>,
+    context: Context,
+    options?: SimpleStreamOptions,
+  ): AssistantMessageEventStream =>
+    builtIn.streamSimple(
+      { ...model, id: getRequestModelId(model.id) },
+      context,
+      {
+        ...options,
+        headers: {
+          ...options?.headers,
+          "x-session-id": options?.sessionId ?? "",
+          "x-upstream-provider-id": getProviderId(model.id),
+        },
+      },
+    );
+}
 
 export default async function (pi: ExtensionAPI): Promise<void> {
   await configLoader.load();
 
-  const runtime = new ApertureProviderRuntime();
-  let latestCtx: ExtensionContext | null = null;
+  const config = configLoader.getConfig();
+  const gatewayUrl = resolveGatewayUrl(config);
+  const baseUrl = resolveProviderBaseUrl(config);
 
-  const sync = (ctx: ExtensionContext): void => {
-    const config = configLoader.getConfig();
-    const gatewayUrl = resolveGatewayUrl(config);
-    const baseUrl = resolveProviderBaseUrl(config);
+  if (config.mode !== "dedicated" || !gatewayUrl || !baseUrl) return;
 
-    if (!config.apertureProvider || !gatewayUrl || !baseUrl) {
-      runtime.unregister(pi);
-      return;
-    }
+  const gatewayModels = await fetchGatewayModels(gatewayUrl);
+  const models: ProviderModelConfig[] = gatewayModels.map(
+    buildProviderModelConfig,
+  );
 
-    void runtime.sync({
-      registerProvider: pi.registerProvider.bind(pi),
-      getModels: () => ctx.modelRegistry.getAll(),
-      gatewayUrl,
-      baseUrl,
-    });
-  };
-
-  onConfigSync(() => {
-    if (latestCtx) sync(latestCtx);
-  });
-
-  pi.on("session_start", (_event, ctx) => {
-    latestCtx = ctx;
-    sync(ctx);
+  pi.registerProvider(PROVIDER_NAME, {
+    baseUrl,
+    apiKey: "-",
+    api: "openai-completions",
+    headers: HEADERS,
+    models,
+    streamSimple: buildStreamSimple(),
   });
 }

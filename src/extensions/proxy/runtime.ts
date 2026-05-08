@@ -1,7 +1,8 @@
 /**
- * ApertureRuntime -- core extension runtime logic.
+ * ApertureRuntime -- core proxy extension runtime logic.
  *
  * Handles provider registration, unregistration, and gateway model checking.
+ * Only active when config.mode === "proxy".
  */
 
 import { getApiProvider } from "@mariozechner/pi-ai";
@@ -42,7 +43,8 @@ export class ApertureRuntime {
 
   async sync(deps: SyncDeps): Promise<void> {
     const config = configLoader.getConfig();
-    if (!config.baseUrl || config.providers.length === 0) {
+    if (config.mode !== "proxy") return;
+    if (!config.baseUrl || config.proxy.upstreamProviders.length === 0) {
       return;
     }
 
@@ -50,8 +52,9 @@ export class ApertureRuntime {
     if (!baseUrl) return;
 
     const allModels = deps.getModels();
+    const providerIds = config.proxy.upstreamProviders.map((p) => p.id);
 
-    for (const providerName of config.providers) {
+    for (const providerName of providerIds) {
       const providerModels = allModels.filter(
         (m) => m.provider === providerName,
       );
@@ -87,13 +90,18 @@ export class ApertureRuntime {
 
   async checkMissingModels(deps: CheckDeps, gatewayUrl: string): Promise<void> {
     const config = configLoader.getConfig();
-    if (config.checkGatewayModels.length === 0) return;
+    if (config.mode !== "proxy") return;
+
+    const checkedProviderIds = config.proxy.upstreamProviders
+      .filter((p) => p.shouldCheckGatewayModels)
+      .map((p) => p.id);
+    if (checkedProviderIds.length === 0) return;
 
     const gatewayModels = await fetchGatewayModels(gatewayUrl);
     if (gatewayModels.length === 0) return;
 
     const allModels = deps.getModels();
-    const checkedProviders = new Set(config.checkGatewayModels);
+    const checkedProviders = new Set(checkedProviderIds);
     const gatewayModelKeys = new Set(
       gatewayModels.map((m) => `${m.providerId}:${m.id}`),
     );
