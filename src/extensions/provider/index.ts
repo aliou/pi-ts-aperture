@@ -72,7 +72,17 @@ export default async function (pi: ExtensionAPI): Promise<void> {
   if (config.mode !== "dedicated" || !gatewayUrl || !baseUrl) return;
 
   const gatewayModels = await fetchGatewayModels(gatewayUrl);
-  const models: ProviderModelConfig[] = gatewayModels.map(
+
+  // Filter models by enabled dedicated providers
+  const enabledProviderIds = new Set(
+    config.dedicated.providers.filter((p) => p.enabled).map((p) => p.id),
+  );
+  const filteredModels =
+    enabledProviderIds.size > 0
+      ? gatewayModels.filter((m) => enabledProviderIds.has(m.providerId))
+      : gatewayModels; // No config saved yet -> include all
+
+  const models: ProviderModelConfig[] = filteredModels.map(
     buildProviderModelConfig,
   );
 

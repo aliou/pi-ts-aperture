@@ -30,7 +30,7 @@ function proxyConfig(
     mode: "proxy" as const,
     onboardingDone: true,
     proxy: { upstreamProviders },
-    dedicated: {},
+    dedicated: { providers: [] },
   };
 }
 
@@ -135,7 +135,7 @@ describe("ApertureRuntime.checkMissingModels", () => {
       mode: "dedicated",
       onboardingDone: true,
       proxy: { upstreamProviders: [] },
-      dedicated: {},
+      dedicated: { providers: [] },
     });
 
     const notify = await check([model("synthetic", "foo")]);

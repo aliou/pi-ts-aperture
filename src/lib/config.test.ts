@@ -90,7 +90,7 @@ describe("legacy migration", () => {
         mode: "dedicated",
         onboardingDone: true,
         proxy: { upstreamProviders: [] },
-        dedicated: {},
+        dedicated: { providers: [] },
       }),
     ).toBe(false);
   });
@@ -116,6 +116,6 @@ describe("legacy migration", () => {
 
     const result = legacyMigration.run(old, "/fake/path");
 
-    expect(result.dedicated).toEqual({});
+    expect(result.dedicated).toEqual({ providers: [] });
   });
 });

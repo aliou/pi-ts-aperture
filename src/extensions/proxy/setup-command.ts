@@ -68,6 +68,7 @@ export function registerSetupCommand(
         result.baseUrl,
         result.mode,
         result.upstreamProviders,
+        result.dedicatedProviders,
       );
       await configLoader.save("global", onboarded);
       await configLoader.load();

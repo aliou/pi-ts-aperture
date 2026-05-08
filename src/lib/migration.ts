@@ -71,7 +71,7 @@ export const legacyMigration: Migration<ApertureConfig> = {
 
     // Ensure dedicated exists
     if (!migrated.dedicated) {
-      migrated.dedicated = {} as Record<string, never>;
+      migrated.dedicated = { providers: [] };
     }
 
     // Ensure proxy exists if mode is proxy

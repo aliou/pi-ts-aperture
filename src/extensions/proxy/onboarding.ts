@@ -19,7 +19,12 @@ import type { Theme } from "@mariozechner/pi-coding-agent";
 import { getMarkdownTheme } from "@mariozechner/pi-coding-agent";
 import type { Component, TUI } from "@mariozechner/pi-tui";
 import { Box, Key, Markdown, matchesKey, Text } from "@mariozechner/pi-tui";
-import type { ApertureConfig, ApertureMode } from "../../lib/config";
+import type {
+  ApertureConfig,
+  ApertureMode,
+  DedicatedProviderConfig,
+} from "../../lib/config";
+import { fetchGatewayProviders, type GatewayProvider } from "../../lib/gateway";
 import { UrlStep } from "./setup-wizard";
 
 // --- Onboarding state ---
@@ -29,12 +34,14 @@ export interface OnboardingResult {
   baseUrl: string;
   mode: ApertureMode;
   upstreamProviders: { id: string; shouldCheckGatewayModels: boolean }[];
+  dedicatedProviders: DedicatedProviderConfig[];
 }
 
 interface OnboardingState {
   baseUrl: string;
   mode: ApertureMode | null;
   upstreamProviders: { id: string; shouldCheckGatewayModels: boolean }[];
+  dedicatedProviders: DedicatedProviderConfig[];
 }
 
 // --- Steps ---
@@ -144,13 +151,7 @@ class ModeStep implements Component {
     if (matchesKey(data, Key.enter)) {
       this.state.mode = this.selectedIndex === 0 ? "dedicated" : "proxy";
       this.wizCtx.markComplete();
-      // Skip Providers tab in dedicated mode (advance twice)
-      if (this.state.mode === "dedicated") {
-        this.wizCtx.goNext();
-        this.wizCtx.goNext();
-      } else {
-        this.wizCtx.goNext();
-      }
+      this.wizCtx.goNext();
     }
   }
 }
@@ -330,6 +331,24 @@ class FinishStep implements Component {
       }
     }
 
+    if (this.state.mode === "dedicated") {
+      const enabled = this.state.dedicatedProviders.filter((p) => p.enabled);
+      const disabled = this.state.dedicatedProviders.filter((p) => !p.enabled);
+      if (enabled.length > 0) {
+        const list = enabled.map((p) => `- \`${p.name ?? p.id}\``).join("\n");
+        content += `\n\n**Aperture providers** (${enabled.length}):\n${list}`;
+      }
+      if (disabled.length > 0) {
+        const list = disabled
+          .map((p) => `- ~~\`${p.name ?? p.id}\`~~`)
+          .join("\n");
+        content += `\n\n**Excluded** (${disabled.length}):\n${list}`;
+      }
+      if (this.state.dedicatedProviders.length === 0) {
+        content += "\n\n**Aperture providers**: all (no filter)";
+      }
+    }
+
     this.recapMarkdown.setText(content);
     return [...this.recapMarkdown.render(Math.max(1, width)), ""];
   }
@@ -357,6 +376,12 @@ export function createOnboardingWizard(
       currentConfig?.proxy?.upstreamProviders?.map((p) => ({
         id: p.id,
         shouldCheckGatewayModels: p.shouldCheckGatewayModels ?? false,
+      })) ?? [],
+    dedicatedProviders:
+      currentConfig?.dedicated?.providers?.map((p) => ({
+        id: p.id,
+        name: p.name,
+        enabled: p.enabled,
       })) ?? [],
   };
 
@@ -416,6 +441,7 @@ export function createOnboardingWizard(
               baseUrl: state.baseUrl,
               mode: state.mode,
               upstreamProviders: state.upstreamProviders,
+              dedicatedProviders: state.dedicatedProviders,
             });
           }),
       },
@@ -426,6 +452,7 @@ export function createOnboardingWizard(
         baseUrl: state.baseUrl,
         mode: state.mode ?? "dedicated",
         upstreamProviders: state.upstreamProviders,
+        dedicatedProviders: state.dedicatedProviders,
       });
     },
     onCancel: () =>
@@ -434,6 +461,7 @@ export function createOnboardingWizard(
         baseUrl: state.baseUrl,
         mode: state.mode ?? "dedicated",
         upstreamProviders: state.upstreamProviders,
+        dedicatedProviders: state.dedicatedProviders,
       }),
     hintSuffix: "Enter select/continue",
     minContentHeight: 14,
@@ -455,9 +483,10 @@ export function createOnboardingWizard(
   };
 }
 
-/** Dynamic step: shows proxy providers in proxy mode, skip message in dedicated mode. */
+/** Dynamic step: shows Aperture provider selection in dedicated mode, proxy providers in proxy mode. */
 class ProvidersStep implements Component {
   private proxyStep: ProxyProvidersStep | null = null;
+  private dedicatedStep: DedicatedProvidersStep | null = null;
 
   constructor(
     private readonly theme: Theme,
@@ -468,6 +497,7 @@ class ProvidersStep implements Component {
 
   invalidate() {
     this.proxyStep?.invalidate();
+    this.dedicatedStep?.invalidate();
   }
 
   render(width: number): string[] {
@@ -486,9 +516,22 @@ class ProvidersStep implements Component {
       return this.proxyStep.render(width);
     }
 
-    // Dedicated mode: nothing to configure
+    if (this.state.mode === "dedicated") {
+      if (!this.dedicatedStep) {
+        this.dedicatedStep = new DedicatedProvidersStep(
+          this.theme,
+          this.state,
+          () => {
+            this.wizCtx.markComplete();
+            this.wizCtx.goNext();
+          },
+        );
+      }
+      return this.dedicatedStep.render(width);
+    }
+
     return [
-      "  No proxy providers needed in dedicated mode.",
+      "  Select a mode first.",
       "",
       this.settingsTheme.hint("  Press Enter to continue."),
     ];
@@ -503,12 +546,164 @@ class ProvidersStep implements Component {
       this.proxyStep.handleInput(data);
       return;
     }
-
-    // Dedicated mode: Enter advances
+    if (this.state.mode === "dedicated" && this.dedicatedStep) {
+      this.dedicatedStep.handleInput(data);
+      return;
+    }
     if (matchesKey(data, Key.enter)) {
       this.wizCtx.markComplete();
       this.wizCtx.goNext();
     }
+  }
+}
+
+/** Dedicated mode: select which Aperture gateway providers to include. */
+class DedicatedProvidersStep implements Component {
+  private selectedIndex = 0;
+  private readonly settingsTheme: SettingsTheme;
+  private providers: GatewayProvider[] = [];
+  private readonly enabled: Set<string>;
+  private loading = true;
+  private error = "";
+
+  constructor(
+    theme: Theme,
+    private readonly state: OnboardingState,
+    private readonly onSelect: () => void,
+  ) {
+    this.settingsTheme = getSettingsTheme(theme);
+    // Pre-enable providers that were previously selected
+    this.enabled = new Set(
+      state.dedicatedProviders.filter((p) => p.enabled).map((p) => p.id),
+    );
+    // Fetch providers from gateway
+    this.fetchProviders();
+  }
+
+  private async fetchProviders(): Promise<void> {
+    try {
+      const providers = await fetchGatewayProviders(this.state.baseUrl);
+      this.providers = providers;
+      // Auto-select all if no prior selection exists
+      if (this.state.dedicatedProviders.length === 0) {
+        for (const p of providers) {
+          this.enabled.add(p.id);
+        }
+      } else {
+        // Auto-enable any new providers not in prior config
+        for (const p of providers) {
+          if (!this.state.dedicatedProviders.some((c) => c.id === p.id)) {
+            this.enabled.add(p.id);
+          }
+        }
+      }
+      this.loading = false;
+    } catch {
+      this.error = "Failed to fetch providers from gateway";
+      this.loading = false;
+    }
+  }
+
+  invalidate() {}
+
+  render(_width: number): string[] {
+    if (this.loading) {
+      return [
+        "  Fetching providers from Aperture gateway...",
+        "",
+        this.settingsTheme.hint("  Please wait."),
+      ];
+    }
+
+    if (this.error) {
+      return [
+        `  ${this.error}`,
+        "",
+        this.settingsTheme.hint("  Enter: continue without provider filter"),
+      ];
+    }
+
+    if (this.providers.length === 0) {
+      return [
+        "  No providers found on the Aperture gateway.",
+        "",
+        this.settingsTheme.hint("  Enter: continue"),
+      ];
+    }
+
+    const lines: string[] = ["  Select Aperture providers to include:", ""];
+
+    for (let i = 0; i < this.providers.length; i++) {
+      const provider = this.providers[i];
+      if (!provider) continue;
+      const selected = i === this.selectedIndex;
+      const checked = this.enabled.has(provider.id);
+      const prefix = selected ? this.settingsTheme.cursor : "  ";
+      const check = checked ? "[x]" : "[ ]";
+      const label = this.settingsTheme.value(
+        ` ${check} ${provider.name ?? provider.id}`,
+        selected,
+      );
+      lines.push(`${prefix}${label}`);
+    }
+
+    lines.push("");
+    lines.push(
+      this.settingsTheme.hint("  Enter: toggle · j/k: navigate · c: continue"),
+    );
+
+    return lines;
+  }
+
+  handleInput(data: string): void {
+    if (this.loading) return;
+
+    if (this.providers.length === 0 || this.error) {
+      if (matchesKey(data, Key.enter)) {
+        this.saveState();
+        this.onSelect();
+      }
+      return;
+    }
+
+    if (matchesKey(data, Key.up) || data === "k") {
+      this.selectedIndex =
+        this.selectedIndex === 0
+          ? this.providers.length - 1
+          : this.selectedIndex - 1;
+      return;
+    }
+    if (matchesKey(data, Key.down) || data === "j") {
+      this.selectedIndex =
+        this.selectedIndex === this.providers.length - 1
+          ? 0
+          : this.selectedIndex + 1;
+      return;
+    }
+
+    if (matchesKey(data, Key.enter)) {
+      const provider = this.providers[this.selectedIndex];
+      if (!provider) return;
+      if (this.enabled.has(provider.id)) {
+        this.enabled.delete(provider.id);
+      } else {
+        this.enabled.add(provider.id);
+      }
+      return;
+    }
+
+    if (data === "c") {
+      this.saveState();
+      this.onSelect();
+    }
+  }
+
+  private saveState(): void {
+    this.state.dedicatedProviders = this.providers.map((p) => ({
+      id: p.id,
+      name: p.name,
+      enabled: this.enabled.has(p.id),
+    }));
   }
 }
 
@@ -523,6 +718,7 @@ export function buildOnboardedConfig(
   baseUrl: string,
   mode: ApertureMode,
   upstreamProviders: { id: string; shouldCheckGatewayModels: boolean }[],
+  dedicatedProviders: DedicatedProviderConfig[],
 ): ApertureConfig {
   return {
     baseUrl,
@@ -534,6 +730,8 @@ export function buildOnboardedConfig(
         shouldCheckGatewayModels: p.shouldCheckGatewayModels,
       })),
     },
-    dedicated: {} as Record<string, never>,
+    dedicated: {
+      providers: dedicatedProviders,
+    },
   };
 }
