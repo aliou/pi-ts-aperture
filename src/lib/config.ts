@@ -19,6 +19,12 @@ export interface ProxiedProviderConfig {
   shouldCheckGatewayModels?: boolean;
 }
 
+export interface DedicatedProviderConfig {
+  id: string;
+  name?: string;
+  enabled: boolean;
+}
+
 export interface ApertureConfig {
   baseUrl?: string;
   mode?: ApertureMode;
@@ -26,7 +32,9 @@ export interface ApertureConfig {
   proxy?: {
     upstreamProviders?: ProxiedProviderConfig[];
   };
-  dedicated?: Record<string, never>;
+  dedicated?: {
+    providers?: DedicatedProviderConfig[];
+  };
 
   // --- Legacy fields (pre-0.6.0, migrated on load) ---
   providers?: string[];
@@ -41,7 +49,9 @@ export interface ResolvedConfig {
   proxy: {
     upstreamProviders: Required<ProxiedProviderConfig>[];
   };
-  dedicated: Record<string, never>;
+  dedicated: {
+    providers: DedicatedProviderConfig[];
+  };
 }
 
 const DEFAULT_CONFIG: ResolvedConfig = {
@@ -51,7 +61,9 @@ const DEFAULT_CONFIG: ResolvedConfig = {
   proxy: {
     upstreamProviders: [],
   },
-  dedicated: {} as Record<string, never>,
+  dedicated: {
+    providers: [],
+  },
 };
 
 export const configLoader = new ConfigLoader<ApertureConfig, ResolvedConfig>(

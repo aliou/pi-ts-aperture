@@ -73,7 +73,13 @@ Fetches models from Aperture `/v1/models`, registers an `aperture` provider with
       { "id": "anthropic", "shouldCheckGatewayModels": true }
     ]
   },
-  "dedicated": {}
+  "dedicated": {
+    "providers": [
+      { "id": "anthropic", "name": "Anthropic", "enabled": true },
+      { "id": "openai", "name": "OpenAI", "enabled": true },
+      { "id": "google", "name": "Google", "enabled": false }
+    ]
+  }
 }
 ```
 

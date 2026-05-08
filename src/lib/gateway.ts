@@ -84,3 +84,25 @@ export async function fetchGatewayModelIds(baseUrl: string): Promise<string[]> {
   const models = await fetchGatewayModels(baseUrl);
   return models.map((m) => m.id);
 }
+
+export interface GatewayProvider {
+  id: string;
+  name?: string;
+}
+
+/** Extract unique providers from gateway models. */
+export async function fetchGatewayProviders(
+  baseUrl: string,
+): Promise<GatewayProvider[]> {
+  const models = await fetchGatewayModels(baseUrl);
+  const seen = new Map<string, GatewayProvider>();
+  for (const model of models) {
+    if (model.provider && !seen.has(model.provider.id)) {
+      seen.set(model.provider.id, {
+        id: model.provider.id,
+        name: model.provider.name,
+      });
+    }
+  }
+  return [...seen.values()];
+}

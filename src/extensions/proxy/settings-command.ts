@@ -23,6 +23,7 @@ import { getSettingsListTheme } from "@mariozechner/pi-coding-agent";
 import type {
   ApertureConfig,
   ApertureMode,
+  DedicatedProviderConfig,
   ResolvedConfig,
 } from "../../lib/config";
 import { configLoader } from "../../lib/config";
@@ -57,6 +58,8 @@ export function registerApertureSettings(
         tabConfig?.onboardingDone ?? resolved.onboardingDone;
       const upstreamProviders =
         tabConfig?.proxy?.upstreamProviders ?? resolved.proxy.upstreamProviders;
+      const dedicatedProviders =
+        tabConfig?.dedicated?.providers ?? resolved.dedicated.providers;
 
       return [
         {
@@ -195,10 +198,78 @@ export function registerApertureSettings(
           label: "Dedicated",
           items: [
             {
-              id: "dedicated.info",
-              label: "Settings",
-              description: "No dedicated provider settings yet",
-              currentValue: "none",
+              id: "dedicated.providers",
+              label: "Aperture providers",
+              description:
+                mode === "dedicated"
+                  ? "Gateway providers included in the aperture provider"
+                  : "Not applicable in proxy mode",
+              currentValue:
+                mode === "dedicated"
+                  ? (() => {
+                      const enabled = dedicatedProviders.filter(
+                        (p) => p.enabled,
+                      );
+                      return enabled.length > 0
+                        ? `${enabled.length}/${dedicatedProviders.length} enabled`
+                        : dedicatedProviders.length > 0
+                          ? "none enabled"
+                          : "all (no filter)";
+                    })()
+                  : "n/a",
+              submenu:
+                mode === "dedicated"
+                  ? (
+                      _val: string,
+                      submenuDone: (selectedValue?: string) => void,
+                    ) => {
+                      const theme = getSettingsListTheme();
+                      const providers = structuredClone(dedicatedProviders);
+
+                      const fields: SettingsDetailField[] = providers.map(
+                        (p: DedicatedProviderConfig, i: number) => ({
+                          type: "boolean" as const,
+                          id: `dedicated.provider.${p.id}.enabled`,
+                          label: p.name ?? p.id,
+                          getValue: () => p.enabled,
+                          setValue: (value: boolean) => {
+                            const provider = providers[i];
+                            if (provider) provider.enabled = value;
+                            const updated = structuredClone(
+                              tabConfig ?? {},
+                            ) as ApertureConfig;
+                            updated.dedicated = { providers };
+                            setDraft(updated);
+                          },
+                          trueLabel: "enabled",
+                          falseLabel: "disabled",
+                        }),
+                      );
+
+                      return new SettingsDetailEditor({
+                        title: () =>
+                          `Dedicated Providers (${providers.filter((p) => p.enabled).length}/${providers.length})`,
+                        fields,
+                        theme,
+                        onDone: () => {
+                          const enabled = providers.filter((p) => p.enabled);
+                          submenuDone(
+                            enabled.length > 0
+                              ? `${enabled.length}/${providers.length} enabled`
+                              : "none enabled",
+                          );
+                        },
+                        getDoneSummary: () => {
+                          const enabled = providers.filter((p) => p.enabled);
+                          return enabled.length > 0
+                            ? `${enabled.length}/${providers.length} enabled`
+                            : "none enabled";
+                        },
+                        emptyStateText:
+                          "No providers configured. Run /aperture:setup to discover providers.",
+                      });
+                    }
+                  : undefined,
             },
           ],
         },

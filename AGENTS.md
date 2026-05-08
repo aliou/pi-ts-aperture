@@ -34,12 +34,18 @@ interface ApertureConfig {
   mode?: ApertureMode;
   onboardingDone?: boolean;
   proxy?: { upstreamProviders?: ProxiedProviderConfig[] };
-  dedicated?: Record<string, never>;
+  dedicated?: { providers?: DedicatedProviderConfig[] };
 }
 
 interface ProxiedProviderConfig {
   id: string;
   shouldCheckGatewayModels?: boolean;
+}
+
+interface DedicatedProviderConfig {
+  id: string;
+  name?: string;
+  enabled: boolean;
 }
 ```
 
