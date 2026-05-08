@@ -428,7 +428,7 @@ export function createOnboardingWizard(
       {
         label: "Providers",
         build: (ctx: WizardStepContext) =>
-          new ProvidersStep(theme, state, knownProviders, ctx),
+          new ProvidersStep(theme, tui, state, knownProviders, ctx),
       },
       {
         label: "Recap",
@@ -490,6 +490,7 @@ class ProvidersStep implements Component {
 
   constructor(
     private readonly theme: Theme,
+    private readonly tui: TUI,
     private readonly state: OnboardingState,
     private readonly knownProviders: string[],
     private readonly wizCtx: WizardStepContext,
@@ -520,6 +521,7 @@ class ProvidersStep implements Component {
       if (!this.dedicatedStep) {
         this.dedicatedStep = new DedicatedProvidersStep(
           this.theme,
+          this.tui,
           this.state,
           () => {
             this.wizCtx.markComplete();
@@ -568,6 +570,7 @@ class DedicatedProvidersStep implements Component {
 
   constructor(
     theme: Theme,
+    private readonly tui: TUI,
     private readonly state: OnboardingState,
     private readonly onSelect: () => void,
   ) {
@@ -598,9 +601,11 @@ class DedicatedProvidersStep implements Component {
         }
       }
       this.loading = false;
+      this.tui.requestRender();
     } catch {
       this.error = "Failed to fetch providers from gateway";
       this.loading = false;
+      this.tui.requestRender();
     }
   }
 
