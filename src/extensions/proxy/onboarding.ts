@@ -224,7 +224,7 @@ class ProxyProvidersStep implements Component {
     lines.push("");
     lines.push(
       this.settingsTheme.hint(
-        "  Enter: toggle provider · j/k: navigate · Tab: toggle gateway check · c: continue",
+        "  Space: toggle · j/k: navigate · g: toggle gateway check · Enter/Tab: continue",
       ),
     );
 
@@ -233,7 +233,7 @@ class ProxyProvidersStep implements Component {
 
   handleInput(data: string): void {
     if (this.providerIds.length === 0) {
-      if (matchesKey(data, Key.enter)) {
+      if (matchesKey(data, Key.enter) || matchesKey(data, Key.tab)) {
         this.saveState();
         this.onSelect();
       }
@@ -255,7 +255,7 @@ class ProxyProvidersStep implements Component {
       return;
     }
 
-    if (matchesKey(data, Key.enter)) {
+    if (matchesKey(data, Key.space)) {
       const id = this.providerIds[this.selectedIndex];
       if (!id) return;
       if (this.checked.has(id)) {
@@ -267,7 +267,7 @@ class ProxyProvidersStep implements Component {
       return;
     }
 
-    if (matchesKey(data, Key.tab)) {
+    if (data === "g") {
       const id = this.providerIds[this.selectedIndex];
       if (!id || !this.checked.has(id)) return;
       if (this.gatewayCheck.has(id)) {
@@ -278,7 +278,7 @@ class ProxyProvidersStep implements Component {
       return;
     }
 
-    if (data === "c") {
+    if (matchesKey(data, Key.enter) || matchesKey(data, Key.tab)) {
       this.saveState();
       this.onSelect();
     }
@@ -654,7 +654,9 @@ class DedicatedProvidersStep implements Component {
 
     lines.push("");
     lines.push(
-      this.settingsTheme.hint("  Enter: toggle · j/k: navigate · c: continue"),
+      this.settingsTheme.hint(
+        "  Space: toggle · j/k: navigate · Enter/Tab: continue",
+      ),
     );
 
     return lines;
@@ -664,7 +666,7 @@ class DedicatedProvidersStep implements Component {
     if (this.loading) return;
 
     if (this.providers.length === 0 || this.error) {
-      if (matchesKey(data, Key.enter)) {
+      if (matchesKey(data, Key.enter) || matchesKey(data, Key.tab)) {
         this.saveState();
         this.onSelect();
       }
@@ -686,7 +688,7 @@ class DedicatedProvidersStep implements Component {
       return;
     }
 
-    if (matchesKey(data, Key.enter)) {
+    if (matchesKey(data, Key.space)) {
       const provider = this.providers[this.selectedIndex];
       if (!provider) return;
       if (this.enabled.has(provider.id)) {
@@ -697,7 +699,7 @@ class DedicatedProvidersStep implements Component {
       return;
     }
 
-    if (data === "c") {
+    if (matchesKey(data, Key.enter) || matchesKey(data, Key.tab)) {
       this.saveState();
       this.onSelect();
     }
