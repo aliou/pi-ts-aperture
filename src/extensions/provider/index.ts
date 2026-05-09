@@ -21,10 +21,6 @@ const HEADERS = {
   "X-Title": "npm:@aliou/pi-ts-aperture",
 };
 
-function getApertureModelId(model: GatewayModel): string {
-  return model.provider ? `${model.provider.id}/${model.id}` : model.id;
-}
-
 function getRequestModelId(modelId: string): string {
   const slashIndex = modelId.indexOf("/");
   return slashIndex === -1 ? modelId : modelId.slice(slashIndex + 1);
@@ -36,7 +32,7 @@ function getProviderId(modelId: string): string {
 }
 
 function buildProviderModelConfig(model: GatewayModel): ProviderModelConfig {
-  return buildDefaultModelConfig(getApertureModelId(model));
+  return buildDefaultModelConfig(model);
 }
 
 function buildStreamSimple() {
