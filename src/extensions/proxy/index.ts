@@ -13,6 +13,7 @@ import type {
 import { configLoader } from "../../lib/config";
 import { emitConfigSync } from "../../lib/sync-bus";
 import { resolveGatewayUrl } from "../../lib/url";
+import { isOnboardingPending } from "./onboarding";
 import { ApertureRuntime } from "./runtime";
 import { registerApertureSettings } from "./settings-command";
 import { registerSetupCommand } from "./setup-command";
@@ -106,7 +107,10 @@ export default async function (pi: ExtensionAPI): Promise<void> {
   });
 
   // Register setup command only when onboarding is pending
-  registerSetupCommand(pi, onSync);
+  const globalConfig = configLoader.getRawConfig("global");
+  if (isOnboardingPending(globalConfig)) {
+    registerSetupCommand(pi, onSync);
+  }
   // Always register settings command
   registerApertureSettings(pi, onSync);
 }
