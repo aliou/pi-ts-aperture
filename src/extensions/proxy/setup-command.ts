@@ -22,7 +22,7 @@ export function registerOnboardingCommand(pi: ExtensionAPI): void {
     handler: async (_args, ctx: ExtensionCommandContext) => {
       if (!ctx.hasUI) {
         ctx.ui.notify(
-          "aperture:onboarding requires an interactive terminal",
+          "[aperture] onboarding requires an interactive terminal",
           "error",
         );
         return;
