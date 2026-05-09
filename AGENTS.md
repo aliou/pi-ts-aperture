@@ -11,8 +11,8 @@ Pi extension that routes LLM traffic through Tailscale Aperture.
 
 - `src/extensions/proxy/index.ts` - Entry point: proxy extension. Registers setup/settings, handles session sync.
 - `src/extensions/proxy/runtime.ts` - `ApertureRuntime` class for proxy mode provider registration/unregistration.
-- `src/extensions/proxy/onboarding.ts` - Onboarding wizard (`/aperture:setup`). Steps: welcome, URL, mode, proxy providers, recap.
-- `src/extensions/proxy/setup-command.ts` - `/aperture:setup` command registration (delegates to onboarding).
+- `src/extensions/proxy/onboarding.ts` - Onboarding wizard (`/aperture:onboarding`). Steps: welcome, URL, mode, proxy providers, recap.
+- `src/extensions/proxy/setup-command.ts` - `/aperture:onboarding` command registration (delegates to onboarding).
 - `src/extensions/proxy/setup-wizard.ts` - `UrlStep` TUI component (shared by onboarding).
 - `src/extensions/proxy/settings-command.ts` - `/aperture:settings` settings UI via `registerSettingsCommand`.
 - `src/extensions/provider/index.ts` - Entry point: dedicated mode. Fetches Aperture models and registers `"aperture"` provider.
@@ -53,7 +53,7 @@ Defaults: `mode: "dedicated"`, `onboardingDone: false`, empty proxy providers.
 
 ## Commands
 
-- `/aperture:setup` - Onboarding wizard. Only appears when `onboardingDone` is not `true`. After completion, saves config with `onboardingDone: true`.
+- `/aperture:onboarding` - Onboarding wizard. Only appears when `onboardingDone` is not `true`. After completion, saves config with `onboardingDone: true`.
 - `/aperture:settings` - Edit config: connection URL, mode, proxy providers, onboarding status.
 
 ## Key decisions

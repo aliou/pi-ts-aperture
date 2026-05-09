@@ -266,7 +266,7 @@ export function registerApertureSettings(
                             : "none enabled";
                         },
                         emptyStateText:
-                          "No providers configured. Run /aperture:setup to discover providers.",
+                          "No providers configured. Run /aperture:onboarding to discover providers.",
                       });
                     }
                   : undefined,
@@ -280,8 +280,8 @@ export function registerApertureSettings(
               id: "onboardingDone",
               label: "Onboarding",
               description: onboardingDone
-                ? "Setup has been completed. Disable to re-run /aperture:setup on next reload."
-                : "Setup is pending. Run /aperture:setup to configure Aperture.",
+                ? "Setup has been completed. Disable to re-run /aperture:onboarding on next reload."
+                : "Setup is pending. Run /aperture:onboarding to configure Aperture.",
               currentValue: onboardingDone ? "completed" : "pending",
               values: ["completed", "pending"],
             },

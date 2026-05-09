@@ -1,9 +1,8 @@
 /**
- * aperture:setup -- onboarding wizard for configuring Aperture.
+ * aperture:onboarding -- first-time setup wizard for configuring Aperture.
  *
- * If onboarding is already completed, notifies the user to use
- * /aperture:settings instead. Otherwise, shows the interactive
- * setup wizard.
+ * Only registered when onboarding has not been completed yet.
+ * After completion, the command is no longer available.
  */
 
 import type {
@@ -17,13 +16,13 @@ import {
   type OnboardingResult,
 } from "./onboarding";
 
-export function registerSetupCommand(pi: ExtensionAPI): void {
-  pi.registerCommand("aperture:setup", {
-    description: "Configure Tailscale Aperture integration",
+export function registerOnboardingCommand(pi: ExtensionAPI): void {
+  pi.registerCommand("aperture:onboarding", {
+    description: "First-time setup for Tailscale Aperture integration",
     handler: async (_args, ctx: ExtensionCommandContext) => {
       if (!ctx.hasUI) {
         ctx.ui.notify(
-          "aperture:setup requires an interactive terminal",
+          "aperture:onboarding requires an interactive terminal",
           "error",
         );
         return;
@@ -48,7 +47,7 @@ export function registerSetupCommand(pi: ExtensionAPI): void {
       );
 
       if (!result.completed) {
-        ctx.ui.notify("[aperture] setup cancelled.", "warning");
+        ctx.ui.notify("[aperture] onboarding cancelled.", "warning");
         return;
       }
 
@@ -63,7 +62,7 @@ export function registerSetupCommand(pi: ExtensionAPI): void {
 
       for (let i = 2; i > 0; i--) {
         ctx.ui.notify(
-          `[aperture] setup completed. Reloading in ${i}s...`,
+          `[aperture] onboarding completed. Reloading in ${i}s...`,
           "info",
         );
         await new Promise((r) => setTimeout(r, 1000));
