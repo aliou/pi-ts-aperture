@@ -109,7 +109,7 @@ export default async function (pi: ExtensionAPI): Promise<void> {
   // Register setup command only when onboarding is pending
   const globalConfig = configLoader.getRawConfig("global");
   if (isOnboardingPending(globalConfig)) {
-    registerSetupCommand(pi, onSync);
+    registerSetupCommand(pi);
   }
   // Always register settings command
   registerApertureSettings(pi, onSync);
