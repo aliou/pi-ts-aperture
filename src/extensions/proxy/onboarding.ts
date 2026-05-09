@@ -278,7 +278,7 @@ class ModeStep implements Component {
         "",
         "- All gateway models appear under one provider",
         "- Uses `openai-completions` API for all models",
-        "- Recommended for most setups",
+        "- Models use default config (shared context window, no reasoning, no costs) since Aperture does not expose full model details yet",
       ].join("\n"),
       [
         "Reroute existing Pi providers (anthropic, openai, etc.) through Aperture, keeping their original model definitions.",
