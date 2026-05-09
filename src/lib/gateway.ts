@@ -14,6 +14,12 @@ export interface GatewayModel {
     id: string;
     name?: string;
   };
+  pricing?: {
+    input?: string;
+    input_cache_read?: string;
+    input_cache_write?: string;
+    output?: string;
+  };
 }
 
 interface GatewayModelResponse {
@@ -24,6 +30,12 @@ interface GatewayModelResponse {
         id?: string;
         name?: string;
       };
+    };
+    pricing?: {
+      input?: string;
+      input_cache_read?: string;
+      input_cache_write?: string;
+      output?: string;
     };
   }[];
 }
@@ -69,6 +81,14 @@ export async function fetchGatewayModels(
               ? {
                   id: providerId,
                   name: m.metadata?.provider?.name,
+                }
+              : undefined,
+            pricing: m.pricing
+              ? {
+                  input: m.pricing.input,
+                  input_cache_read: m.pricing.input_cache_read,
+                  input_cache_write: m.pricing.input_cache_write,
+                  output: m.pricing.output,
                 }
               : undefined,
           };
