@@ -59,11 +59,15 @@ class FilterableChecklist implements Component {
   private selectedIndex = 0;
   private scrollOffset = 0;
 
+  /** Extra hint line shown below the standard hints. */
+  private extraHint = "";
+
   constructor(
     private readonly settingsTheme: SettingsTheme,
     items: ChecklistItem[],
     private readonly onToggle: (id: string) => void,
-    private readonly onContinue: () => void,
+    /** Optional handler for Ctrl+G (e.g. gateway check toggle). */
+    private readonly onCtrlG?: () => void,
   ) {
     this.items = items;
   }
@@ -73,9 +77,9 @@ class FilterableChecklist implements Component {
     this.items = items;
   }
 
-  /** Current search text (readable by parent for key routing). */
-  get searchText(): string {
-    return this.searchTextValue;
+  /** Set extra hint text shown below the standard key hints. */
+  setExtraHint(hint: string): void {
+    this.extraHint = hint;
   }
 
   invalidate() {}
@@ -160,16 +164,20 @@ class FilterableChecklist implements Component {
     }
 
     lines.push("");
-    const hints = ["\u2191\u2193: navigate", "Enter: toggle", "Tab: continue"];
+    const hints = ["\u2191\u2193: navigate", "Enter: toggle"];
+    if (this.onCtrlG) hints.push("Ctrl+G: gateway check");
     lines.push(this.settingsTheme.hint(`  ${hints.join(" \u00b7 ")}`));
+    if (this.extraHint) {
+      lines.push(this.settingsTheme.hint(`  ${this.extraHint}`));
+    }
 
     return lines;
   }
 
   handleInput(data: string): void {
-    // Tab: continue
-    if (matchesKey(data, Key.tab)) {
-      this.onContinue();
+    // Ctrl+G: optional action (e.g. toggle gateway check)
+    if (this.onCtrlG && matchesKey(data, Key.ctrl("g"))) {
+      this.onCtrlG();
       return;
     }
 
@@ -341,7 +349,6 @@ class ProxyProvidersStep implements Component {
     theme: Theme,
     private readonly state: OnboardingState,
     knownProviders: string[],
-    private readonly onSelect: () => void,
   ) {
     this.settingsTheme = getSettingsTheme(theme);
     this.providerIds = knownProviders;
@@ -368,8 +375,6 @@ class ProxyProvidersStep implements Component {
         "  No providers available in the model registry.",
         "",
         "  You can add proxy providers later in /aperture:settings.",
-        "",
-        this.settingsTheme.hint("  Tab: continue"),
       ];
     }
 
@@ -378,22 +383,19 @@ class ProxyProvidersStep implements Component {
         this.settingsTheme,
         this.buildItems(),
         (id) => this.toggleProvider(id),
-        () => {
-          this.saveState();
-          this.onSelect();
-        },
+        () => this.toggleGatewayCheck(),
       );
     } else {
       this.checklist.updateItems(this.buildItems());
     }
 
-    const gwCheck = this.checkAllGateway ? "[x]" : "[ ]";
+    const gwLabel = this.checkAllGateway ? "on" : "off";
+    this.checklist.setExtraHint(`gateway model check: ${gwLabel}`);
+
     return [
       "  Select providers to route through Aperture:",
       "",
       ...this.checklist.render(width),
-      "",
-      `  ${gwCheck} verify models on gateway (backspace to toggle)`,
     ];
   }
 
@@ -403,23 +405,15 @@ class ProxyProvidersStep implements Component {
     } else {
       this.checked.add(id);
     }
+    this.saveState();
+  }
+
+  private toggleGatewayCheck(): void {
+    this.checkAllGateway = !this.checkAllGateway;
+    this.saveState();
   }
 
   handleInput(data: string): void {
-    if (this.providerIds.length === 0) {
-      if (matchesKey(data, Key.tab)) {
-        this.saveState();
-        this.onSelect();
-      }
-      return;
-    }
-
-    // Backspace with empty search toggles gateway check
-    if (matchesKey(data, Key.backspace) && this.checklist?.searchText === "") {
-      this.checkAllGateway = !this.checkAllGateway;
-      return;
-    }
-
     this.checklist?.handleInput(data);
   }
 
@@ -647,11 +641,8 @@ class ProvidersStep implements Component {
           this.theme,
           this.state,
           this.knownProviders,
-          () => {
-            this.wizCtx.markComplete();
-            this.wizCtx.goNext();
-          },
         );
+        this.wizCtx.markComplete();
       }
       return this.proxyStep.render(width);
     }
@@ -662,24 +653,13 @@ class ProvidersStep implements Component {
           this.theme,
           this.tui,
           this.state,
-          () => {
-            this.wizCtx.markComplete();
-            this.wizCtx.goNext();
-          },
         );
+        this.wizCtx.markComplete();
       }
       return this.dedicatedStep.render(width);
     }
 
-    return [
-      "  Select a mode first.",
-      "",
-      this.settingsTheme.hint("  Press Tab to continue."),
-    ];
-  }
-
-  private get settingsTheme(): SettingsTheme {
-    return getSettingsTheme(this.theme);
+    return ["  Select a mode first."];
   }
 
   handleInput(data: string): void {
@@ -690,10 +670,6 @@ class ProvidersStep implements Component {
     if (this.state.mode === "dedicated" && this.dedicatedStep) {
       this.dedicatedStep.handleInput(data);
       return;
-    }
-    if (matchesKey(data, Key.tab)) {
-      this.wizCtx.markComplete();
-      this.wizCtx.goNext();
     }
   }
 }
@@ -711,7 +687,6 @@ class DedicatedProvidersStep implements Component {
     theme: Theme,
     private readonly tui: TUI,
     private readonly state: OnboardingState,
-    private readonly onSelect: () => void,
   ) {
     this.settingsTheme = getSettingsTheme(theme);
     this.enabled = new Set(
@@ -736,6 +711,7 @@ class DedicatedProvidersStep implements Component {
         }
       }
       this.loading = false;
+      this.saveState();
       this.tui.requestRender();
     } catch {
       this.error = "Failed to fetch providers from gateway";
@@ -764,19 +740,11 @@ class DedicatedProvidersStep implements Component {
     }
 
     if (this.error) {
-      return [
-        `  ${this.error}`,
-        "",
-        this.settingsTheme.hint("  Tab: continue without provider filter"),
-      ];
+      return [`  ${this.error}`, ""];
     }
 
     if (this.providers.length === 0) {
-      return [
-        "  No providers found on the Aperture gateway.",
-        "",
-        this.settingsTheme.hint("  Tab: continue"),
-      ];
+      return ["  No providers found on the Aperture gateway.", ""];
     }
 
     if (!this.checklist) {
@@ -784,10 +752,6 @@ class DedicatedProvidersStep implements Component {
         this.settingsTheme,
         this.buildItems(),
         (id) => this.toggleProvider(id),
-        () => {
-          this.saveState();
-          this.onSelect();
-        },
       );
     } else {
       this.checklist.updateItems(this.buildItems());
@@ -806,19 +770,11 @@ class DedicatedProvidersStep implements Component {
     } else {
       this.enabled.add(id);
     }
+    this.saveState();
   }
 
   handleInput(data: string): void {
     if (this.loading) return;
-
-    if (this.providers.length === 0 || this.error) {
-      if (matchesKey(data, Key.tab)) {
-        this.saveState();
-        this.onSelect();
-      }
-      return;
-    }
-
     this.checklist?.handleInput(data);
   }
 
