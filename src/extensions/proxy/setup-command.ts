@@ -15,7 +15,6 @@ import { configLoader } from "../../lib/config";
 import {
   buildOnboardedConfig,
   createOnboardingWizard,
-  isOnboardingPending,
   type OnboardingResult,
 } from "./onboarding";
 
@@ -35,13 +34,6 @@ export function registerSetupCommand(
       }
 
       const globalConfig = configLoader.getRawConfig("global");
-      if (!isOnboardingPending(globalConfig)) {
-        ctx.ui.notify(
-          "[aperture] setup already completed. Use /aperture:settings to update.",
-          "info",
-        );
-        return;
-      }
 
       const knownProviders = Array.from(
         new Set(ctx.modelRegistry.getAll().map((model) => model.provider)),
