@@ -52,14 +52,10 @@ interface ChecklistItem {
   id: string;
   label: string;
   checked: boolean;
-  /** Optional sub-row (e.g. gateway check) shown when checked */
-  subLabel?: string;
-  subChecked?: boolean;
 }
 
 class FilterableChecklist implements Component {
-  private searchText = "";
-  private searchActive = false;
+  private searchTextValue = "";
   private selectedIndex = 0;
   private scrollOffset = 0;
 
@@ -67,9 +63,7 @@ class FilterableChecklist implements Component {
     private readonly settingsTheme: SettingsTheme,
     items: ChecklistItem[],
     private readonly onToggle: (id: string) => void,
-    private readonly onSubToggle: (id: string) => void,
     private readonly onContinue: () => void,
-    private readonly hintExtra = "",
   ) {
     this.items = items;
   }
@@ -79,11 +73,16 @@ class FilterableChecklist implements Component {
     this.items = items;
   }
 
+  /** Current search text (readable by parent for key routing). */
+  get searchText(): string {
+    return this.searchTextValue;
+  }
+
   invalidate() {}
 
   /** Filtered items based on current search query. */
   private get filtered(): ChecklistItem[] {
-    const query = this.searchText.toLowerCase().trim();
+    const query = this.searchTextValue.toLowerCase().trim();
     if (!query) return this.items;
     return this.items.filter(
       (item) =>
@@ -92,97 +91,39 @@ class FilterableChecklist implements Component {
     );
   }
 
-  /** Number of visual rows per item (1 normally, 2 if it has a sub-row that's visible). */
-  private itemRowCount(item: ChecklistItem): number {
-    return item.checked && item.subLabel ? 2 : 1;
-  }
-
-  /** Total visual rows for all filtered items. */
-  private totalRows(): number {
-    return this.filtered.reduce(
-      (sum, item) => sum + this.itemRowCount(item),
-      0,
-    );
-  }
-
-  private itemToRow(itemIndex: number): number {
-    let row = 0;
-    for (let i = 0; i < itemIndex; i++) {
-      const item = this.filtered[i];
-      if (item) row += this.itemRowCount(item);
-    }
-    return row;
-  }
-
   private clampScroll(): void {
-    const total = this.totalRows();
-    const maxOffset = Math.max(0, total - LIST_HEIGHT);
+    const count = this.filtered.length;
+    const maxOffset = Math.max(0, count - LIST_HEIGHT);
     this.scrollOffset = Math.min(this.scrollOffset, maxOffset);
 
-    // Ensure selected row is visible
-    const selectedRow = this.itemToRow(this.selectedIndex);
-    const selectedRows = this.itemRowCount(
-      this.filtered[this.selectedIndex] ?? { checked: false },
-    );
-    if (selectedRow < this.scrollOffset) {
-      this.scrollOffset = selectedRow;
-    } else if (selectedRow + selectedRows > this.scrollOffset + LIST_HEIGHT) {
-      this.scrollOffset = selectedRow + selectedRows - LIST_HEIGHT;
+    if (this.selectedIndex < this.scrollOffset) {
+      this.scrollOffset = this.selectedIndex;
+    } else if (this.selectedIndex >= this.scrollOffset + LIST_HEIGHT) {
+      this.scrollOffset = this.selectedIndex - LIST_HEIGHT + 1;
     }
   }
 
   render(_width: number): string[] {
     const lines: string[] = [];
 
-    // Search bar
-    const searchIcon = this.searchActive ? ">" : "/";
-    const displayText = this.searchText || "search...";
-    const styledText = this.searchText
-      ? this.settingsTheme.value(displayText, true)
+    // Search bar (always active)
+    const displayText = this.searchTextValue || "type to filter...";
+    const styledText = this.searchTextValue
+      ? displayText
       : this.settingsTheme.hint(displayText);
-    lines.push(`  ${this.settingsTheme.hint(searchIcon)} ${styledText}`);
+    lines.push(`  > ${styledText}`);
     lines.push("");
 
     const filtered = this.filtered;
     if (filtered.length === 0) {
       lines.push(this.settingsTheme.hint("  No matching providers."));
-      // Pad to fixed height
       for (let i = 1; i < LIST_HEIGHT; i++) lines.push("");
     } else {
-      // Build all visual rows
-      const allRows: string[] = [];
-      for (let i = 0; i < filtered.length; i++) {
-        const item = filtered[i];
-        if (!item) continue;
-        const selected = i === this.selectedIndex;
-        const prefix = selected ? this.settingsTheme.cursor : "  ";
-        const check = item.checked ? "[x]" : "[ ]";
-        const label = this.settingsTheme.value(
-          ` ${check} ${item.label}`,
-          selected,
-        );
-        allRows.push(`${prefix}${label}`);
-
-        if (item.checked && item.subLabel) {
-          const subCheck = item.subChecked ? "[x]" : "[ ]";
-          allRows.push(
-            this.settingsTheme.hint(`    ${subCheck} ${item.subLabel}`),
-          );
-        }
-      }
-
-      // Scroll window
       this.clampScroll();
-      const visible = allRows.slice(
-        this.scrollOffset,
-        this.scrollOffset + LIST_HEIGHT,
-      );
-
-      // Scroll indicators
       const above = this.scrollOffset;
       const below = Math.max(
         0,
-        allRows.length - this.scrollOffset - LIST_HEIGHT,
+        filtered.length - this.scrollOffset - LIST_HEIGHT,
       );
 
       if (above > 0) {
@@ -191,10 +132,24 @@ class FilterableChecklist implements Component {
         lines.push("");
       }
 
-      lines.push(...visible);
-      // Pad if visible rows < LIST_HEIGHT
-      while (lines.length - 3 < LIST_HEIGHT + 1) {
-        lines.push("");
+      for (
+        let i = this.scrollOffset;
+        i < this.scrollOffset + LIST_HEIGHT;
+        i++
+      ) {
+        const item = filtered[i];
+        if (!item) {
+          lines.push("");
+          continue;
+        }
+        const selected = i === this.selectedIndex;
+        const prefix = selected ? this.settingsTheme.cursor : "  ";
+        const check = item.checked ? "[x]" : "[ ]";
+        const label = this.settingsTheme.value(
+          ` ${check} ${item.label}`,
+          selected,
+        );
+        lines.push(`${prefix}${label}`);
       }
 
       if (below > 0) {
@@ -205,84 +160,60 @@ class FilterableChecklist implements Component {
     }
 
     lines.push("");
-    const hints = ["Space: toggle", "j/k: navigate", "Enter/Tab: continue"];
-    if (this.hintExtra) hints.push(this.hintExtra);
-    if (!this.searchActive) hints.push("/: search");
-    else hints.push("Esc: exit search");
+    const hints = ["\u2191\u2193: navigate", "Enter: toggle", "Tab: continue"];
     lines.push(this.settingsTheme.hint(`  ${hints.join(" \u00b7 ")}`));
 
     return lines;
   }
 
   handleInput(data: string): void {
-    // Search mode
-    if (this.searchActive) {
-      if (matchesKey(data, Key.escape)) {
-        this.searchActive = false;
-        return;
-      }
-      if (matchesKey(data, Key.enter) || matchesKey(data, Key.tab)) {
-        this.searchActive = false;
-        return;
-      }
-      if (matchesKey(data, Key.backspace)) {
-        this.searchText = this.searchText.slice(0, -1);
-        this.selectedIndex = 0;
-        this.scrollOffset = 0;
-        return;
-      }
-      // Printable character: append to search
-      if (data.length === 1 && data >= " " && data <= "~") {
-        this.searchText += data;
-        this.selectedIndex = 0;
-        this.scrollOffset = 0;
-      }
+    // Tab: continue
+    if (matchesKey(data, Key.tab)) {
+      this.onContinue();
       return;
     }
 
-    const filtered = this.filtered;
-
-    // Enter search mode
-    if (data === "/") {
-      this.searchActive = true;
-      return;
-    }
-
-    // Navigation
-    if (matchesKey(data, Key.up) || data === "k") {
-      if (filtered.length === 0) return;
+    // Up/down: navigate filtered list
+    if (matchesKey(data, Key.up)) {
+      if (this.filtered.length === 0) return;
       this.selectedIndex =
-        this.selectedIndex === 0 ? filtered.length - 1 : this.selectedIndex - 1;
+        this.selectedIndex === 0
+          ? this.filtered.length - 1
+          : this.selectedIndex - 1;
       this.clampScroll();
       return;
     }
-    if (matchesKey(data, Key.down) || data === "j") {
-      if (filtered.length === 0) return;
+    if (matchesKey(data, Key.down)) {
+      if (this.filtered.length === 0) return;
       this.selectedIndex =
-        this.selectedIndex === filtered.length - 1 ? 0 : this.selectedIndex + 1;
+        this.selectedIndex === this.filtered.length - 1
+          ? 0
+          : this.selectedIndex + 1;
       this.clampScroll();
       return;
     }
 
-    // Toggle checkbox
-    if (matchesKey(data, Key.space)) {
-      const item = filtered[this.selectedIndex];
+    // Enter: toggle selected item
+    if (matchesKey(data, Key.enter)) {
+      const item = this.filtered[this.selectedIndex];
       if (!item) return;
       this.onToggle(item.id);
       return;
     }
 
-    // Toggle sub-option
-    if (data === "g") {
-      const item = filtered[this.selectedIndex];
-      if (!item || !item.checked) return;
-      this.onSubToggle(item.id);
+    // Backspace: delete last search char
+    if (matchesKey(data, Key.backspace)) {
+      this.searchTextValue = this.searchTextValue.slice(0, -1);
+      this.selectedIndex = 0;
+      this.scrollOffset = 0;
       return;
     }
 
-    // Continue
-    if (matchesKey(data, Key.enter) || matchesKey(data, Key.tab)) {
-      this.onContinue();
+    // Printable character: append to search
+    if (data.length === 1 && data >= " " && data <= "~") {
+      this.searchTextValue += data;
+      this.selectedIndex = 0;
+      this.scrollOffset = 0;
     }
   }
 }
@@ -403,7 +334,7 @@ class ProxyProvidersStep implements Component {
   private readonly settingsTheme: SettingsTheme;
   private readonly providerIds: string[];
   private readonly checked: Set<string>;
-  private readonly gatewayCheck: Set<string>;
+  private checkAllGateway = true;
   private checklist: FilterableChecklist | null = null;
 
   constructor(
@@ -415,11 +346,10 @@ class ProxyProvidersStep implements Component {
     this.settingsTheme = getSettingsTheme(theme);
     this.providerIds = knownProviders;
     this.checked = new Set(state.upstreamProviders.map((p) => p.id));
-    this.gatewayCheck = new Set(
-      state.upstreamProviders
-        .filter((p) => p.shouldCheckGatewayModels)
-        .map((p) => p.id),
-    );
+    const allCheckedGateway =
+      state.upstreamProviders.length > 0 &&
+      state.upstreamProviders.every((p) => p.shouldCheckGatewayModels);
+    this.checkAllGateway = allCheckedGateway;
   }
 
   private buildItems(): ChecklistItem[] {
@@ -427,8 +357,6 @@ class ProxyProvidersStep implements Component {
       id,
       label: id,
       checked: this.checked.has(id),
-      subLabel: "verify models on gateway",
-      subChecked: this.gatewayCheck.has(id),
     }));
   }
 
@@ -441,7 +369,7 @@ class ProxyProvidersStep implements Component {
         "",
         "  You can add proxy providers later in /aperture:settings.",
         "",
-        this.settingsTheme.hint("  Enter: continue"),
+        this.settingsTheme.hint("  Tab: continue"),
       ];
     }
 
@@ -450,47 +378,45 @@ class ProxyProvidersStep implements Component {
         this.settingsTheme,
         this.buildItems(),
         (id) => this.toggleProvider(id),
-        (id) => this.toggleGatewayCheck(id),
         () => {
           this.saveState();
           this.onSelect();
         },
-        "g: gateway check",
       );
     } else {
       this.checklist.updateItems(this.buildItems());
     }
 
+    const gwCheck = this.checkAllGateway ? "[x]" : "[ ]";
     return [
       "  Select providers to route through Aperture:",
       "",
       ...this.checklist.render(width),
+      "",
+      `  ${gwCheck} verify models on gateway (backspace to toggle)`,
     ];
   }
 
   private toggleProvider(id: string): void {
     if (this.checked.has(id)) {
       this.checked.delete(id);
-      this.gatewayCheck.delete(id);
     } else {
       this.checked.add(id);
     }
   }
 
-  private toggleGatewayCheck(id: string): void {
-    if (this.gatewayCheck.has(id)) {
-      this.gatewayCheck.delete(id);
-    } else {
-      this.gatewayCheck.add(id);
-    }
-  }
-
   handleInput(data: string): void {
     if (this.providerIds.length === 0) {
-      if (matchesKey(data, Key.enter) || matchesKey(data, Key.tab)) {
+      if (matchesKey(data, Key.tab)) {
         this.saveState();
         this.onSelect();
       }
+      return;
+    }
+
+    // Backspace with empty search toggles gateway check
+    if (matchesKey(data, Key.backspace) && this.checklist?.searchText === "") {
+      this.checkAllGateway = !this.checkAllGateway;
       return;
     }
 
@@ -502,7 +428,7 @@ class ProxyProvidersStep implements Component {
       .filter((id) => this.checked.has(id))
       .map((id) => ({
         id,
-        shouldCheckGatewayModels: this.gatewayCheck.has(id),
+        shouldCheckGatewayModels: this.checkAllGateway,
       }));
   }
 }
@@ -748,7 +674,7 @@ class ProvidersStep implements Component {
     return [
       "  Select a mode first.",
       "",
-      this.settingsTheme.hint("  Press Enter to continue."),
+      this.settingsTheme.hint("  Press Tab to continue."),
     ];
   }
 
@@ -765,7 +691,7 @@ class ProvidersStep implements Component {
       this.dedicatedStep.handleInput(data);
       return;
     }
-    if (matchesKey(data, Key.enter)) {
+    if (matchesKey(data, Key.tab)) {
       this.wizCtx.markComplete();
       this.wizCtx.goNext();
     }
@@ -841,7 +767,7 @@ class DedicatedProvidersStep implements Component {
       return [
         `  ${this.error}`,
         "",
-        this.settingsTheme.hint("  Enter: continue without provider filter"),
+        this.settingsTheme.hint("  Tab: continue without provider filter"),
       ];
     }
 
@@ -849,7 +775,7 @@ class DedicatedProvidersStep implements Component {
       return [
         "  No providers found on the Aperture gateway.",
         "",
-        this.settingsTheme.hint("  Enter: continue"),
+        this.settingsTheme.hint("  Tab: continue"),
       ];
     }
 
@@ -858,7 +784,6 @@ class DedicatedProvidersStep implements Component {
         this.settingsTheme,
         this.buildItems(),
         (id) => this.toggleProvider(id),
-        () => {},
         () => {
           this.saveState();
           this.onSelect();
@@ -887,7 +812,7 @@ class DedicatedProvidersStep implements Component {
     if (this.loading) return;
 
     if (this.providers.length === 0 || this.error) {
-      if (matchesKey(data, Key.enter) || matchesKey(data, Key.tab)) {
+      if (matchesKey(data, Key.tab)) {
         this.saveState();
         this.onSelect();
       }
