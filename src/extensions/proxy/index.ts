@@ -16,7 +16,7 @@ import { resolveGatewayUrl } from "../../lib/url";
 import { isOnboardingPending } from "./onboarding";
 import { ApertureRuntime } from "./runtime";
 import { registerApertureSettings } from "./settings-command";
-import { registerSetupCommand } from "./setup-command";
+import { registerOnboardingCommand } from "./setup-command";
 
 export default async function (pi: ExtensionAPI): Promise<void> {
   await configLoader.load();
@@ -92,9 +92,18 @@ export default async function (pi: ExtensionAPI): Promise<void> {
     }
   };
 
-  // Register providers at session start (for new sessions) when in proxy mode
   pi.on("session_start", (_event, ctx) => {
     const config = configLoader.getConfig();
+
+    // Notify user to configure if onboarding is pending
+    if (isOnboardingPending(configLoader.getRawConfig("global"))) {
+      ctx.ui.notify(
+        "[aperture] extension installed. Run /aperture:onboarding to configure.",
+        "info",
+      );
+    }
+
+    // Register providers at session start when in proxy mode
     if (config.mode === "proxy") {
       lastRegisteredProviders = [
         ...config.proxy.upstreamProviders.map((p) => p.id),
@@ -106,10 +115,10 @@ export default async function (pi: ExtensionAPI): Promise<void> {
     }
   });
 
-  // Register setup command only when onboarding is pending
+  // Register onboarding command only when onboarding is pending
   const globalConfig = configLoader.getRawConfig("global");
   if (isOnboardingPending(globalConfig)) {
-    registerSetupCommand(pi);
+    registerOnboardingCommand(pi);
   }
   // Always register settings command
   registerApertureSettings(pi, onSync);

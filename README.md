@@ -15,7 +15,7 @@ pi install npm:@aliou/pi-ts-aperture
 Then run the setup wizard:
 
 ```
-/aperture:setup
+/aperture:onboarding
 ```
 
 The wizard walks you through:
@@ -40,7 +40,7 @@ Reroutes existing Pi providers (anthropic, openai, etc.) through Aperture. Each 
 
 | Command | Description |
 |---|---|
-| `/aperture:setup` | Onboarding wizard (only available before first setup) |
+| `/aperture:onboarding` | Onboarding wizard (only available before first setup) |
 | `/aperture:settings` | Settings UI to update connection, mode, providers, and onboarding status |
 
 ## How it works
