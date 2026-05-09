@@ -9,7 +9,6 @@
 import type {
   ExtensionAPI,
   ExtensionCommandContext,
-  ExtensionContext,
 } from "@mariozechner/pi-coding-agent";
 import { configLoader } from "../../lib/config";
 import {
@@ -18,10 +17,7 @@ import {
   type OnboardingResult,
 } from "./onboarding";
 
-export function registerSetupCommand(
-  pi: ExtensionAPI,
-  onSync: (ctx: ExtensionContext) => void,
-): void {
+export function registerSetupCommand(pi: ExtensionAPI): void {
   pi.registerCommand("aperture:setup", {
     description: "Configure Tailscale Aperture integration",
     handler: async (_args, ctx: ExtensionCommandContext) => {
@@ -65,19 +61,14 @@ export function registerSetupCommand(
       await configLoader.save("global", onboarded);
       await configLoader.load();
 
-      if (result.mode === "proxy") {
-        onSync(ctx);
-        ctx.ui.notify("[aperture] setup completed.", "info");
-      } else {
-        for (let i = 2; i > 0; i--) {
-          ctx.ui.notify(
-            `[aperture] setup completed. Reloading in ${i}s...`,
-            "info",
-          );
-          await new Promise((r) => setTimeout(r, 1000));
-        }
-        await ctx.reload();
+      for (let i = 2; i > 0; i--) {
+        ctx.ui.notify(
+          `[aperture] setup completed. Reloading in ${i}s...`,
+          "info",
+        );
+        await new Promise((r) => setTimeout(r, 1000));
       }
+      await ctx.reload();
     },
   });
 }
