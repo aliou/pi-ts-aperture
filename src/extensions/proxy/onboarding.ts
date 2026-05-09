@@ -18,14 +18,7 @@ import {
 import type { Theme } from "@mariozechner/pi-coding-agent";
 import { getMarkdownTheme } from "@mariozechner/pi-coding-agent";
 import type { Component, TUI } from "@mariozechner/pi-tui";
-import {
-  Box,
-  Input,
-  Key,
-  Markdown,
-  matchesKey,
-  Text,
-} from "@mariozechner/pi-tui";
+import { Box, Key, Markdown, matchesKey, Text } from "@mariozechner/pi-tui";
 import type {
   ApertureConfig,
   ApertureMode,
@@ -65,7 +58,7 @@ interface ChecklistItem {
 }
 
 class FilterableChecklist implements Component {
-  private searchInput = new Input();
+  private searchText = "";
   private searchActive = false;
   private selectedIndex = 0;
   private scrollOffset = 0;
@@ -90,7 +83,7 @@ class FilterableChecklist implements Component {
 
   /** Filtered items based on current search query. */
   private get filtered(): ChecklistItem[] {
-    const query = this.searchInput.getValue().toLowerCase().trim();
+    const query = this.searchText.toLowerCase().trim();
     if (!query) return this.items;
     return this.items.filter(
       (item) =>
@@ -138,15 +131,16 @@ class FilterableChecklist implements Component {
     }
   }
 
-  render(width: number): string[] {
+  render(_width: number): string[] {
     const lines: string[] = [];
 
     // Search bar
     const searchIcon = this.searchActive ? ">" : "/";
-    const searchValue = this.searchInput.render(width - 6).join("");
-    lines.push(
-      `  ${this.settingsTheme.hint(searchIcon)} ${searchValue || this.settingsTheme.hint("search...")}`,
-    );
+    const displayText = this.searchText || "search...";
+    const styledText = this.searchText
+      ? this.settingsTheme.value(displayText, true)
+      : this.settingsTheme.hint(displayText);
+    lines.push(`  ${this.settingsTheme.hint(searchIcon)} ${styledText}`);
     lines.push("");
 
     const filtered = this.filtered;
@@ -221,27 +215,34 @@ class FilterableChecklist implements Component {
   }
 
   handleInput(data: string): void {
-    // Search mode: all input goes to search field
+    // Search mode
     if (this.searchActive) {
       if (matchesKey(data, Key.escape)) {
         this.searchActive = false;
         return;
       }
-      // Enter/Tab exits search (doesn't continue the wizard)
       if (matchesKey(data, Key.enter) || matchesKey(data, Key.tab)) {
         this.searchActive = false;
         return;
       }
-      this.searchInput.handleInput(data);
-      // Reset selection to first filtered item
-      this.selectedIndex = 0;
-      this.scrollOffset = 0;
+      if (matchesKey(data, Key.backspace)) {
+        this.searchText = this.searchText.slice(0, -1);
+        this.selectedIndex = 0;
+        this.scrollOffset = 0;
+        return;
+      }
+      // Printable character: append to search
+      if (data.length === 1 && data >= " " && data <= "~") {
+        this.searchText += data;
+        this.selectedIndex = 0;
+        this.scrollOffset = 0;
+      }
       return;
     }
 
     const filtered = this.filtered;
 
-    // Enter search mode with / or printable chars
+    // Enter search mode
     if (data === "/") {
       this.searchActive = true;
       return;
@@ -250,16 +251,6 @@ class FilterableChecklist implements Component {
     // Navigation
     if (matchesKey(data, Key.up) || data === "k") {
       if (filtered.length === 0) return;
-      // If on a sub-row, go up to main row first
-      const current = this.filtered[this.selectedIndex];
-      if (
-        current?.checked &&
-        current.subLabel &&
-        this.itemToRow(this.selectedIndex) + 1 <
-          this.itemToRow(this.selectedIndex) + this.itemRowCount(current)
-      ) {
-        // Already handled: just move up within item
-      }
       this.selectedIndex =
         this.selectedIndex === 0 ? filtered.length - 1 : this.selectedIndex - 1;
       this.clampScroll();
