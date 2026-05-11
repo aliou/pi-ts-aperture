@@ -1,6 +1,9 @@
 import type { ProviderModelConfig } from "@mariozechner/pi-coding-agent";
 import type { GatewayModel } from "./gateway";
 
+/** Separator between provider ID and gateway model ID in Pi model registry. */
+export const PROVIDER_SEPARATOR = "::";
+
 /** Parse a pricing string (per-token USD) to a number. */
 function parsePrice(value: string | undefined): number {
   if (!value) return 0;
@@ -11,7 +14,9 @@ function parsePrice(value: string | undefined): number {
 export function buildDefaultModelConfig(
   model: GatewayModel,
 ): ProviderModelConfig {
-  const id = model.provider ? `${model.provider.id}/${model.id}` : model.id;
+  const id = model.provider
+    ? `${model.provider.id}${PROVIDER_SEPARATOR}${model.id}`
+    : model.id;
   const cost = model.pricing
     ? {
         input: parsePrice(model.pricing.input),

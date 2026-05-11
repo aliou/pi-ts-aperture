@@ -62,7 +62,7 @@ Defaults: `mode: "dedicated"`, `onboardingDone: false`, empty proxy providers.
 - Two modes: `dedicated` (standalone provider) and `proxy` (reroute existing providers).
 - Proxy mode only overrides `baseUrl`, `apiKey`, and `headers` on existing providers. Model definitions are never touched.
 - Dedicated mode uses `openai-completions` API for all models regardless of original provider API type.
-- Dedicated mode model IDs are exposed as `provider/modelId` when Aperture returns `metadata.provider.id`; the provider prefix is stripped before requests are sent to Aperture.
+- Dedicated mode model IDs are exposed as `provider::modelId` (using `::` separator to avoid ambiguity with slashes in model IDs); the provider prefix is stripped before requests are sent to Aperture.
 - `apiKey` is set to `"-"` because Aperture injects the upstream provider key server-side.
 - Provider requests include provenance headers: `Referer: https://pi.dev`, `X-Title: npm:@aliou/pi-ts-aperture`.
 - Provider requests include a `x-session-id` header set to the Pi session ID.
