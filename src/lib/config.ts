@@ -25,6 +25,19 @@ export interface DedicatedProviderConfig {
   enabled: boolean;
 }
 
+/** Cached model from gateway, persisted for fast registration on resume. */
+export interface CachedModel {
+  id: string;
+  providerId: string;
+  providerName?: string;
+  pricing?: {
+    input?: string;
+    input_cache_read?: string;
+    input_cache_write?: string;
+    output?: string;
+  };
+}
+
 export interface ApertureConfig {
   baseUrl?: string;
   mode?: ApertureMode;
@@ -34,6 +47,7 @@ export interface ApertureConfig {
   };
   dedicated?: {
     providers?: DedicatedProviderConfig[];
+    cachedModels?: CachedModel[];
   };
 
   // --- Legacy fields (pre-0.6.0, migrated on load) ---
@@ -51,6 +65,7 @@ export interface ResolvedConfig {
   };
   dedicated: {
     providers: DedicatedProviderConfig[];
+    cachedModels: CachedModel[];
   };
 }
 
@@ -63,6 +78,7 @@ const DEFAULT_CONFIG: ResolvedConfig = {
   },
   dedicated: {
     providers: [],
+    cachedModels: [],
   },
 };
 

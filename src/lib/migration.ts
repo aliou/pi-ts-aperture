@@ -71,7 +71,9 @@ export const legacyMigration: Migration<ApertureConfig> = {
 
     // Ensure dedicated exists
     if (!migrated.dedicated) {
-      migrated.dedicated = { providers: [] };
+      migrated.dedicated = { providers: [], cachedModels: [] };
+    } else if (!migrated.dedicated.cachedModels) {
+      migrated.dedicated.cachedModels = [];
     }
 
     // Ensure proxy exists if mode is proxy
