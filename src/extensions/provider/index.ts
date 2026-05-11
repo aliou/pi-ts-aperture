@@ -6,7 +6,10 @@ import type {
 } from "@mariozechner/pi-coding-agent";
 import { configLoader } from "../../lib/config";
 import { fetchGatewayModels, type GatewayModel } from "../../lib/gateway";
-import { buildDefaultModelConfig } from "../../lib/model-defaults";
+import {
+  buildDefaultModelConfig,
+  PROVIDER_SEPARATOR,
+} from "../../lib/model-defaults";
 import type {
   AssistantMessageEventStream,
   Context,
@@ -22,13 +25,15 @@ const HEADERS = {
 };
 
 function getRequestModelId(modelId: string): string {
-  const slashIndex = modelId.indexOf("/");
-  return slashIndex === -1 ? modelId : modelId.slice(slashIndex + 1);
+  const sepIndex = modelId.indexOf(PROVIDER_SEPARATOR);
+  return sepIndex === -1
+    ? modelId
+    : modelId.slice(sepIndex + PROVIDER_SEPARATOR.length);
 }
 
 function getProviderId(modelId: string): string {
-  const slashIndex = modelId.indexOf("/");
-  return slashIndex === -1 ? "" : modelId.slice(0, slashIndex);
+  const sepIndex = modelId.indexOf(PROVIDER_SEPARATOR);
+  return sepIndex === -1 ? "" : modelId.slice(0, sepIndex);
 }
 
 function buildProviderModelConfig(model: GatewayModel): ProviderModelConfig {
