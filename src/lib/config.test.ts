@@ -116,6 +116,6 @@ describe("legacy migration", () => {
 
     const result = legacyMigration.run(old, "/fake/path");
 
-    expect(result.dedicated).toEqual({ providers: [] });
+    expect(result.dedicated).toEqual({ providers: [], cachedModels: [] });
   });
 });

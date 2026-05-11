@@ -4,11 +4,14 @@ import type {
   ExtensionAPI,
   ProviderModelConfig,
 } from "@mariozechner/pi-coding-agent";
+import type { CachedModel } from "../../lib/config";
 import { configLoader } from "../../lib/config";
 import { fetchGatewayModels, type GatewayModel } from "../../lib/gateway";
 import {
+  buildCachedModelConfig,
   buildDefaultModelConfig,
   PROVIDER_SEPARATOR,
+  toCachedModel,
 } from "../../lib/model-defaults";
 import type {
   AssistantMessageEventStream,
@@ -36,10 +39,6 @@ function getProviderId(modelId: string): string {
   return sepIndex === -1 ? "" : modelId.slice(0, sepIndex);
 }
 
-function buildProviderModelConfig(model: GatewayModel): ProviderModelConfig {
-  return buildDefaultModelConfig(model);
-}
-
 function buildStreamSimple() {
   const builtIn = getApiProvider("openai-completions");
   if (!builtIn) return undefined;
@@ -63,6 +62,26 @@ function buildStreamSimple() {
     );
 }
 
+/** Filter cached models by enabled dedicated providers. */
+function filterCachedModels(
+  cached: CachedModel[],
+  enabledProviderIds: Set<string>,
+): CachedModel[] {
+  return enabledProviderIds.size > 0
+    ? cached.filter((m) => enabledProviderIds.has(m.providerId))
+    : cached;
+}
+
+/** Filter gateway models by enabled dedicated providers. */
+function filterGatewayModels(
+  models: GatewayModel[],
+  enabledProviderIds: Set<string>,
+): GatewayModel[] {
+  return enabledProviderIds.size > 0
+    ? models.filter((m) => enabledProviderIds.has(m.providerId))
+    : models;
+}
+
 export default async function (pi: ExtensionAPI): Promise<void> {
   await configLoader.load();
 
@@ -72,27 +91,68 @@ export default async function (pi: ExtensionAPI): Promise<void> {
 
   if (config.mode !== "dedicated" || !gatewayUrl || !baseUrl) return;
 
-  const gatewayModels = await fetchGatewayModels(gatewayUrl);
+  const streamSimple = buildStreamSimple();
 
-  // Filter models by enabled dedicated providers
   const enabledProviderIds = new Set(
     config.dedicated.providers.filter((p) => p.enabled).map((p) => p.id),
   );
-  const filteredModels =
-    enabledProviderIds.size > 0
-      ? gatewayModels.filter((m) => enabledProviderIds.has(m.providerId))
-      : gatewayModels; // No config saved yet -> include all
 
-  const models: ProviderModelConfig[] = filteredModels.map(
-    buildProviderModelConfig,
+  // --- Register cached models immediately (no network) ---
+  const cached = filterCachedModels(
+    config.dedicated.cachedModels,
+    enabledProviderIds,
+  );
+  const cachedModelConfigs: ProviderModelConfig[] = cached.map(
+    buildCachedModelConfig,
   );
 
-  pi.registerProvider(PROVIDER_NAME, {
-    baseUrl,
-    apiKey: "-",
-    api: "openai-completions",
-    headers: HEADERS,
-    models,
-    streamSimple: buildStreamSimple(),
-  });
+  if (cachedModelConfigs.length > 0) {
+    pi.registerProvider(PROVIDER_NAME, {
+      baseUrl,
+      apiKey: "-",
+      api: "openai-completions",
+      headers: HEADERS,
+      models: cachedModelConfigs,
+      streamSimple,
+    });
+  }
+
+  // --- Fetch fresh models in background, re-register if changed ---
+  const gatewayModels = await fetchGatewayModels(gatewayUrl);
+  const filteredModels = filterGatewayModels(gatewayModels, enabledProviderIds);
+  const freshModelConfigs: ProviderModelConfig[] = filteredModels.map(
+    buildDefaultModelConfig,
+  );
+
+  // Check if model list changed
+  const cachedIds = new Set(cachedModelConfigs.map((m) => m.id));
+  const freshIds = new Set(freshModelConfigs.map((m) => m.id));
+  const changed =
+    cachedIds.size !== freshIds.size ||
+    [...freshIds].some((id) => !cachedIds.has(id));
+
+  // Always re-register with fresh data (prices may have changed)
+  if (freshModelConfigs.length > 0) {
+    pi.registerProvider(PROVIDER_NAME, {
+      baseUrl,
+      apiKey: "-",
+      api: "openai-completions",
+      headers: HEADERS,
+      models: freshModelConfigs,
+      streamSimple,
+    });
+  }
+
+  // Persist cache if models changed
+  if (changed) {
+    const allCached = gatewayModels.map(toCachedModel);
+    await configLoader.save("global", {
+      ...configLoader.getRawConfig("global"),
+      dedicated: {
+        ...configLoader.getRawConfig("global")?.dedicated,
+        providers: config.dedicated.providers,
+        cachedModels: allCached,
+      },
+    });
+  }
 }

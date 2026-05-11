@@ -1,4 +1,5 @@
 import type { ProviderModelConfig } from "@mariozechner/pi-coding-agent";
+import type { CachedModel } from "./config";
 import type { GatewayModel } from "./gateway";
 
 /** Separator between provider ID and gateway model ID in Pi model registry. */
@@ -34,5 +35,49 @@ export function buildDefaultModelConfig(
     cost,
     contextWindow: 128_000,
     maxTokens: 8_192,
+  };
+}
+
+/** Build a ProviderModelConfig from a cached model (no network call). */
+export function buildCachedModelConfig(
+  cached: CachedModel,
+): ProviderModelConfig {
+  const id = cached.providerId
+    ? `${cached.providerId}${PROVIDER_SEPARATOR}${cached.id}`
+    : cached.id;
+  const cost = cached.pricing
+    ? {
+        input: parsePrice(cached.pricing.input),
+        output: parsePrice(cached.pricing.output),
+        cacheRead: parsePrice(cached.pricing.input_cache_read),
+        cacheWrite: parsePrice(cached.pricing.input_cache_write),
+      }
+    : { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+
+  return {
+    id,
+    name: id,
+    reasoning: false,
+    input: ["text"],
+    cost,
+    contextWindow: 128_000,
+    maxTokens: 8_192,
+  };
+}
+
+/** Convert a GatewayModel to a CachedModel for persistence. */
+export function toCachedModel(model: GatewayModel): CachedModel {
+  return {
+    id: model.id,
+    providerId: model.providerId,
+    providerName: model.provider?.name,
+    pricing: model.pricing
+      ? {
+          input: model.pricing.input,
+          input_cache_read: model.pricing.input_cache_read,
+          input_cache_write: model.pricing.input_cache_write,
+          output: model.pricing.output,
+        }
+      : undefined,
   };
 }
