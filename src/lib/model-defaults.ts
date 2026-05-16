@@ -1,4 +1,4 @@
-import type { ProviderModelConfig } from "@mariozechner/pi-coding-agent";
+import type { ProviderModelConfig } from "@earendil-works/pi-coding-agent";
 import type { CachedModel } from "./config";
 import type { GatewayModel } from "./gateway";
 

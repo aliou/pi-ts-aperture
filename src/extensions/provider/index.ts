@@ -1,9 +1,10 @@
-import type { Api, Model } from "@mariozechner/pi-ai";
-import { getApiProvider } from "@mariozechner/pi-ai";
+import type { Api, Model } from "@earendil-works/pi-ai";
+import { getApiProvider } from "@earendil-works/pi-ai";
 import type {
   ExtensionAPI,
   ProviderModelConfig,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
+import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import type { CachedModel } from "../../lib/config";
 import { configLoader } from "../../lib/config";
 import { fetchGatewayModels, type GatewayModel } from "../../lib/gateway";

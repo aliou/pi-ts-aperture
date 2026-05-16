@@ -5,7 +5,7 @@
  * Only active when config.mode === "proxy".
  */
 
-import { getApiProvider } from "@mariozechner/pi-ai";
+import { getApiProvider } from "@earendil-works/pi-ai";
 import { configLoader } from "../../lib/config";
 import { fetchGatewayModels } from "../../lib/gateway";
 import type {

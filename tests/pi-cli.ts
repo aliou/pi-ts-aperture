@@ -5,7 +5,10 @@
  */
 
 import { resolve } from "node:path";
-import { type ModelInfo, RpcClient } from "@mariozechner/pi-coding-agent/modes";
+import {
+  type ModelInfo,
+  RpcClient,
+} from "@earendil-works/pi-coding-agent/modes";
 
 export type { ModelInfo };
 
@@ -14,7 +17,7 @@ export type { ModelInfo };
  * RpcClient spawns `node <cliPath>`, so we provide the resolved absolute path.
  */
 const PI_CLI_PATH = resolve(
-  "node_modules/@mariozechner/pi-coding-agent/dist/cli.js",
+  "node_modules/@earendil-works/pi-coding-agent/dist/cli.js",
 );
 
 export class PiCli {

@@ -9,7 +9,7 @@
 import type {
   ExtensionAPI,
   ExtensionContext,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 import { configLoader } from "../../lib/config";
 import { emitConfigSync } from "../../lib/sync-bus";
 import { resolveGatewayUrl } from "../../lib/url";
