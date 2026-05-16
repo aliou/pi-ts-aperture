@@ -6,8 +6,8 @@ import type {
   SettingsTheme,
   WizardStepContext,
 } from "@aliou/pi-utils-settings";
-import type { Component, TUI } from "@mariozechner/pi-tui";
-import { Input, Key, matchesKey } from "@mariozechner/pi-tui";
+import type { Component, TUI } from "@earendil-works/pi-tui";
+import { Input, Key, matchesKey } from "@earendil-works/pi-tui";
 import { checkApertureHealth } from "../../lib/gateway";
 import { normalizeInputUrl } from "../../lib/url";
 

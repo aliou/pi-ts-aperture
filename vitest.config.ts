@@ -4,8 +4,8 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   resolve: {
     alias: {
-      "@mariozechner/pi-coding-agent/modes": resolve(
-        "node_modules/@mariozechner/pi-coding-agent/dist/modes/index.js",
+      "@earendil-works/pi-coding-agent/modes": resolve(
+        "node_modules/@earendil-works/pi-coding-agent/dist/modes/index.js",
       ),
     },
   },

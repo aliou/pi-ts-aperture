@@ -15,10 +15,10 @@ import {
   Wizard,
   type WizardStepContext,
 } from "@aliou/pi-utils-settings";
-import type { Theme } from "@mariozechner/pi-coding-agent";
-import { getMarkdownTheme } from "@mariozechner/pi-coding-agent";
-import type { Component, TUI } from "@mariozechner/pi-tui";
-import { Box, Key, Markdown, matchesKey, Text } from "@mariozechner/pi-tui";
+import type { Theme } from "@earendil-works/pi-coding-agent";
+import { getMarkdownTheme } from "@earendil-works/pi-coding-agent";
+import type { Component, TUI } from "@earendil-works/pi-tui";
+import { Box, Key, Markdown, matchesKey, Text } from "@earendil-works/pi-tui";
 import type {
   ApertureConfig,
   ApertureMode,
@@ -61,6 +61,8 @@ class FilterableChecklist implements Component {
 
   /** Extra hint line shown below the standard hints. */
   private extraHint = "";
+
+  private items: ChecklistItem[];
 
   constructor(
     private readonly settingsTheme: SettingsTheme,

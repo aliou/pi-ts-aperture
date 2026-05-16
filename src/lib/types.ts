@@ -8,7 +8,7 @@ import type {
   Context,
   Model,
   SimpleStreamOptions,
-} from "@mariozechner/pi-ai";
+} from "@earendil-works/pi-ai";
 
 export type {
   Api,
