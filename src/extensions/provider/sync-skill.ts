@@ -20,7 +20,8 @@ Aperture dedicated mode discovers models from the gateway and registers them in 
 5. For each upstream provider, fetch \`{providerBaseurl}/v1/models\` when that endpoint exists.
 6. If upstream data is missing, fall back to \`https://models.dev/api.json\`.
 7. Update \`~/.pi/agent/models.json\` under \`providers.aperture.models\`. Only include models from enabled dedicated providers.
-8. Run \`/reload\`.
+8. Call \`aperture_validate_models_json\` and fix every reported error before continuing.
+9. Run \`/reload\` only after validation passes.
 
 ## Aperture Compatibility Mapping
 
@@ -41,7 +42,7 @@ Prefer \`openai_chat\` when a provider supports it, because it is Aperture's bro
 - Each model can override \`api\` and \`baseUrl\` when its upstream provider is not OpenAI-chat compatible.
 - Model IDs use \`{providerId}::{modelId}\`.
 - \`id\` and \`name\` are required.
-- \`cost\` is optional, but if present all four fields are required: \`input\`, \`output\`, \`cacheRead\`, \`cacheWrite\`.
+- \`cost\` is optional, but if present all four fields are required: \`input\`, \`output\`, \`cacheRead\`, \`cacheWrite\`. Use \`0\` for missing values; never write partial cost objects.
 - Costs in models.json are per-million tokens. Aperture gateway pricing is per-token USD, so multiply by 1,000,000 if copying gateway prices manually.
 - \`input\` only allows \`text\` and \`image\`. Map file/pdf/video-capable models to \`["text", "image"]\` when image-like inputs are supported.
 
