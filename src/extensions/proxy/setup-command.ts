@@ -67,6 +67,12 @@ export function registerOnboardingCommand(pi: ExtensionAPI): void {
         );
         await new Promise((r) => setTimeout(r, 1000));
       }
+      if (result.mode === "dedicated") {
+        ctx.ui.notify(
+          "[aperture] models use default capabilities (128k ctx, 8k out, no reasoning). Run /skill:sync-aperture-models to update.",
+          "warning",
+        );
+      }
       await ctx.reload();
     },
   });
