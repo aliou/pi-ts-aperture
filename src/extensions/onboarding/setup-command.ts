@@ -61,15 +61,16 @@ export function registerOnboardingCommand(pi: ExtensionAPI): void {
       await configLoader.load();
 
       for (let i = 2; i > 0; i--) {
-        ctx.ui.notify(
-          `[aperture] onboarding completed. Reloading in ${i}s...`,
-          "info",
-        );
+        const status =
+          result.mode === "dedicated"
+            ? "configuration saved"
+            : "onboarding completed";
+        ctx.ui.notify(`[aperture] ${status}. Reloading in ${i}s...`, "info");
         await new Promise((r) => setTimeout(r, 1000));
       }
       if (result.mode === "dedicated") {
         ctx.ui.notify(
-          "[aperture] models use default capabilities (128k ctx, 8k out, no reasoning). Run /skill:sync-aperture-models to update.",
+          "[aperture] run /skill:sync-aperture-models, then use aperture_complete_onboarding after validation passes.",
           "warning",
         );
       }
