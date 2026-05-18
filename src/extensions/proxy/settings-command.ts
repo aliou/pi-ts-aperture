@@ -56,6 +56,8 @@ export function registerApertureSettings(
       const mode = tabConfig?.mode ?? resolved.mode;
       const onboardingDone =
         tabConfig?.onboardingDone ?? resolved.onboardingDone;
+      const onboardingEnabled =
+        tabConfig?.onboarding?.enabled ?? resolved.onboarding.enabled;
       const upstreamProviders =
         tabConfig?.proxy?.upstreamProviders ?? resolved.proxy.upstreamProviders;
       const dedicatedProviders =
@@ -280,10 +282,18 @@ export function registerApertureSettings(
               id: "onboardingDone",
               label: "Onboarding",
               description: onboardingDone
-                ? "Setup has been completed. Disable to re-run /aperture:onboarding on next reload."
+                ? "Setup has been completed. Set to pending to re-run /aperture:onboarding on next reload."
                 : "Setup is pending. Run /aperture:onboarding to configure Aperture.",
               currentValue: onboardingDone ? "completed" : "pending",
               values: ["completed", "pending"],
+            },
+            {
+              id: "onboardingEnabled",
+              label: "Onboarding extension",
+              description:
+                "Controls temporary onboarding tools and the sync-aperture-models skill.",
+              currentValue: onboardingEnabled ? "enabled" : "disabled",
+              values: ["enabled", "disabled"],
             },
           ],
         },
@@ -297,6 +307,15 @@ export function registerApertureSettings(
         updated.baseUrl = newValue;
       } else if (id === "onboardingDone") {
         updated.onboardingDone = newValue === "completed";
+        updated.onboarding = {
+          ...updated.onboarding,
+          enabled: !updated.onboardingDone,
+        };
+      } else if (id === "onboardingEnabled") {
+        updated.onboarding = {
+          ...updated.onboarding,
+          enabled: newValue === "enabled",
+        };
       }
       return updated;
     },

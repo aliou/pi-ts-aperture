@@ -26,7 +26,8 @@
   "pi": {
     "extensions": [
       "./src/extensions/proxy/index.ts",
-      "./src/extensions/provider/index.ts"
+      "./src/extensions/provider/index.ts",
+      "./src/extensions/onboarding/index.ts"
     ],
     "video": "https://assets.aliou.me/github/aliou/pi-ts-aperture/demo.mp4"
   },
