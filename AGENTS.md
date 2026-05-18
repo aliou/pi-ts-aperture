@@ -15,7 +15,7 @@ Pi extension that routes LLM traffic through Tailscale Aperture.
 - `src/extensions/proxy/setup-command.ts` - `/aperture:onboarding` command registration (delegates to onboarding).
 - `src/extensions/proxy/setup-wizard.ts` - `UrlStep` TUI component with inline `/v1/models` health check.
 - `src/extensions/proxy/settings-command.ts` - `/aperture:settings` settings UI via `registerSettingsCommand`.
-- `src/extensions/provider/index.ts` - Entry point: dedicated mode. Registers cached Aperture models first, fetches fresh models, updates cache, registers `"aperture"` provider.
+- `src/extensions/provider/index.ts` - Entry point: dedicated mode. Registers cached Aperture models first, fetches fresh models, merges user-defined models, updates cache, registers `"aperture"` provider, and conditionally exposes the `sync-aperture-models` skill.
 - `src/lib/config.ts` - Config schema (`ApertureConfig`, `ResolvedConfig`, `ApertureMode`, cached model types) and `configLoader` instance.
 - `src/lib/migration.ts` - Legacy config migration (pre-two-mode shape -> current shape).
 - `src/lib/model-defaults.ts` - Default and cached model config builders for Aperture provider models.
@@ -66,6 +66,10 @@ interface CachedModel {
 
 Defaults: `mode: "dedicated"`, `onboardingDone: false`, empty proxy providers, empty dedicated provider filters, empty model cache.
 
+## Skills
+
+- `sync-aperture-models` - Helps the agent update `~/.pi/agent/models.json` with actual model capabilities (reasoning, context window, max tokens, modalities, costs) for Aperture dedicated mode. The skill is dynamically registered only when dedicated models are still using default capabilities. Skill content is inlined in `src/extensions/provider/index.ts` and written to a temp directory at runtime.
+
 ## Commands
 
 - `/aperture:onboarding` - Onboarding wizard. Only appears when `onboardingDone` is not `true`. After completion, saves config with `onboardingDone: true` and reloads.
@@ -84,7 +88,9 @@ Defaults: `mode: "dedicated"`, `onboardingDone: false`, empty proxy providers, e
 - Dedicated mode registers cached models immediately when available, then fetches fresh models from Aperture `/v1/models` and re-registers if fresh models are available.
 - Dedicated mode persists gateway models to `dedicated.cachedModels` for fast registration on the next startup.
 - Dedicated mode can filter gateway models by enabled `dedicated.providers`; an empty provider filter means all gateway providers are included.
-- Dedicated mode uses `buildDefaultModelConfig()` / `buildCachedModelConfig()` for every model: 128k context, 8k output, text-only, no reasoning, and pricing mapped from Aperture when available.
+- Dedicated mode builds safe defaults for every gateway model: 128k context, 8k output, text-only, no reasoning, and pricing mapped from Aperture when available.
+- User-defined models from `~/.pi/agent/models.json` under `providers.aperture.models` take precedence over gateway defaults, so synced/custom capabilities persist across restarts.
+- Dedicated mode exposes `sync-aperture-models` only when registered models still match default capabilities. Once every model is customized/synced, the skill and warning disappear.
 - `apiKey` is set to `"-"` because Aperture injects the upstream provider key server-side.
 - Provider requests include provenance headers: `Referer: https://pi.dev`, `X-Title: npm:@aliou/pi-ts-aperture`.
 - Provider requests include a `x-session-id` header set to the Pi session ID.

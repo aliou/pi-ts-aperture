@@ -6,17 +6,21 @@ Route Pi LLM providers through [Tailscale Aperture](https://tailscale.com/docs/f
 
 Aperture handles API key injection and request routing server-side. This extension integrates Pi with Aperture in two modes: **dedicated** (standalone provider) or **proxy** (reroute existing providers).
 
-## Setup
+## Install
 
 ```bash
 pi install npm:@aliou/pi-ts-aperture
 ```
 
-Then run the setup wizard:
+## First run
+
+After installing, run the onboarding wizard:
 
 ```
 /aperture:onboarding
 ```
+
+[![Onboarding walkthrough](https://assets.aliou.me/pi-extensions/demos/aperture/v0.6.0/onboarding.gif)](https://assets.aliou.me/pi-extensions/demos/aperture/v0.6.0/onboarding.mp4)
 
 The wizard walks you through:
 
@@ -27,7 +31,11 @@ The wizard walks you through:
    - Proxy mode: choose which existing Pi providers to route, with optional gateway model verification
 4. Recap and save
 
-Configuration is saved globally to `~/.pi/agent/extensions/aperture.json`.
+You can change everything later with:
+
+```
+/aperture:settings
+```
 
 ## Modes
 
@@ -35,7 +43,19 @@ Configuration is saved globally to `~/.pi/agent/extensions/aperture.json`.
 
 Registers a standalone `aperture` provider whose model list comes from the Aperture gateway. You can include all gateway providers or filter to specific gateway providers during onboarding or in settings.
 
-Dedicated mode uses the `openai-completions` API for all models. Because Aperture does not expose every Pi model capability yet, models use shared defaults: 128k context, 8k max output, text input, and no reasoning. Gateway pricing is mapped to Pi costs when Aperture returns pricing data.
+Model IDs use the format `{providerId}::{modelId}` (for example, `anthropic::claude-sonnet-4-20250514`). The provider prefix is stripped before requests reach Aperture.
+
+Dedicated mode uses the `openai-completions` API for all models. Because Aperture does not expose every Pi model capability yet, models use shared defaults on first load: 128k context, 8k max output, text input, and no reasoning. Gateway pricing is mapped to Pi costs when Aperture returns pricing data.
+
+Gateway model data is cached locally so models appear instantly on startup, then refreshed in the background.
+
+#### Sync model capabilities
+
+When models are using default capabilities, a `sync-aperture-models` skill becomes available and a warning appears on session start.
+
+Run the skill to look up real capabilities (context window, max tokens, reasoning, input modalities, costs) from upstream providers and models.dev, then update `~/.pi/agent/models.json`. User-defined model entries in `models.json` take precedence over gateway defaults and persist across restarts.
+
+Once all models have real capabilities, the skill and warning disappear automatically.
 
 ### Proxy
 
@@ -52,29 +72,36 @@ Proxy mode is useful when you want Pi's native per-provider model configuration 
 
 ## How it works
 
+### Request routing
+
+Both modes send requests to Aperture with provenance headers:
+
+- `Referer: https://pi.dev`
+- `X-Title: npm:@aliou/pi-ts-aperture`
+- `x-session-id` for grouping requests in the Aperture dashboard
+
+In dedicated mode, `x-upstream-provider-id` is also sent so Aperture routes to the correct upstream provider.
+
 ### Proxy mode
 
 For each configured upstream provider, the extension calls `registerProvider` with:
 
 - `baseUrl` set to your Aperture URL + `/v1`
 - `apiKey` set to `"-"` because Aperture injects upstream credentials server-side
-- provenance headers: `Referer: https://pi.dev`, `X-Title: npm:@aliou/pi-ts-aperture`
-- `x-session-id` header for grouping requests in the Aperture dashboard
 
-Optional gateway model verification can warn when configured Pi models are missing from the Aperture gateway.
+Optional gateway model verification can warn when configured Pi models are missing from the Aperture gateway. Removed providers are unregistered with a notification to `/reload` for native provider recovery.
 
 ### Dedicated mode
 
-Fetches models from Aperture `/v1/models`, then registers an `aperture` provider with:
+Dedicated mode fetches models from Aperture `/v1/models`, merges them with user-defined `providers.aperture.models` from `~/.pi/agent/models.json`, and registers an `aperture` provider.
 
-- Model IDs prefixed with the upstream provider ID using `::` (for example, `anthropic::claude-3.5-sonnet`)
-- `openai-completions` API for all models
-- `x-session-id` and `x-upstream-provider-id` headers for routing
-- Model costs derived from Aperture pricing when available
+User-defined models from `models.json` take precedence over gateway defaults, so custom capabilities such as reasoning, context window, max output, input modalities, and costs are preserved across restarts.
 
 Dedicated mode also caches gateway models in the global config. On startup, cached models are registered immediately, then the gateway is refreshed in the background and the cache is updated if the model list changed.
 
 ## Configuration
+
+Configuration is saved globally to `~/.pi/agent/extensions/aperture.json`.
 
 ```json
 {

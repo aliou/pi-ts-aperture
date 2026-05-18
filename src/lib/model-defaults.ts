@@ -65,6 +65,17 @@ export function buildCachedModelConfig(
   };
 }
 
+/** Check if a model config is still using default capabilities.
+ * Used to warn the user that they should update models.json.
+ */
+export function isDefaultModelConfig(m: ProviderModelConfig): boolean {
+  return (
+    m.contextWindow === 128_000 &&
+    m.maxTokens === 8_192 &&
+    m.reasoning === false
+  );
+}
+
 /** Convert a GatewayModel to a CachedModel for persistence. */
 export function toCachedModel(model: GatewayModel): CachedModel {
   return {
