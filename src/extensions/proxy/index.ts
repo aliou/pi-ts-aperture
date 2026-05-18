@@ -3,7 +3,7 @@
  *
  * Routes selected Pi providers through Tailscale Aperture.
  * Only active when config.mode === "proxy".
- * Registers the setup wizard and settings commands.
+ * Registers settings commands.
  */
 
 import type {
@@ -13,10 +13,8 @@ import type {
 import { configLoader } from "../../lib/config";
 import { emitConfigSync } from "../../lib/sync-bus";
 import { resolveGatewayUrl } from "../../lib/url";
-import { isOnboardingPending } from "./onboarding";
 import { ApertureRuntime } from "./runtime";
 import { registerApertureSettings } from "./settings-command";
-import { registerOnboardingCommand } from "./setup-command";
 
 export default async function (pi: ExtensionAPI): Promise<void> {
   await configLoader.load();
@@ -95,14 +93,6 @@ export default async function (pi: ExtensionAPI): Promise<void> {
   pi.on("session_start", (_event, ctx) => {
     const config = configLoader.getConfig();
 
-    // Notify user to configure if onboarding is pending
-    if (isOnboardingPending(configLoader.getRawConfig("global"))) {
-      ctx.ui.notify(
-        "[aperture] extension installed. Run /aperture:onboarding to configure.",
-        "info",
-      );
-    }
-
     // Register providers at session start when in proxy mode
     if (config.mode === "proxy") {
       lastRegisteredProviders = [
@@ -115,11 +105,6 @@ export default async function (pi: ExtensionAPI): Promise<void> {
     }
   });
 
-  // Register onboarding command only when onboarding is pending
-  const globalConfig = configLoader.getRawConfig("global");
-  if (isOnboardingPending(globalConfig)) {
-    registerOnboardingCommand(pi);
-  }
   // Always register settings command
   registerApertureSettings(pi, onSync);
 }

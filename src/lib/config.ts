@@ -42,6 +42,9 @@ export interface ApertureConfig {
   baseUrl?: string;
   mode?: ApertureMode;
   onboardingDone?: boolean;
+  onboarding?: {
+    enabled?: boolean;
+  };
   proxy?: {
     upstreamProviders?: ProxiedProviderConfig[];
   };
@@ -60,6 +63,9 @@ export interface ResolvedConfig {
   baseUrl: string;
   mode: ApertureMode;
   onboardingDone: boolean;
+  onboarding: {
+    enabled: boolean;
+  };
   proxy: {
     upstreamProviders: Required<ProxiedProviderConfig>[];
   };
@@ -73,6 +79,9 @@ const DEFAULT_CONFIG: ResolvedConfig = {
   baseUrl: "",
   mode: "dedicated",
   onboardingDone: false,
+  onboarding: {
+    enabled: true,
+  },
   proxy: {
     upstreamProviders: [],
   },

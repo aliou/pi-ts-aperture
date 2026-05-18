@@ -796,6 +796,13 @@ export function isOnboardingPending(config: ApertureConfig | null): boolean {
   return config.onboardingDone !== true;
 }
 
+export function isOnboardingExtensionEnabled(
+  config: ApertureConfig | null,
+): boolean {
+  if (!config) return true;
+  return config.onboarding?.enabled ?? config.onboardingDone !== true;
+}
+
 export function buildOnboardedConfig(
   baseUrl: string,
   mode: ApertureMode,
@@ -806,6 +813,9 @@ export function buildOnboardedConfig(
     baseUrl,
     mode,
     onboardingDone: true,
+    onboarding: {
+      enabled: false,
+    },
     proxy: {
       upstreamProviders: upstreamProviders.map((p) => ({
         id: p.id,

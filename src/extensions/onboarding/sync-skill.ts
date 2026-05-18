@@ -39,9 +39,10 @@ Prefer \`openai_chat\` when a provider supports it, because it is Aperture's bro
 ## models.json Rules
 
 - The \`aperture\` provider entry should keep \`baseUrl\`, \`apiKey\`, and default \`api\` for fallback compatibility.
-- Each model can override \`api\` and \`baseUrl\` when its upstream provider is not OpenAI-chat compatible.
+- Do not set per-model \`api\` or \`baseUrl\` for Aperture dedicated models unless the user explicitly asks. The extension routes each \`{providerId}::{modelId}\` through the right Aperture compatibility path at runtime.
 - Model IDs use \`{providerId}::{modelId}\`.
 - \`id\` and \`name\` are required.
+- Every model must include capability fields: \`reasoning\`, \`input\`, \`contextWindow\`, and \`maxTokens\`. Pi's schema treats these as optional, but Aperture sync must fill them so reasoning options and context limits work correctly.
 - \`cost\` is optional, but if present all four fields are required: \`input\`, \`output\`, \`cacheRead\`, \`cacheWrite\`. Use \`0\` for missing values; never write partial cost objects.
 - Costs in models.json are per-million tokens. Aperture gateway pricing is per-token USD, so multiply by 1,000,000 if copying gateway prices manually.
 - \`input\` only allows \`text\` and \`image\`. Map file/pdf/video-capable models to \`["text", "image"]\` when image-like inputs are supported.
@@ -58,6 +59,8 @@ Fallback metadata:
 - \`https://models.dev/api.json\`: model capabilities, costs, modalities, reasoning, limits.
 
 Strip Aperture-specific prefixes before lookup where useful: \`hf:moonshotai/Kimi-K2.6\` -> \`moonshotai/Kimi-K2.6\`, \`~anthropic/claude-sonnet-latest\` -> \`anthropic/claude-sonnet-latest\`.
+
+If exact metadata cannot be found, write safe defaults rather than omitting fields: \`reasoning: false\`, \`input: ["text"]\`, \`contextWindow: 128000\`, and \`maxTokens: 8192\`.
 `;
 
 /** Write the sync skill to a temp directory and return its path.
