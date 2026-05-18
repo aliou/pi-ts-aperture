@@ -26,8 +26,6 @@ import {
   getBaseUrlForApi,
   getProviderId,
 } from "./api-routing";
-import { getSyncSkillPath } from "./sync-skill";
-import { validateModelsTool } from "./validate-models-tool";
 
 const PROVIDER_NAME = "aperture";
 const APERTURE_API = "aperture";
@@ -198,12 +196,6 @@ export default async function (pi: ExtensionAPI): Promise<void> {
     isDefaultModelConfig(m),
   );
   if (defaultModels.length > 0) {
-    const skillPath = getSyncSkillPath();
-    pi.registerTool(validateModelsTool);
-    pi.on("resources_discover", () => ({
-      skillPaths: [skillPath],
-    }));
-
     pi.on("session_start", (_event, ctx) => {
       const sample = defaultModels.slice(0, 3).map((m) => m.id);
       const more =
