@@ -16,9 +16,9 @@ Aperture dedicated mode discovers models from the gateway and registers them in 
 1. Read \`~/.pi/agent/extensions/aperture.json\` to get the Aperture gateway \`baseUrl\` and enabled dedicated providers.
 2. Fetch \`{baseUrl}/v1/models\` to list models and upstream provider IDs.
 3. Fetch \`{baseUrl}/aperture/config\` to read provider compatibility flags and upstream base URLs.
-4. Ask user permission before fetching external provider endpoints. List every URL.
-5. For each upstream provider, fetch \`{providerBaseurl}/v1/models\` when that endpoint exists.
-6. If upstream data is missing, fall back to \`https://models.dev/api.json\`.
+4. Fetch \`https://models.dev/api.json\` for model capabilities. Treat models.dev as the primary source for capabilities, regardless of which Aperture provider routes the model.
+5. Ask user permission before fetching external upstream provider endpoints. List every URL.
+6. For each upstream provider, fetch \`{providerBaseurl}/v1/models\` when that endpoint exists. Use this only as supplemental metadata when models.dev has no match.
 7. Update \`~/.pi/agent/models.json\` under \`providers.aperture.models\`. Only include models from enabled dedicated providers.
 8. Call \`aperture_validate_models_json\` and fix every reported error before continuing.
 9. Run \`/reload\` only after validation passes.
@@ -54,11 +54,26 @@ Gateway endpoints:
 - \`GET {baseUrl}/v1/models\`: model IDs, provider IDs, pricing.
 - \`GET {baseUrl}/aperture/config\`: provider compatibility and upstream base URLs.
 
-Fallback metadata:
+Capability metadata:
 
-- \`https://models.dev/api.json\`: model capabilities, costs, modalities, reasoning, limits.
+- \`https://models.dev/api.json\`: primary source for model capabilities, modalities, reasoning, and limits.
+- Gateway pricing remains the primary source for \`cost\`; use models.dev costs only when gateway pricing is unavailable.
 
-Strip Aperture-specific prefixes before lookup where useful: \`hf:moonshotai/Kimi-K2.6\` -> \`moonshotai/Kimi-K2.6\`, \`~anthropic/claude-sonnet-latest\` -> \`anthropic/claude-sonnet-latest\`.
+## Capability Matching
+
+Do not assume the Aperture provider ID is the model author. A model routed through OpenRouter, Synthetic, or another gateway provider can still be an Anthropic, OpenAI, Google, Moonshot, Qwen, or other authored model.
+
+For each Aperture model:
+
+1. Remove only the Aperture routing prefix from \`{providerId}::{modelId}\`.
+2. Search models.dev globally across all providers and all model IDs.
+3. Prefer exact matches first.
+4. Then use provider-qualified matches already present in the model ID, such as \`anthropic/claude-sonnet-4-5\`.
+5. Then use suffix matches only when unambiguous, such as \`claude-sonnet-4-5\` matching one known \`*/claude-sonnet-4-5\` entry.
+6. Use models.dev aliases if present.
+7. Do not hardcode deployment-specific prefixes or provider-specific cleanup rules. If a model ID has custom routing syntax and no confident match is possible, fall back safely.
+
+When models.dev has a confident match, copy capabilities from that match: \`reasoning\`, \`input\`, \`contextWindow\`, \`maxTokens\`, and \`output\` when available. Do not replace these with weaker gateway/provider defaults.
 
 If exact metadata cannot be found, write safe defaults rather than omitting fields: \`reasoning: false\`, \`input: ["text"]\`, \`contextWindow: 128000\`, and \`maxTokens: 8192\`.
 `;
