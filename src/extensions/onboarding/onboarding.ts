@@ -812,9 +812,9 @@ export function buildOnboardedConfig(
   return {
     baseUrl,
     mode,
-    onboardingDone: true,
+    onboardingDone: mode === "proxy",
     onboarding: {
-      enabled: false,
+      enabled: mode === "dedicated",
     },
     proxy: {
       upstreamProviders: upstreamProviders.map((p) => ({
