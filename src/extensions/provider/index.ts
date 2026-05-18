@@ -1,8 +1,6 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { Api, Model } from "@earendil-works/pi-ai";
-import { getApiProvider } from "@earendil-works/pi-ai";
+import type { Api } from "@earendil-works/pi-ai";
 import type {
   ExtensionAPI,
   ProviderModelConfig,
@@ -10,170 +8,33 @@ import type {
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import type { CachedModel } from "../../lib/config";
 import { configLoader } from "../../lib/config";
-import { fetchGatewayModels, type GatewayModel } from "../../lib/gateway";
+import {
+  fetchGatewayModels,
+  fetchGatewayProviderCompatibility,
+  type GatewayModel,
+} from "../../lib/gateway";
 import {
   buildCachedModelConfig,
   buildDefaultModelConfig,
   isDefaultModelConfig,
-  PROVIDER_SEPARATOR,
   toCachedModel,
 } from "../../lib/model-defaults";
-import type {
-  AssistantMessageEventStream,
-  Context,
-  SimpleStreamOptions,
-} from "../../lib/types";
 import { resolveGatewayUrl, resolveProviderBaseUrl } from "../../lib/url";
+import {
+  buildStreamSimple,
+  getApiForCompatibility,
+  getBaseUrlForApi,
+  getProviderId,
+} from "./api-routing";
+import { getSyncSkillPath } from "./sync-skill";
 
 const PROVIDER_NAME = "aperture";
-
-const SYNC_SKILL_MD = `---
-name: sync-aperture-models
-description: Sync Aperture model capabilities into Pi's models.json. Use when dedicated mode models have wrong/missing capabilities (context window, reasoning, max tokens), or after adding new models to the Aperture gateway.
----
-
-# Sync Aperture Model Metadata
-
-Aperture dedicated mode registers all models with safe defaults: 128k context, 8k max tokens, no reasoning, text-only input. Real capabilities differ per model. This skill helps look up the actual values and update \`~/.pi/agent/models.json\`.
-
-## Workflow
-
-1. Read \`~/.pi/agent/extensions/aperture.json\` to get the Aperture gateway \`baseUrl\`
-2. \`curl {baseUrl}/v1/models\` \u2014 list all models and their upstream providers
-3. \`curl {baseUrl}/aperture/config\` \u2014 get upstream provider base URLs
-4. **Ask user permission** before fetching external endpoints. List every URL.
-5. For each upstream provider, \`curl {providerBaseurl}/v1/models\` \u2014 get model capabilities
-6. If upstream doesn't return capability data, fall back to \`https://models.dev/api.json\`
-7. Update \`~/.pi/agent/models.json\` under \`providers.aperture\`. The provider entry must include \`baseUrl\`, \`apiKey\`, \`api\`, and \`models\`. Only include models from **enabled** dedicated providers \u2014 check \`~/.pi/agent/extensions/aperture.json\` for \`dedicated.providers\` entries where \`enabled: true\`
-8. \`/reload\`
-
-## Before You Start
-
-Read the Pi docs for \`models.json\` schema \u2014 look for the models.md documentation file in the Pi docs directory listed in your system prompt. Follow the schema exactly. Key rules:
-
-- \`id\` and \`name\` are required on each model in the \`models\` array
-- \`cost\` is optional but if present, **all four fields are required**: \`input\`, \`output\`, \`cacheRead\`, \`cacheWrite\`. Use \`0\` for unknown values. Do not omit any field.
-- Costs in models.json are **per-million tokens** (e.g. $3/M tokens → \`3\`)
-- \`aperture\` provider model IDs use format \`{providerId}::{modelId}\` with \`::\` separator
-- \`input\` field only allows \`"text"\` and \`"image"\`. Upstream providers and models.dev may return \`"video"\`, \`"audio"\`, \`"pdf"\`, \`"file"\` \u2014 these are **not valid** in models.json. Map them: if a model supports image, pdf, video, or file input, set \`input: ["text", "image"]\`. Otherwise \`input: ["text"]\`.
-
-## Required Provider Fields
-
-The \`aperture\` provider in models.json must include:
-
-\`\`\`json
-{
-  "providers": {
-    "aperture": {
-      "baseUrl": "{apertureGatewayUrl}/v1",
-      "apiKey": "-",
-      "api": "openai-completions",
-      "models": [...]
-    }
-  }
-}
-\`\`\`
-
-- \`baseUrl\` \u2014 Aperture gateway URL with \`/v1\` appended (e.g. \`http://ai.pango-lin.ts.net/v1\`). **Required.**
-- \`apiKey\` \u2014 set to \`"-"\` (Aperture handles auth server-side)
-- \`api\` \u2014 set to \`"openai-completions"\`
-
-## Gateway Endpoints
-
-\`GET {baseUrl}/v1/models\` returns:
-- \`data[].id\` \u2014 model ID (may have \`hf:\` or \`~\` prefixes)
-- \`data[].metadata.provider.id\` \u2014 upstream provider ID
-- Aperture gateway \`pricing\` values are per-token USD — multiply by 1,000,000 for models.json per-million format
-
-\`GET {baseUrl}/aperture/config\` returns \`{ "config": "<JSON string>" }\`. Parse the config string. It contains \`providers.{id}.baseurl\` \u2014 the upstream API base URL for each provider.
-
-## Upstream Provider Discovery
-
-For every provider from the Aperture config, fetch \`{baseurl}/v1/models\`.
-
-OpenRouter returns rich data:
-- \`context_length\` \u2014 max context window tokens
-- \`architecture.input_modalities\` \u2014 e.g. \`["text", "image"]\`
-- \`pricing.prompt\` / \`pricing.completion\` \u2014 per-token pricing strings
-
-Other providers may return less or just standard OpenAI fields. Get what you can.
-
-## models.dev Fallback
-
-URL: \`https://models.dev/api.json\` (~1MB)
-
-Structure: \`{ "<provider_id>": { "models": { "<model_id>": { "reasoning": bool, "limit": { "context": int, "output": int }, "modalities": { "input": [...] }, "cost": { "input": float, ... } } } } }\`
-
-models.dev costs are already per-million tokens — use directly in models.json with no conversion. Aperture gateway pricing is per-token — multiply by 1,000,000 for models.json.
-
-**Provider matching order:**
-1. Match the Aperture provider name directly (e.g. \`synthetic\` \u2192 \`synthetic\` on models.dev, \`openrouter\` \u2192 \`openrouter\`)
-2. If no match, use the model's org prefix as provider key (e.g. for \`neuralwatt::moonshotai/Kimi-K2.6\`, look under \`moonshotai\`)
-3. Do not mix providers \u2014 a model running on \`synthetic\` uses \`synthetic\`'s data, not \`zhipuai\` or the model's original org
-
-**Model ID mapping:** Strip Aperture prefixes when searching: \`hf:moonshotai/Kimi-K2.6\` \u2192 \`moonshotai/Kimi-K2.6\`, \`~anthropic/claude-sonnet-latest\` \u2192 \`anthropic/claude-sonnet-latest\`
-
-## Manual Lookup
-
-If the user declines external requests, point them to:
-- OpenRouter: \`https://openrouter.ai/models\`
-- models.dev: \`https://models.dev\`
-- Provider docs (Anthropic, OpenAI, Google, DeepSeek, etc.)
-
-Then update \`models.json\` with whatever info they provide.
-`;
-
-/** Write the sync skill to a temp directory and return its path.
- * The skill is inlined in code, so there are no relative path issues.
- */
-function getSyncSkillPath(): string {
-  const dir = join(tmpdir(), "pi-aperture-skill");
-  mkdirSync(dir, { recursive: true });
-  const skillPath = join(dir, "sync-aperture-models");
-  mkdirSync(skillPath, { recursive: true });
-  writeFileSync(join(skillPath, "SKILL.md"), SYNC_SKILL_MD);
-  return skillPath;
-}
+const APERTURE_API = "aperture";
 
 const HEADERS = {
   Referer: "https://pi.dev",
   "X-Title": "npm:@aliou/pi-ts-aperture",
 };
-
-function getRequestModelId(modelId: string): string {
-  const sepIndex = modelId.indexOf(PROVIDER_SEPARATOR);
-  return sepIndex === -1
-    ? modelId
-    : modelId.slice(sepIndex + PROVIDER_SEPARATOR.length);
-}
-
-function getProviderId(modelId: string): string {
-  const sepIndex = modelId.indexOf(PROVIDER_SEPARATOR);
-  return sepIndex === -1 ? "" : modelId.slice(0, sepIndex);
-}
-
-function buildStreamSimple() {
-  const builtIn = getApiProvider("openai-completions");
-  if (!builtIn) return undefined;
-
-  return (
-    model: Model<Api>,
-    context: Context,
-    options?: SimpleStreamOptions,
-  ): AssistantMessageEventStream =>
-    builtIn.streamSimple(
-      { ...model, id: getRequestModelId(model.id) },
-      context,
-      {
-        ...options,
-        headers: {
-          ...options?.headers,
-          "x-session-id": options?.sessionId ?? "",
-          "x-upstream-provider-id": getProviderId(model.id),
-        },
-      },
-    );
-}
 
 /** Filter cached models by enabled dedicated providers. */
 function filterCachedModels(
@@ -248,7 +109,8 @@ export default async function (pi: ExtensionAPI): Promise<void> {
 
   if (config.mode !== "dedicated" || !gatewayUrl || !baseUrl) return;
 
-  const streamSimple = buildStreamSimple();
+  const targetApiByProviderId = new Map<string, Api>();
+  const streamSimple = buildStreamSimple(targetApiByProviderId);
 
   const enabledProviderIds = new Set(
     config.dedicated.providers.filter((p) => p.enabled).map((p) => p.id),
@@ -267,7 +129,7 @@ export default async function (pi: ExtensionAPI): Promise<void> {
     pi.registerProvider(PROVIDER_NAME, {
       baseUrl,
       apiKey: "-",
-      api: "openai-completions",
+      api: APERTURE_API,
       headers: HEADERS,
       models: cachedModelConfigs,
       streamSimple,
@@ -275,13 +137,24 @@ export default async function (pi: ExtensionAPI): Promise<void> {
   }
 
   // --- Fetch fresh models in background, re-register if changed ---
-  const gatewayModels = await fetchGatewayModels(gatewayUrl);
+  const [gatewayModels, providerCompatibility] = await Promise.all([
+    fetchGatewayModels(gatewayUrl),
+    fetchGatewayProviderCompatibility(gatewayUrl),
+  ]);
   const filteredModels = filterGatewayModels(gatewayModels, enabledProviderIds);
 
   // Build default configs for all gateway models
   const defaultModelConfigs = new Map<string, ProviderModelConfig>();
   for (const gm of filteredModels) {
-    const cfg = buildDefaultModelConfig(gm);
+    const api = getApiForCompatibility(
+      providerCompatibility.get(gm.providerId),
+    );
+    targetApiByProviderId.set(gm.providerId, api);
+    const cfg = {
+      ...buildDefaultModelConfig(gm),
+      api: APERTURE_API,
+      baseUrl: getBaseUrlForApi(api, gatewayUrl, baseUrl),
+    };
     defaultModelConfigs.set(cfg.id, cfg);
   }
 
@@ -289,7 +162,16 @@ export default async function (pi: ExtensionAPI): Promise<void> {
   // User-defined entries take precedence over defaults
   const userModels = loadUserModels();
   const mergedModels = mergeWithUserModels(defaultModelConfigs, userModels);
-  const freshModelConfigs = [...mergedModels.values()];
+  const freshModelConfigs = [...mergedModels.values()].map((model) => {
+    const targetApi = targetApiByProviderId.get(getProviderId(model.id));
+    return targetApi
+      ? {
+          ...model,
+          api: APERTURE_API,
+          baseUrl: getBaseUrlForApi(targetApi, gatewayUrl, baseUrl),
+        }
+      : model;
+  });
 
   // Check if model list changed
   const cachedIds = new Set(cachedModelConfigs.map((m) => m.id));
@@ -303,7 +185,7 @@ export default async function (pi: ExtensionAPI): Promise<void> {
     pi.registerProvider(PROVIDER_NAME, {
       baseUrl,
       apiKey: "-",
-      api: "openai-completions",
+      api: APERTURE_API,
       headers: HEADERS,
       models: freshModelConfigs,
       streamSimple,
