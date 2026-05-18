@@ -22,6 +22,31 @@ export interface GatewayModel {
   };
 }
 
+export interface GatewayProviderCompatibility {
+  openai_chat?: boolean;
+  openai_responses?: boolean;
+  anthropic_messages?: boolean;
+  gemini_generate_content?: boolean;
+  google_generate_content?: boolean;
+  google_raw_predict?: boolean;
+  bedrock_model_invoke?: boolean;
+  bedrock_converse?: boolean;
+  experimental_gemini_cli_vertex_compat?: boolean;
+}
+
+interface GatewayConfigResponse {
+  config?: string;
+}
+
+interface GatewayConfig {
+  providers?: Record<
+    string,
+    {
+      compatibility?: GatewayProviderCompatibility;
+    }
+  >;
+}
+
 interface GatewayModelResponse {
   data?: {
     id: string;
@@ -103,6 +128,30 @@ export async function fetchGatewayModels(
 export async function fetchGatewayModelIds(baseUrl: string): Promise<string[]> {
   const models = await fetchGatewayModels(baseUrl);
   return models.map((m) => m.id);
+}
+
+export async function fetchGatewayProviderCompatibility(
+  baseUrl: string,
+): Promise<Map<string, GatewayProviderCompatibility>> {
+  const url = `${baseUrl.replace(/\/+$/, "")}/aperture/config`;
+  try {
+    const res = await fetch(url, {
+      method: "GET",
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) return new Map();
+    const body = (await res.json()) as GatewayConfigResponse;
+    if (!body.config) return new Map();
+
+    const config = JSON.parse(body.config) as GatewayConfig;
+    const result = new Map<string, GatewayProviderCompatibility>();
+    for (const [id, provider] of Object.entries(config.providers ?? {})) {
+      if (provider.compatibility) result.set(id, provider.compatibility);
+    }
+    return result;
+  } catch {
+    return new Map();
+  }
 }
 
 export interface GatewayProvider {
