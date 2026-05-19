@@ -1,4 +1,4 @@
-![banner](https://assets.aliou.me/pi-extensions/banners/pi-ts-aperture.png)
+![banner](https://assets.aliou.me/github/aliou/pi-ts-aperture/banner.png)
 
 # pi-ts-aperture
 

@@ -27,7 +27,7 @@
       "./src/extensions/proxy/index.ts",
       "./src/extensions/provider/index.ts"
     ],
-    "video": "https://assets.aliou.me/pi-extensions/demos/pi-ts-aperture.mp4"
+    "video": "https://assets.aliou.me/github/aliou/pi-ts-aperture/demo.mp4"
   },
   "dependencies": {
     "@aliou/pi-utils-settings": "^0.15.1"
