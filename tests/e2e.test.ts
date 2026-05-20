@@ -118,7 +118,13 @@ describe("pi-ts-aperture e2e", () => {
     rmSync(testRoot, { recursive: true, force: true });
   });
 
-  const aperturePath = join(process.cwd(), "src", "index.ts");
+  const aperturePath = join(
+    process.cwd(),
+    "src",
+    "extensions",
+    "proxy",
+    "index.ts",
+  );
 
   test("enumerates models without aperture", async () => {
     const models = await withPiCli(
