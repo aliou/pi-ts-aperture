@@ -84,9 +84,16 @@ function mergeWithUserModels(
 ): Map<string, ProviderModelConfig> {
   const merged = new Map<string, ProviderModelConfig>();
 
-  // Start with defaults, override with user entries
+  // Start with defaults, override with user entries, but keep gateway-derived
+  // cost when the user entry does not define one.
   for (const [id, defaultCfg] of defaults) {
-    merged.set(id, userModels.get(id) ?? defaultCfg);
+    const userCfg = userModels.get(id);
+    merged.set(
+      id,
+      userCfg
+        ? { ...defaultCfg, ...userCfg, cost: userCfg.cost ?? defaultCfg.cost }
+        : defaultCfg,
+    );
   }
 
   // Include user models not in gateway (manually added)
