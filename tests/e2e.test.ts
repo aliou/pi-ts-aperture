@@ -10,7 +10,7 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { withPiCli } from "./pi-cli";
 
 /** Paths derived from the per-test temp root. */
@@ -89,6 +89,7 @@ function writeApertureConfig(
 // ---------------------------------------------------------------------------
 
 describe("pi-ts-aperture e2e", () => {
+  vi.setConfig({ testTimeout: 45_000, hookTimeout: 45_000 });
   let testRoot: string;
   let paths: ReturnType<typeof testPaths>;
   let originalAgentDir: string | undefined;
@@ -118,13 +119,11 @@ describe("pi-ts-aperture e2e", () => {
     rmSync(testRoot, { recursive: true, force: true });
   });
 
-  const aperturePath = join(
-    process.cwd(),
-    "src",
-    "extensions",
-    "proxy",
-    "index.ts",
-  );
+  const aperturePaths = [
+    join(process.cwd(), "src", "extensions", "proxy", "index.ts"),
+    join(process.cwd(), "src", "extensions", "provider", "index.ts"),
+    join(process.cwd(), "src", "extensions", "onboarding", "index.ts"),
+  ];
 
   test("enumerates models without aperture", async () => {
     const models = await withPiCli(
@@ -147,7 +146,7 @@ describe("pi-ts-aperture e2e", () => {
     );
 
     const models = await withPiCli(
-      { extensionPaths: [paths.testProviderEntry, aperturePath] },
+      { extensionPaths: [paths.testProviderEntry, ...aperturePaths] },
       (cli) => cli.listModels(),
     );
 
@@ -166,7 +165,7 @@ describe("pi-ts-aperture e2e", () => {
     );
 
     const models = await withPiCli(
-      { extensionPaths: [paths.testProviderEntry, aperturePath] },
+      { extensionPaths: [paths.testProviderEntry, ...aperturePaths] },
       (cli) => cli.listModels(),
     );
 
@@ -186,7 +185,7 @@ describe("pi-ts-aperture e2e", () => {
     );
 
     const models = await withPiCli(
-      { extensionPaths: [paths.testProviderEntry, aperturePath] },
+      { extensionPaths: [paths.testProviderEntry, ...aperturePaths] },
       (cli) => cli.listModels(),
     );
 
