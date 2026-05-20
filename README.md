@@ -31,6 +31,8 @@ The wizard walks you through:
    - Proxy mode: choose which existing Pi providers to route, with optional gateway model verification
 4. Recap and save
 
+Proxy mode marks onboarding complete after the wizard. Dedicated mode keeps the onboarding extension enabled after the wizard so the agent can sync and validate model metadata. After validation passes, the agent uses `aperture_complete_onboarding` to disable the temporary onboarding tools and skill.
+
 You can change everything later with:
 
 ```
@@ -51,11 +53,13 @@ Gateway model data is cached locally so models appear instantly on startup, then
 
 #### Sync model capabilities
 
-When models are using default capabilities, a `sync-aperture-models` skill becomes available and a warning appears on session start.
+In dedicated mode, the onboarding extension stays enabled until model metadata is synced and validated. It exposes:
 
-Run the skill to look up real capabilities (context window, max tokens, reasoning, input modalities, costs) from upstream providers and models.dev, then update `~/.pi/agent/models.json`. User-defined model entries in `models.json` take precedence over gateway defaults and persist across restarts.
+- `sync-aperture-models` skill: looks up real capabilities (context window, max tokens, reasoning, input modalities) from models.dev and upstream provider endpoints, then updates `~/.pi/agent/models.json`.
+- `aperture_validate_models_json` tool: validates Pi's `models.json` schema and checks that Aperture models include capability fields.
+- `aperture_complete_onboarding` tool: marks onboarding complete and disables the temporary onboarding tools and skill after validation passes.
 
-Once all models have real capabilities, the skill and warning disappear automatically.
+User-defined model entries in `models.json` take precedence over gateway defaults and persist across restarts. The extension still owns routing details and cost data from Aperture gateway pricing.
 
 ### Proxy
 
@@ -68,7 +72,7 @@ Proxy mode is useful when you want Pi's native per-provider model configuration 
 | Command | Description |
 |---|---|
 | `/aperture:onboarding` | Onboarding wizard. Only available until setup is marked complete. |
-| `/aperture:settings` | Settings UI to update connection, mode, proxy providers, dedicated provider filters, and onboarding status. |
+| `/aperture:settings` | Settings UI to update connection, mode, proxy providers, dedicated provider filters, onboarding status, and the onboarding extension toggle. |
 
 ## How it works
 
@@ -93,9 +97,11 @@ Optional gateway model verification can warn when configured Pi models are missi
 
 ### Dedicated mode
 
-Dedicated mode fetches models from Aperture `/v1/models`, merges them with user-defined `providers.aperture.models` from `~/.pi/agent/models.json`, and registers an `aperture` provider.
+Dedicated mode fetches models from Aperture `/v1/models` and provider compatibility from `/aperture/config`, merges gateway models with user-defined `providers.aperture.models` from `~/.pi/agent/models.json`, and registers an `aperture` provider.
 
-User-defined models from `models.json` take precedence over gateway defaults, so custom capabilities such as reasoning, context window, max output, input modalities, and costs are preserved across restarts.
+Aperture compatibility controls the Pi API and base URL used for each upstream provider at runtime. For example, OpenAI-compatible providers use `/v1`, Anthropic-compatible providers use the gateway root, Gemini-compatible providers use `/v1beta`, and Vertex-compatible providers use `/v1`.
+
+User-defined models from `models.json` take precedence over gateway defaults, so custom capabilities such as reasoning, context window, max output, and input modalities are preserved across restarts. If a user model does not define cost, the extension keeps the cost derived from Aperture gateway pricing.
 
 Dedicated mode also caches gateway models in the global config. On startup, cached models are registered immediately, then the gateway is refreshed in the background and the cache is updated if the model list changed.
 
