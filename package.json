@@ -20,8 +20,8 @@
   },
   "files": [
     "src",
-    "skills",
-    "README.md"
+    "README.md",
+    "!src/**/*.test.ts"
   ],
   "pi": {
     "extensions": [
@@ -63,9 +63,9 @@
     "test:e2e": "vitest run tests/e2e.test.ts"
   },
   "devDependencies": {
-    "@aliou/biome-plugins": "^0.3.2",
+    "@aliou/biome-plugins": "^0.8.1",
     "@aliou/pi-utils-ui": "^0.4.1",
-    "@biomejs/biome": "^2.3.13",
+    "@biomejs/biome": "^2.4.15",
     "@changesets/cli": "^2.27.11",
     "@earendil-works/pi-coding-agent": "0.74.0",
     "typebox": "^1.0.0",
