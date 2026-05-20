@@ -9,7 +9,7 @@ description: Sync Aperture model capabilities into Pi's models.json. Use when de
 
 # Sync Aperture Model Metadata
 
-Aperture dedicated mode discovers models from the gateway and registers them in Pi. The gateway exposes model IDs, upstream providers, provider compatibility, and pricing, but not every model's full capabilities. This skill helps update \`~/.pi/agent/models.json\` with accurate per-model metadata.
+Aperture dedicated mode discovers models from the gateway and registers them in Pi. The extension owns model IDs, upstream providers, provider compatibility, and pricing. This skill helps update \`~/.pi/agent/models.json\` with accurate per-model capability metadata only.
 
 ## Workflow
 
@@ -43,21 +43,21 @@ Prefer \`openai_chat\` when a provider supports it, because it is Aperture's bro
 - Model IDs use \`{providerId}::{modelId}\`.
 - \`id\` and \`name\` are required.
 - Every model must include capability fields: \`reasoning\`, \`input\`, \`contextWindow\`, and \`maxTokens\`. Pi's schema treats these as optional, but Aperture sync must fill them so reasoning options and context limits work correctly.
-- \`cost\` is optional, but if present all four fields are required: \`input\`, \`output\`, \`cacheRead\`, \`cacheWrite\`. Use \`0\` for missing values; never write partial cost objects.
-- Costs in models.json are per-million tokens. Aperture gateway pricing is per-token USD, so multiply by 1,000,000 if copying gateway prices manually.
+- Do not add, remove, or recalculate \`cost\` unless the user explicitly asks. The Aperture extension derives cost from gateway pricing and fills it during provider registration.
+- If a model already has \`cost\`, preserve it exactly. If a model lacks \`cost\`, leave it absent.
 - \`input\` only allows \`text\` and \`image\`. Map file/pdf/video-capable models to \`["text", "image"]\` when image-like inputs are supported.
 
 ## Data Sources
 
 Gateway endpoints:
 
-- \`GET {baseUrl}/v1/models\`: model IDs, provider IDs, pricing.
+- \`GET {baseUrl}/v1/models\`: model IDs and provider IDs. Pricing may be present, but the extension owns cost conversion.
 - \`GET {baseUrl}/aperture/config\`: provider compatibility and upstream base URLs.
 
 Capability metadata:
 
 - \`https://models.dev/api.json\`: primary source for model capabilities, modalities, reasoning, and limits.
-- Gateway pricing remains the primary source for \`cost\`; use models.dev costs only when gateway pricing is unavailable.
+- Do not use models.dev costs for Aperture models. The extension owns cost data from Aperture gateway pricing.
 
 ## Capability Matching
 
@@ -73,7 +73,7 @@ For each Aperture model:
 6. Use models.dev aliases if present.
 7. Do not hardcode deployment-specific prefixes or provider-specific cleanup rules. If a model ID has custom routing syntax and no confident match is possible, fall back safely.
 
-When models.dev has a confident match, copy capabilities from that match: \`reasoning\`, \`input\`, \`contextWindow\`, \`maxTokens\`, and \`output\` when available. Do not replace these with weaker gateway/provider defaults.
+When models.dev has a confident match, copy capabilities from that match: \`reasoning\`, \`input\`, \`contextWindow\`, \`maxTokens\`, and \`output\` when available. Do not replace these with weaker gateway/provider defaults. Preserve all existing non-capability fields, especially \`cost\`.
 
 If exact metadata cannot be found, write safe defaults rather than omitting fields: \`reasoning: false\`, \`input: ["text"]\`, \`contextWindow: 128000\`, and \`maxTokens: 8192\`.
 `;
