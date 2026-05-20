@@ -5,11 +5,13 @@ import type { GatewayModel } from "./gateway";
 /** Separator between provider ID and gateway model ID in Pi model registry. */
 export const PROVIDER_SEPARATOR = "::";
 
-/** Parse a pricing string (per-token USD) to a number. */
+const TOKENS_PER_MILLION = 1_000_000;
+
+/** Parse a pricing string (per-token USD) to Pi's per-million-token cost. */
 function parsePrice(value: string | undefined): number {
   if (!value) return 0;
   const n = Number(value);
-  return Number.isFinite(n) ? n : 0;
+  return Number.isFinite(n) ? n * TOKENS_PER_MILLION : 0;
 }
 
 export function buildDefaultModelConfig(
