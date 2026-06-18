@@ -1,0 +1,20 @@
+import type { ApertureConfig, Migration } from "../types";
+
+export const modeToCapabilitiesMigration: Migration<ApertureConfig> = {
+  name: "002-mode-to-capabilities",
+  shouldRun: (config) => config.mode !== undefined,
+  run: (config) => {
+    const migrated: ApertureConfig = { ...config };
+
+    if (migrated.mode === "proxy") {
+      migrated.proxy = { ...migrated.proxy, enabled: true };
+      migrated.dedicated = { ...migrated.dedicated, enabled: false };
+    } else if (migrated.mode === "dedicated") {
+      migrated.dedicated = { ...migrated.dedicated, enabled: true };
+      migrated.proxy = { ...migrated.proxy, enabled: false };
+    }
+
+    delete migrated.mode;
+    return migrated;
+  },
+};

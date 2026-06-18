@@ -2,47 +2,48 @@
 
 Pi extension that routes LLM traffic through Tailscale Aperture.
 
-## Modes
+## Capabilities
 
-- **Dedicated** (`mode: "dedicated"`): registers a standalone `aperture` provider whose models come from the Aperture gateway. Default mode. Users can include all gateway providers or filter to selected gateway providers.
-- **Proxy** (`mode: "proxy"`): reroutes existing Pi providers (anthropic, openai, etc.) through Aperture, keeping their original model definitions.
+- **Dedicated provider** (`dedicated.enabled: true`): registers a standalone `aperture` provider whose models come from the Aperture gateway. Enabled by default. Users can include all gateway providers or filter to selected gateway providers.
+- **Proxy existing providers** (`proxy.enabled: true`): reroutes selected existing Pi providers (anthropic, openai, openai-codex, etc.) through Aperture, keeping their original model definitions.
+
+The capabilities are independent. Users can enable dedicated, proxy, or both.
 
 ## Structure
 
-- `src/extensions/proxy/index.ts` - Entry point: proxy extension. Registers setup/settings, handles session sync.
-- `src/extensions/proxy/runtime.ts` - `ApertureRuntime` class for proxy mode provider registration/unregistration and gateway model verification.
-- `src/extensions/onboarding/index.ts` - Entry point: temporary onboarding affordances. Registers `/aperture:onboarding` while setup is pending, plus model-sync skill and validation/completion tools while onboarding is enabled.
-- `src/extensions/onboarding/onboarding.ts` - Onboarding wizard (`/aperture:onboarding`). Steps: welcome, URL, mode, provider selection, recap.
-- `src/extensions/onboarding/setup-command.ts` - `/aperture:onboarding` command registration (delegates to onboarding).
-- `src/extensions/onboarding/setup-wizard.ts` - `UrlStep` TUI component with inline `/v1/models` health check.
-- `src/extensions/onboarding/sync-skill.ts` - Dynamic `sync-aperture-models` skill content writer.
-- `src/extensions/onboarding/validate-models-tool.ts` - `aperture_validate_models_json` tool for schema and metadata validation.
-- `src/extensions/onboarding/complete-tool.ts` - `aperture_complete_onboarding` tool for disabling onboarding after validation passes.
-- `src/extensions/proxy/settings-command.ts` - `/aperture:settings` settings UI via `registerSettingsCommand`.
-- `src/extensions/provider/api-routing.ts` - Aperture compatibility-to-Pi API routing helpers for dedicated mode.
-- `src/extensions/provider/index.ts` - Entry point: dedicated mode. Registers cached Aperture models first, fetches fresh models and compatibility, merges user-defined models, updates cache, and registers `"aperture"` provider.
-- `src/lib/config.ts` - Config schema (`ApertureConfig`, `ResolvedConfig`, `ApertureMode`, cached model types) and `configLoader` instance.
-- `src/lib/migration.ts` - Legacy config migration (pre-two-mode shape -> current shape).
-- `src/lib/model-defaults.ts` - Default and cached model config builders for Aperture provider models.
-- `src/lib/sync-bus.ts` - Shared config sync event bus.
-- `src/lib/url.ts` - URL normalization helpers (`normalizeInputUrl`, `resolveGatewayUrl`, `resolveProviderBaseUrl`).
-- `src/lib/gateway.ts` - Gateway health check, model fetching, and provider extraction.
-- `src/lib/types.ts` - Internal types including `SyncDeps` and `CheckDeps` interfaces for dependency injection.
+- `extensions/aperture/index.ts` - Single extension entry point. Loads config, syncs proxy and dedicated providers, registers onboarding and settings.
+- `extensions/aperture/proxy/runtime.ts` - `ApertureRuntime` for proxy provider registration/unregistration and gateway model verification.
+- `extensions/aperture/dedicated/runtime.ts` - `DedicatedRuntime` for registering the standalone `aperture` provider from Aperture gateway providers and models.
+- `extensions/aperture/dedicated/api-routing.ts` - Aperture compatibility-to-Pi API routing helpers for dedicated mode.
+- `extensions/aperture/dedicated/model-defaults.ts` - Safe default model config builder for Aperture provider models.
+- `extensions/aperture/onboarding/index.ts` - Registers temporary onboarding affordances while onboarding is enabled.
+- `extensions/aperture/onboarding/onboarding.ts` - Onboarding wizard (`/aperture:onboarding`). Steps: welcome, URL, capability selection, provider selection, recap.
+- `extensions/aperture/onboarding/setup-command.ts` - `/aperture:onboarding` command registration. Saves config and reloads Pi after completion.
+- `extensions/aperture/onboarding/setup-wizard.ts` - `UrlStep` TUI component with inline Aperture health check.
+- `extensions/aperture/settings-command.ts` - `/aperture:settings` settings UI via `registerSettingsCommand`.
+- `extensions/aperture/shared/config/types.ts` - Config types.
+- `extensions/aperture/shared/config/defaults.ts` - Default config. Dedicated is enabled by default.
+- `extensions/aperture/shared/config/loader.ts` - Config loader instance.
+- `extensions/aperture/shared/config/migration/` - Legacy config migrations.
+- `src/api/client.ts` - Pi-agnostic Aperture API client for `/api/providers` and `/aperture/config`.
+- `src/api/types.ts` - Aperture API response types.
+- `src/provider-mapping.ts` - Maps Aperture providers to local Pi registry models for proxy and dedicated selection.
+- `src/url.ts` - URL normalization helpers.
 
 ## Config shape
 
 ```ts
-type ApertureMode = "proxy" | "dedicated";
-
 interface ApertureConfig {
   baseUrl?: string;
-  mode?: ApertureMode;
   onboardingDone?: boolean;
   onboarding?: { enabled?: boolean };
-  proxy?: { upstreamProviders?: ProxiedProviderConfig[] };
+  proxy?: {
+    enabled?: boolean;
+    upstreamProviders?: ProxiedProviderConfig[];
+  };
   dedicated?: {
+    enabled?: boolean;
     providers?: DedicatedProviderConfig[];
-    cachedModels?: CachedModel[];
   };
 }
 
@@ -56,54 +57,41 @@ interface DedicatedProviderConfig {
   name?: string;
   enabled: boolean;
 }
-
-interface CachedModel {
-  id: string;
-  providerId: string;
-  providerName?: string;
-  pricing?: {
-    input?: string;
-    input_cache_read?: string;
-    input_cache_write?: string;
-    output?: string;
-  };
-}
 ```
 
-Defaults: `mode: "dedicated"`, `onboardingDone: false`, `onboarding.enabled: true`, empty proxy providers, empty dedicated provider filters, empty model cache.
+Defaults: `dedicated.enabled: true`, `proxy.enabled: false`, `onboardingDone: false`, `onboarding.enabled: true`, empty proxy providers, empty dedicated provider filters.
 
-## Skills
-
-- `sync-aperture-models` - Helps the agent update `~/.pi/agent/models.json` with actual model capabilities (reasoning, context window, max tokens, modalities) for Aperture dedicated mode. The skill is registered by the onboarding extension while `onboarding.enabled` is true. Skill content lives in `src/extensions/onboarding/sync-skill.ts` and is written to a temp directory at runtime.
+There is no current `mode` setting. Legacy `mode` configs are migrated to capability flags.
 
 ## Commands
 
-- `/aperture:onboarding` - Onboarding wizard. Only appears when onboarding is pending. Proxy completion sets `onboardingDone: true`; dedicated completion keeps `onboarding.enabled: true` so model metadata can be synced before final completion.
-- `/aperture:settings` - Edit config: connection URL, mode, proxy providers and gateway checks, dedicated provider filters, onboarding status, and onboarding extension enabled state. Dedicated-mode saves trigger a reload because provider registration must be rebuilt.
+- `/aperture:onboarding` - Onboarding wizard. Only appears when onboarding is pending. Completion saves config and reloads Pi so selected providers register cleanly.
+- `/aperture:settings` - Edit config: connection URL, capabilities, proxy providers and gateway checks, dedicated provider filters, onboarding status, and onboarding extension enabled state. Settings saves sync providers without requiring reload.
 
 ## Key decisions
 
 - Config is global-only (no per-project scope). Aperture is a network-level concern.
-- Two modes: `dedicated` (standalone provider) and `proxy` (reroute existing providers).
-- Proxy mode only overrides `baseUrl`, `apiKey`, and `headers` on existing providers. Model definitions are never touched.
-- Proxy mode skips providers with no models in the registry because there is nothing to reroute.
-- Optional per-provider gateway model verification (`shouldCheckGatewayModels`) warns at startup if configured models are missing from the Aperture gateway.
-- Removed proxy providers trigger unregistration with a notification to `/reload` for native provider recovery.
+- Dedicated and proxy are independent capabilities.
+- Dedicated is enabled by default.
+- No gateway model cache is persisted in extension config.
+- Proxy mode only overrides `baseUrl`, `apiKey`, and headers on existing providers. Model definitions are never touched.
+- Proxy mode skips providers with no local models because there is nothing to reroute.
+- Proxy provider selection maps Aperture providers to local Pi registry providers by base URL, including child path matching. If base URLs are unavailable, it falls back to provider IDs.
+- `openai-codex-responses` proxy registration uses the Aperture root URL because Pi's Codex adapter appends `/codex/responses` itself.
+- Optional per-provider gateway model verification (`shouldCheckGatewayModels`) warns if configured local models are missing from the Aperture gateway.
+- Removed proxy providers trigger unregistration.
 - Dedicated mode registers the Pi provider with custom `aperture` API and routes each request through the target Pi API selected from Aperture provider compatibility.
-- Dedicated mode model IDs are exposed as `provider::modelId` (using `::` separator to avoid ambiguity with slashes in model IDs); the provider prefix is stripped before requests are sent to Aperture.
-- Dedicated mode registers cached models immediately when available, then fetches fresh models from Aperture `/v1/models` and re-registers if fresh models are available.
-- Dedicated mode persists gateway models to `dedicated.cachedModels` for fast registration on the next startup.
+- Dedicated model IDs are exposed exactly as Aperture reports them. They are not prefixed with `provider::`.
+- Dedicated mode tracks model routing internally as `modelId -> api`.
 - Dedicated mode can filter gateway models by enabled `dedicated.providers`; an empty provider filter means all gateway providers are included.
-- Dedicated mode builds safe defaults for every gateway model: 128k context, 8k output, text-only, no reasoning, and pricing mapped from Aperture when available.
+- A non-empty dedicated provider list with all `enabled: false` means no dedicated models are registered.
+- Dedicated mode builds safe defaults for every gateway model: 128k context, 8k output, text-only, no reasoning.
 - Dedicated mode fetches provider compatibility from `/aperture/config` and maps it to Pi APIs: OpenAI chat/completions, Anthropic messages, OpenAI responses, Gemini generate content, Google Vertex, or Bedrock converse.
-- User-defined models from `~/.pi/agent/models.json` under `providers.aperture.models` take precedence over gateway defaults for capabilities, so synced/custom metadata persists across restarts. If a user model does not define cost, gateway-derived cost is kept.
-- Dedicated-mode onboarding stays enabled after the wizard. The agent should run `sync-aperture-models`, validate with `aperture_validate_models_json`, then call `aperture_complete_onboarding` to set `onboardingDone: true` and `onboarding.enabled: false`.
-- The provider extension warns on session start when registered models still match default capabilities.
-- `apiKey` is set to `"-"` because Aperture injects the upstream provider key server-side.
+- `apiKey` is set to `"-"` because Aperture injects the upstream provider key server-side. Pi OAuth credentials still take precedence when available.
 - Provider requests include provenance headers: `Referer: https://pi.dev`, `X-Title: npm:@aliou/pi-ts-aperture`.
-- Provider requests include a `x-session-id` header set to the Pi session ID.
-- Dedicated provider requests also include `x-upstream-provider-id` derived from the `provider::modelId` prefix.
-- URLs are normalized on input: scheme is added when missing, paths such as `/v1` are stripped to the origin, and `/v1` is re-appended during provider registration.
+- Provider requests include `x-session-id` set to the Pi session ID.
+- The extension does not send `x-upstream-provider-id`.
+- URLs are normalized on input: scheme is added when missing, paths such as `/v1` are stripped to the origin, and provider registration appends the API-specific path as needed.
 - No hardcoded provider IDs or URLs -- works for any Aperture instance with any providers.
 - Config migrations are added when the file format changes, so existing user configuration keeps working across releases.
 
@@ -112,7 +100,7 @@ Defaults: `mode: "dedicated"`, `onboardingDone: false`, `onboarding.enabled: tru
 - `@aliou/pi-utils-settings` - Config loader, settings command, wizard infrastructure.
 - `@earendil-works/pi-coding-agent` - Extension API and settings theme helpers.
 - `@earendil-works/pi-tui` - TUI components used by setup wizard.
-- `@earendil-works/pi-ai` - API provider lookup for stream wrappers.
+- `@earendil-works/pi-ai` - API provider lookup and model types.
 
 ## Publishing
 

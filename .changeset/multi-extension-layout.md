@@ -2,16 +2,14 @@
 "@aliou/pi-ts-aperture": minor
 ---
 
-Two-mode architecture with onboarding wizard and dedicated provider selection
+Refactor Aperture into a single extension with independent dedicated and proxy capabilities.
 
-**Breaking**: Config shape changed. Existing configs are auto-migrated.
-
-- Two modes: **dedicated** (standalone `aperture` provider from gateway models) and **proxy** (reroute existing Pi providers through Aperture)
-- Interactive onboarding wizard (`/aperture:onboarding`) with: URL health check, mode selection, provider filtering, and recap
-- Dedicated mode: select which Aperture gateway providers to include via searchable, scrollable checklist
-- Proxy mode: select upstream providers to route through Aperture with optional gateway model verification (Ctrl+G)
-- Config is global-only; `onboardingDone` gate prevents setup command registration after completion
-- Notification on session start when onboarding is pending
-- Gateway pricing (`input`, `input_cache_read`, `input_cache_write`, `output`) parsed and mapped to Pi cost fields for dedicated mode models
-- Both modes reload with countdown after onboarding
-- Legacy v0.5 config auto-migrated to new shape with `onboardingDone: true`
+- Replaced the legacy `mode` setting with independent `dedicated.enabled` and `proxy.enabled` flags. Existing configs are migrated automatically.
+- Kept dedicated enabled by default while allowing proxy to be enabled at the same time.
+- Moved Pi extension code under `extensions/aperture/` and kept Pi-agnostic Aperture API/provider mapping code under `src/`.
+- Switched provider discovery to Aperture's `/api/providers` and `/aperture/config` endpoints.
+- Added shared provider mapping so onboarding and settings use the same local Pi registry matching behavior.
+- Improved proxy matching with base URL child-path matching and provider ID fallback, including the Codex root URL special case.
+- Removed dedicated model ID prefixes, persisted gateway model cache, temporary model-sync onboarding skill/tools, and `x-upstream-provider-id` request headers.
+- Updated onboarding to choose dedicated, proxy, or both, then reload Pi after saving so selected providers register cleanly.
+- Updated settings to edit connection, capabilities, proxy providers, dedicated provider filters, onboarding state, and onboarding extension state.

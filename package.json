@@ -20,19 +20,18 @@
   },
   "files": [
     "src",
+    "extensions",
     "README.md",
-    "!src/**/*.test.ts"
+    "!**/*.test.ts"
   ],
   "pi": {
     "extensions": [
-      "./src/extensions/proxy/index.ts",
-      "./src/extensions/provider/index.ts",
-      "./src/extensions/onboarding/index.ts"
+      "./extensions/aperture/index.ts"
     ],
     "video": "https://assets.aliou.me/github/aliou/pi-ts-aperture/demo.mp4"
   },
   "dependencies": {
-    "@aliou/pi-utils-settings": "^0.15.1"
+    "@aliou/pi-utils-settings": "^0.17.0"
   },
   "peerDependencies": {
     "@earendil-works/pi-ai": "0.74.0",
@@ -60,8 +59,7 @@
     "version": "changeset version",
     "release": "pnpm changeset publish",
     "test": "vitest run",
-    "test:watch": "vitest",
-    "test:e2e": "vitest run tests/e2e.test.ts"
+    "test:watch": "vitest"
   },
   "devDependencies": {
     "@aliou/biome-plugins": "^0.8.1",

@@ -2,7 +2,9 @@
  * Pure URL helpers.
  */
 
-import type { ApertureConfig } from "./config";
+interface UrlConfig {
+  baseUrl?: string;
+}
 
 /**
  * Normalizes a user-input URL:
@@ -32,7 +34,7 @@ export function normalizeInputUrl(raw: string): string {
  * Returns configured gateway URL without trailing slash.
  * Returns null when baseUrl is empty.
  */
-export function resolveGatewayUrl(config: ApertureConfig): string | null {
+export function resolveGatewayUrl(config: UrlConfig): string | null {
   const { baseUrl } = config;
   if (!baseUrl) return null;
   return baseUrl.replace(/\/v1\/?$/, "").replace(/\/+$/, "");
@@ -43,7 +45,7 @@ export function resolveGatewayUrl(config: ApertureConfig): string | null {
  * Appends /v1 to the gateway URL.
  * Returns null when gateway URL cannot be resolved.
  */
-export function resolveProviderBaseUrl(config: ApertureConfig): string | null {
+export function resolveProviderBaseUrl(config: UrlConfig): string | null {
   const gateway = resolveGatewayUrl(config);
   if (!gateway) return null;
   return `${gateway}/v1`;
