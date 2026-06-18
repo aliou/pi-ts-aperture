@@ -15,16 +15,30 @@ import {
   Wizard,
   type WizardStepContext,
 } from "@aliou/pi-utils-settings";
+import type { Api, Model } from "@earendil-works/pi-ai";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { getMarkdownTheme } from "@earendil-works/pi-coding-agent";
 import type { Component, TUI } from "@earendil-works/pi-tui";
-import { Box, Key, Markdown, matchesKey, Text } from "@earendil-works/pi-tui";
+import {
+  Box,
+  getKeybindings,
+  Input,
+  Key,
+  Markdown,
+  matchesKey,
+  Text,
+  truncateToWidth,
+  wrapTextWithAnsi,
+} from "@earendil-works/pi-tui";
+import { ApertureClient } from "../../../src/api/client";
+import {
+  mapDedicatedProviders,
+  mapProxyProviders,
+} from "../../../src/provider-mapping";
 import type {
   ApertureConfig,
-  ApertureMode,
   DedicatedProviderConfig,
-} from "../../lib/config";
-import { fetchGatewayProviders, type GatewayProvider } from "../../lib/gateway";
+} from "../shared/config/loader";
 import { UrlStep } from "./setup-wizard";
 
 // --- Onboarding state ---
@@ -32,14 +46,16 @@ import { UrlStep } from "./setup-wizard";
 export interface OnboardingResult {
   completed: boolean;
   baseUrl: string;
-  mode: ApertureMode;
+  proxyEnabled: boolean;
+  dedicatedEnabled: boolean;
   upstreamProviders: { id: string; shouldCheckGatewayModels: boolean }[];
   dedicatedProviders: DedicatedProviderConfig[];
 }
 
 interface OnboardingState {
   baseUrl: string;
-  mode: ApertureMode | null;
+  proxyEnabled: boolean;
+  dedicatedEnabled: boolean;
   upstreamProviders: { id: string; shouldCheckGatewayModels: boolean }[];
   dedicatedProviders: DedicatedProviderConfig[];
 }
@@ -55,14 +71,11 @@ interface ChecklistItem {
 }
 
 class FilterableChecklist implements Component {
-  private searchTextValue = "";
+  private readonly searchInput = new Input();
   private selectedIndex = 0;
-  private scrollOffset = 0;
-
-  /** Extra hint line shown below the standard hints. */
   private extraHint = "";
-
   private items: ChecklistItem[];
+  private filteredItems: ChecklistItem[];
 
   constructor(
     private readonly settingsTheme: SettingsTheme,
@@ -72,162 +85,146 @@ class FilterableChecklist implements Component {
     private readonly onCtrlG?: () => void,
   ) {
     this.items = items;
+    this.filteredItems = items;
   }
 
-  /** Update items in place (preserves search state). */
   updateItems(items: ChecklistItem[]): void {
     this.items = items;
+    this.applyFilter(this.searchInput.getValue());
   }
 
-  /** Set extra hint text shown below the standard key hints. */
   setExtraHint(hint: string): void {
     this.extraHint = hint;
   }
 
   invalidate() {}
 
-  /** Filtered items based on current search query. */
-  private get filtered(): ChecklistItem[] {
-    const query = this.searchTextValue.toLowerCase().trim();
-    if (!query) return this.items;
-    return this.items.filter(
-      (item) =>
-        item.id.toLowerCase().includes(query) ||
-        item.label.toLowerCase().includes(query),
+  private applyFilter(query: string): void {
+    const normalized = query.toLowerCase().trim();
+    this.filteredItems = normalized
+      ? this.items.filter(
+          (item) =>
+            item.id.toLowerCase().includes(normalized) ||
+            item.label.toLowerCase().includes(normalized),
+        )
+      : this.items;
+    this.selectedIndex = Math.max(
+      0,
+      Math.min(this.selectedIndex, this.filteredItems.length - 1),
     );
   }
 
-  private clampScroll(): void {
-    const count = this.filtered.length;
-    const maxOffset = Math.max(0, count - LIST_HEIGHT);
-    this.scrollOffset = Math.min(this.scrollOffset, maxOffset);
-
-    if (this.selectedIndex < this.scrollOffset) {
-      this.scrollOffset = this.selectedIndex;
-    } else if (this.selectedIndex >= this.scrollOffset + LIST_HEIGHT) {
-      this.scrollOffset = this.selectedIndex - LIST_HEIGHT + 1;
-    }
-  }
-
-  render(_width: number): string[] {
+  render(width: number): string[] {
     const lines: string[] = [];
 
-    // Search bar (always active)
-    const displayText = this.searchTextValue || "type to filter...";
-    const styledText = this.searchTextValue
-      ? displayText
-      : this.settingsTheme.hint(displayText);
-    lines.push(`  > ${styledText}`);
+    lines.push(
+      ...this.searchInput.render(Math.max(1, width - 4)).map((l) => `  ${l}`),
+    );
     lines.push("");
 
-    const filtered = this.filtered;
-    if (filtered.length === 0) {
+    if (this.filteredItems.length === 0) {
       lines.push(this.settingsTheme.hint("  No matching providers."));
-      for (let i = 1; i < LIST_HEIGHT; i++) lines.push("");
-    } else {
-      this.clampScroll();
-      const above = this.scrollOffset;
-      const below = Math.max(
-        0,
-        filtered.length - this.scrollOffset - LIST_HEIGHT,
+      return lines;
+    }
+
+    const startIndex = Math.max(
+      0,
+      Math.min(
+        this.selectedIndex - Math.floor(LIST_HEIGHT / 2),
+        this.filteredItems.length - LIST_HEIGHT,
+      ),
+    );
+    const endIndex = Math.min(
+      startIndex + LIST_HEIGHT,
+      this.filteredItems.length,
+    );
+
+    for (let i = startIndex; i < endIndex; i++) {
+      const item = this.filteredItems[i];
+      if (!item) continue;
+      const selected = i === this.selectedIndex;
+      const prefix = selected ? this.settingsTheme.cursor : "  ";
+      const check = item.checked ? "[x]" : "[ ]";
+      const label = truncateToWidth(
+        `${check} ${item.label}`,
+        Math.max(1, width - 6),
+        "…",
       );
+      lines.push(`${prefix}${this.settingsTheme.value(` ${label}`, selected)}`);
+    }
 
-      if (above > 0) {
-        lines.push(this.settingsTheme.hint(`  \u2191 ${above} more above`));
-      } else {
-        lines.push("");
-      }
-
-      for (
-        let i = this.scrollOffset;
-        i < this.scrollOffset + LIST_HEIGHT;
-        i++
-      ) {
-        const item = filtered[i];
-        if (!item) {
-          lines.push("");
-          continue;
-        }
-        const selected = i === this.selectedIndex;
-        const prefix = selected ? this.settingsTheme.cursor : "  ";
-        const check = item.checked ? "[x]" : "[ ]";
-        const label = this.settingsTheme.value(
-          ` ${check} ${item.label}`,
-          selected,
-        );
-        lines.push(`${prefix}${label}`);
-      }
-
-      if (below > 0) {
-        lines.push(this.settingsTheme.hint(`  \u2193 ${below} more below`));
-      } else {
-        lines.push("");
-      }
+    if (startIndex > 0 || endIndex < this.filteredItems.length) {
+      lines.push(
+        this.settingsTheme.hint(
+          `  (${this.selectedIndex + 1}/${this.filteredItems.length})`,
+        ),
+      );
     }
 
     lines.push("");
-    const hints = ["\u2191\u2193: navigate", "Enter: toggle"];
+    const hints = ["↑↓: navigate", "Space: toggle"];
     if (this.onCtrlG) hints.push("Ctrl+G: gateway check");
-    lines.push(this.settingsTheme.hint(`  ${hints.join(" \u00b7 ")}`));
+    lines.push(this.settingsTheme.hint(`  ${hints.join(" · ")}`));
     if (this.extraHint) {
-      lines.push(this.settingsTheme.hint(`  ${this.extraHint}`));
+      lines.push(
+        ...wrapTextWithAnsi(this.extraHint, Math.max(1, width - 4)).map(
+          (line) => this.settingsTheme.hint(`  ${line}`),
+        ),
+      );
     }
 
     return lines;
   }
 
   handleInput(data: string): void {
-    // Ctrl+G: optional action (e.g. toggle gateway check)
+    const kb = getKeybindings();
+
     if (this.onCtrlG && matchesKey(data, Key.ctrl("g"))) {
       this.onCtrlG();
       return;
     }
 
-    // Up/down: navigate filtered list
-    if (matchesKey(data, Key.up)) {
-      if (this.filtered.length === 0) return;
+    if (kb.matches(data, "tui.select.up")) {
+      if (this.filteredItems.length === 0) return;
       this.selectedIndex =
         this.selectedIndex === 0
-          ? this.filtered.length - 1
+          ? this.filteredItems.length - 1
           : this.selectedIndex - 1;
-      this.clampScroll();
       return;
     }
-    if (matchesKey(data, Key.down)) {
-      if (this.filtered.length === 0) return;
+
+    if (kb.matches(data, "tui.select.down")) {
+      if (this.filteredItems.length === 0) return;
       this.selectedIndex =
-        this.selectedIndex === this.filtered.length - 1
+        this.selectedIndex === this.filteredItems.length - 1
           ? 0
           : this.selectedIndex + 1;
-      this.clampScroll();
       return;
     }
 
-    // Enter: toggle selected item
-    if (matchesKey(data, Key.enter)) {
-      const item = this.filtered[this.selectedIndex];
-      if (!item) return;
-      this.onToggle(item.id);
+    if (kb.matches(data, "tui.select.pageUp")) {
+      this.selectedIndex = Math.max(0, this.selectedIndex - LIST_HEIGHT);
       return;
     }
 
-    // Backspace: delete last search char
-    if (matchesKey(data, Key.backspace)) {
-      this.searchTextValue = this.searchTextValue.slice(0, -1);
-      this.selectedIndex = 0;
-      this.scrollOffset = 0;
+    if (kb.matches(data, "tui.select.pageDown")) {
+      this.selectedIndex = Math.min(
+        Math.max(0, this.filteredItems.length - 1),
+        this.selectedIndex + LIST_HEIGHT,
+      );
       return;
     }
 
-    // Printable character: append to search
-    if (data.length === 1 && data >= " " && data <= "~") {
-      this.searchTextValue += data;
-      this.selectedIndex = 0;
-      this.scrollOffset = 0;
+    if (data === " ") {
+      const item = this.filteredItems[this.selectedIndex];
+      if (item) this.onToggle(item.id);
+      return;
     }
+
+    this.searchInput.handleInput(data);
+    this.applyFilter(this.searchInput.getValue());
   }
 }
-
 // --- Steps ---
 
 class IntroStep implements Component {
@@ -258,7 +255,7 @@ class IntroStep implements Component {
   }
 }
 
-class ModeStep implements Component {
+class CapabilitiesStep implements Component {
   private selectedIndex = 0;
   private readonly settingsTheme: SettingsTheme;
 
@@ -266,6 +263,7 @@ class ModeStep implements Component {
     private readonly theme: Theme,
     private readonly state: OnboardingState,
     private readonly wizCtx: WizardStepContext,
+    private readonly onSelected: () => void,
   ) {
     this.settingsTheme = getSettingsTheme(theme);
   }
@@ -273,7 +271,7 @@ class ModeStep implements Component {
   invalidate() {}
 
   render(width: number): string[] {
-    const options = ["Dedicated Aperture provider", "Proxy existing providers"];
+    const options = ["Dedicated only", "Proxy only", "Both"];
     const explanations = [
       [
         "Register a standalone `aperture` provider whose model list comes directly from your Aperture gateway.",
@@ -288,6 +286,13 @@ class ModeStep implements Component {
         "- Each provider keeps its own model list and settings",
         "- Only the base URL and API key are overridden",
         "- Useful when you want to keep per-provider model config",
+      ].join("\n"),
+      [
+        "Enable both capabilities at the same time.",
+        "",
+        "- `aperture` exposes gateway models directly",
+        "- Selected existing Pi providers are also proxied",
+        "- The same gateway provider can be used in both capabilities",
       ].join("\n"),
     ];
 
@@ -324,57 +329,101 @@ class ModeStep implements Component {
 
   handleInput(data: string): void {
     if (matchesKey(data, Key.up) || data === "k") {
-      this.selectedIndex = this.selectedIndex === 0 ? 1 : 0;
+      this.selectedIndex =
+        this.selectedIndex === 0 ? 2 : this.selectedIndex - 1;
       return;
     }
     if (matchesKey(data, Key.down) || data === "j") {
-      this.selectedIndex = this.selectedIndex === 1 ? 0 : 1;
+      this.selectedIndex =
+        this.selectedIndex === 2 ? 0 : this.selectedIndex + 1;
       return;
     }
 
     if (matchesKey(data, Key.enter)) {
-      this.state.mode = this.selectedIndex === 0 ? "dedicated" : "proxy";
+      this.state.dedicatedEnabled =
+        this.selectedIndex === 0 || this.selectedIndex === 2;
+      this.state.proxyEnabled =
+        this.selectedIndex === 1 || this.selectedIndex === 2;
       this.wizCtx.markComplete();
-      this.wizCtx.goNext();
+      this.onSelected();
     }
   }
 }
 
 class ProxyProvidersStep implements Component {
   private readonly settingsTheme: SettingsTheme;
-  private readonly providerIds: string[];
+  private providers: ReturnType<typeof mapProxyProviders> = [];
   private readonly checked: Set<string>;
   private checkAllGateway = true;
+  private loading = true;
+  private error = "";
   private checklist: FilterableChecklist | null = null;
 
   constructor(
     theme: Theme,
+    private readonly tui: TUI,
     private readonly state: OnboardingState,
-    knownProviders: string[],
+    private readonly knownModels: Model<Api>[],
+    private readonly wizCtx: WizardStepContext,
   ) {
     this.settingsTheme = getSettingsTheme(theme);
-    this.providerIds = knownProviders;
     this.checked = new Set(state.upstreamProviders.map((p) => p.id));
     const allCheckedGateway =
       state.upstreamProviders.length > 0 &&
       state.upstreamProviders.every((p) => p.shouldCheckGatewayModels);
     this.checkAllGateway = allCheckedGateway;
+    this.fetchProviders();
+  }
+
+  private async fetchProviders(): Promise<void> {
+    try {
+      const client = new ApertureClient(this.state.baseUrl);
+      const [providerInfos, gatewayProviders] = await Promise.all([
+        client.providerConfigInfos(),
+        client.providers(),
+      ]);
+      this.providers = mapProxyProviders(
+        this.knownModels,
+        providerInfos,
+        gatewayProviders,
+        this.state.upstreamProviders,
+      );
+      this.loading = false;
+      this.saveState();
+      this.tui.requestRender();
+    } catch {
+      this.error = "Failed to fetch providers from gateway";
+      this.loading = false;
+      this.tui.requestRender();
+    }
   }
 
   private buildItems(): ChecklistItem[] {
-    return this.providerIds.map((id) => ({
-      id,
-      label: id,
-      checked: this.checked.has(id),
+    return this.providers.map((provider) => ({
+      id: provider.id,
+      label: provider.name ?? provider.id,
+      checked: this.checked.has(provider.id),
     }));
   }
 
   invalidate() {}
 
   render(width: number): string[] {
-    if (this.providerIds.length === 0) {
+    if (this.loading) {
       return [
-        "  No providers available in the model registry.",
+        "  Fetching proxy providers from Aperture gateway...",
+        "",
+        this.settingsTheme.hint("  Please wait."),
+      ];
+    }
+
+    if (this.error) {
+      return [`  ${this.error}`, ""];
+    }
+
+    if (this.providers.length === 0) {
+      return [
+        "  No local providers match the Aperture gateway provider base URLs.",
         "",
         "  You can add proxy providers later in /aperture:settings.",
       ];
@@ -392,7 +441,9 @@ class ProxyProvidersStep implements Component {
     }
 
     const gwLabel = this.checkAllGateway ? "on" : "off";
-    this.checklist.setExtraHint(`gateway model check: ${gwLabel}`);
+    this.checklist.setExtraHint(
+      `gateway model check: ${gwLabel} — warns if local provider models are missing from Aperture`,
+    );
 
     return [
       "  Select providers to route through Aperture:",
@@ -416,11 +467,21 @@ class ProxyProvidersStep implements Component {
   }
 
   handleInput(data: string): void {
-    this.checklist?.handleInput(data);
+    if (this.loading) return;
+    if (matchesKey(data, Key.enter)) {
+      this.wizCtx.markComplete();
+      this.wizCtx.goNext();
+      return;
+    }
+    if (this.checklist) {
+      this.checklist.handleInput(data);
+      if (data === " ") this.wizCtx.markComplete();
+    }
   }
 
   private saveState(): void {
-    this.state.upstreamProviders = this.providerIds
+    this.state.upstreamProviders = this.providers
+      .map((provider) => provider.id)
       .filter((id) => this.checked.has(id))
       .map((id) => ({
         id,
@@ -442,14 +503,15 @@ class FinishStep implements Component {
   }
 
   render(width: number): string[] {
-    const modeLabel =
-      this.state.mode === "dedicated"
-        ? "Dedicated provider"
-        : "Proxy existing providers";
+    const capabilityLabel = this.state.dedicatedEnabled
+      ? this.state.proxyEnabled
+        ? "Dedicated provider and proxy"
+        : "Dedicated provider"
+      : "Proxy existing providers";
 
-    let content = `**URL**: \`${this.state.baseUrl || "(not set)"}\`\n\n**Mode**: ${modeLabel}`;
+    let content = `**URL**: \`${this.state.baseUrl || "(not set)"}\`\n\n**Capabilities**: ${capabilityLabel}`;
 
-    if (this.state.mode === "proxy") {
+    if (this.state.proxyEnabled) {
       const count = this.state.upstreamProviders.length;
       if (count > 0) {
         const list = this.state.upstreamProviders
@@ -466,7 +528,7 @@ class FinishStep implements Component {
       }
     }
 
-    if (this.state.mode === "dedicated") {
+    if (this.state.dedicatedEnabled) {
       const enabled = this.state.dedicatedProviders.filter((p) => p.enabled);
       const disabled = this.state.dedicatedProviders.filter((p) => !p.enabled);
       if (enabled.length > 0) {
@@ -501,12 +563,13 @@ export function createOnboardingWizard(
   theme: Theme,
   tui: TUI,
   done: (result: OnboardingResult) => void,
-  knownProviders: string[],
+  knownModels: Model<Api>[],
   currentConfig: ApertureConfig | null,
 ): Component {
   const state: OnboardingState = {
     baseUrl: currentConfig?.baseUrl ?? "",
-    mode: null,
+    proxyEnabled: currentConfig?.proxy?.enabled ?? false,
+    dedicatedEnabled: currentConfig?.dedicated?.enabled ?? true,
     upstreamProviders:
       currentConfig?.proxy?.upstreamProviders?.map((p) => ({
         id: p.id,
@@ -521,6 +584,7 @@ export function createOnboardingWizard(
   };
 
   let markWelcomeComplete: (() => void) | null = null;
+  let wizard: Wizard;
   let settled = false;
 
   const finalize = (result: OnboardingResult) => {
@@ -529,13 +593,24 @@ export function createOnboardingWizard(
     done(result);
   };
 
-  const wizard = new Wizard({
-    title: "Aperture Setup",
-    theme,
-    steps: [
+  const finish = (markComplete: () => void) => {
+    if (!state.proxyEnabled && !state.dedicatedEnabled) return;
+    markComplete();
+    finalize({
+      completed: true,
+      baseUrl: state.baseUrl,
+      proxyEnabled: state.proxyEnabled,
+      dedicatedEnabled: state.dedicatedEnabled,
+      upstreamProviders: state.upstreamProviders,
+      dedicatedProviders: state.dedicatedProviders,
+    });
+  };
+
+  const buildWizard = (activeLabel?: string): Wizard => {
+    const steps = [
       {
         label: "Welcome",
-        build: (ctx) => {
+        build: (ctx: WizardStepContext) => {
           markWelcomeComplete = ctx.markComplete;
           return new IntroStep(() => {
             ctx.markComplete();
@@ -557,50 +632,87 @@ export function createOnboardingWizard(
           ),
       },
       {
-        label: "Mode",
-        build: (ctx: WizardStepContext) => new ModeStep(theme, state, ctx),
-      },
-      {
-        label: "Providers",
+        label: "Capabilities",
         build: (ctx: WizardStepContext) =>
-          new ProvidersStep(theme, tui, state, knownProviders, ctx),
+          new CapabilitiesStep(theme, state, ctx, () => {
+            const nextLabel = state.dedicatedEnabled
+              ? "Dedicated"
+              : state.proxyEnabled
+                ? "Proxy"
+                : "Recap";
+            wizard = buildWizard(nextLabel);
+            tui.requestRender();
+          }),
       },
+      ...(state.dedicatedEnabled
+        ? [
+            {
+              label: "Dedicated",
+              build: (ctx: WizardStepContext) =>
+                new DedicatedProvidersStep(theme, tui, state, ctx),
+            },
+          ]
+        : []),
+      ...(state.proxyEnabled
+        ? [
+            {
+              label: "Proxy",
+              build: (ctx: WizardStepContext) =>
+                new ProxyProvidersStep(theme, tui, state, knownModels, ctx),
+            },
+          ]
+        : []),
       {
         label: "Recap",
         build: (ctx: WizardStepContext) =>
-          new FinishStep(state, () => {
-            if (state.mode === null) return;
-            ctx.markComplete();
-            finalize({
-              completed: true,
-              baseUrl: state.baseUrl,
-              mode: state.mode,
-              upstreamProviders: state.upstreamProviders,
-              dedicatedProviders: state.dedicatedProviders,
-            });
-          }),
+          new FinishStep(state, () => finish(ctx.markComplete)),
       },
-    ],
-    onComplete: () => {
-      finalize({
-        completed: state.mode !== null,
-        baseUrl: state.baseUrl,
-        mode: state.mode ?? "dedicated",
-        upstreamProviders: state.upstreamProviders,
-        dedicatedProviders: state.dedicatedProviders,
-      });
-    },
-    onCancel: () =>
-      finalize({
-        completed: false,
-        baseUrl: state.baseUrl,
-        mode: state.mode ?? "dedicated",
-        upstreamProviders: state.upstreamProviders,
-        dedicatedProviders: state.dedicatedProviders,
-      }),
-    hintSuffix: "Enter select/continue",
-    minContentHeight: 14,
-  });
+    ];
+
+    const nextWizard = new Wizard({
+      title: "Aperture Setup",
+      theme,
+      steps,
+      onComplete: () => {
+        finalize({
+          completed: state.proxyEnabled || state.dedicatedEnabled,
+          baseUrl: state.baseUrl,
+          proxyEnabled: state.proxyEnabled,
+          dedicatedEnabled: state.dedicatedEnabled,
+          upstreamProviders: state.upstreamProviders,
+          dedicatedProviders: state.dedicatedProviders,
+        });
+      },
+      onCancel: () =>
+        finalize({
+          completed: false,
+          baseUrl: state.baseUrl,
+          proxyEnabled: state.proxyEnabled,
+          dedicatedEnabled: state.dedicatedEnabled,
+          upstreamProviders: state.upstreamProviders,
+          dedicatedProviders: state.dedicatedProviders,
+        }),
+      hintSuffix: "Enter select/continue",
+      minContentHeight: 14,
+    });
+
+    const activeIndex = activeLabel
+      ? steps.findIndex((step) => step.label === activeLabel)
+      : 0;
+    if (activeIndex > 0) {
+      const wizardState = nextWizard as unknown as {
+        activeIndex: number;
+        completed: boolean[];
+      };
+      wizardState.activeIndex = activeIndex;
+      for (let i = 0; i < activeIndex; i++) {
+        wizardState.completed[i] = true;
+      }
+    }
+    return nextWizard;
+  };
+
+  wizard = buildWizard();
 
   return {
     render: (width: number) => wizard.render(width),
@@ -618,68 +730,10 @@ export function createOnboardingWizard(
   };
 }
 
-/** Dynamic step: shows Aperture provider selection in dedicated mode, proxy providers in proxy mode. */
-class ProvidersStep implements Component {
-  private proxyStep: ProxyProvidersStep | null = null;
-  private dedicatedStep: DedicatedProvidersStep | null = null;
-
-  constructor(
-    private readonly theme: Theme,
-    private readonly tui: TUI,
-    private readonly state: OnboardingState,
-    private readonly knownProviders: string[],
-    private readonly wizCtx: WizardStepContext,
-  ) {}
-
-  invalidate() {
-    this.proxyStep?.invalidate();
-    this.dedicatedStep?.invalidate();
-  }
-
-  render(width: number): string[] {
-    if (this.state.mode === "proxy") {
-      if (!this.proxyStep) {
-        this.proxyStep = new ProxyProvidersStep(
-          this.theme,
-          this.state,
-          this.knownProviders,
-        );
-        this.wizCtx.markComplete();
-      }
-      return this.proxyStep.render(width);
-    }
-
-    if (this.state.mode === "dedicated") {
-      if (!this.dedicatedStep) {
-        this.dedicatedStep = new DedicatedProvidersStep(
-          this.theme,
-          this.tui,
-          this.state,
-        );
-        this.wizCtx.markComplete();
-      }
-      return this.dedicatedStep.render(width);
-    }
-
-    return ["  Select a mode first."];
-  }
-
-  handleInput(data: string): void {
-    if (this.state.mode === "proxy" && this.proxyStep) {
-      this.proxyStep.handleInput(data);
-      return;
-    }
-    if (this.state.mode === "dedicated" && this.dedicatedStep) {
-      this.dedicatedStep.handleInput(data);
-      return;
-    }
-  }
-}
-
 /** Dedicated mode: select which Aperture gateway providers to include. */
 class DedicatedProvidersStep implements Component {
   private readonly settingsTheme: SettingsTheme;
-  private providers: GatewayProvider[] = [];
+  private providers: DedicatedProviderConfig[] = [];
   private readonly enabled: Set<string>;
   private loading = true;
   private error = "";
@@ -689,6 +743,7 @@ class DedicatedProvidersStep implements Component {
     theme: Theme,
     private readonly tui: TUI,
     private readonly state: OnboardingState,
+    private readonly wizCtx: WizardStepContext,
   ) {
     this.settingsTheme = getSettingsTheme(theme);
     this.enabled = new Set(
@@ -699,18 +754,16 @@ class DedicatedProvidersStep implements Component {
 
   private async fetchProviders(): Promise<void> {
     try {
-      const providers = await fetchGatewayProviders(this.state.baseUrl);
-      this.providers = providers;
-      if (this.state.dedicatedProviders.length === 0) {
-        for (const p of providers) {
-          this.enabled.add(p.id);
-        }
-      } else {
-        for (const p of providers) {
-          if (!this.state.dedicatedProviders.some((c) => c.id === p.id)) {
-            this.enabled.add(p.id);
-          }
-        }
+      const gatewayProviders = await new ApertureClient(
+        this.state.baseUrl,
+      ).providers();
+      this.providers = mapDedicatedProviders(
+        gatewayProviders,
+        this.state.dedicatedProviders,
+      );
+      this.enabled.clear();
+      for (const provider of this.providers) {
+        if (provider.enabled) this.enabled.add(provider.id);
       }
       this.loading = false;
       this.saveState();
@@ -777,7 +830,15 @@ class DedicatedProvidersStep implements Component {
 
   handleInput(data: string): void {
     if (this.loading) return;
-    this.checklist?.handleInput(data);
+    if (matchesKey(data, Key.enter)) {
+      this.wizCtx.markComplete();
+      this.wizCtx.goNext();
+      return;
+    }
+    if (this.checklist) {
+      this.checklist.handleInput(data);
+      if (data === " ") this.wizCtx.markComplete();
+    }
   }
 
   private saveState(): void {
@@ -805,24 +866,26 @@ export function isOnboardingExtensionEnabled(
 
 export function buildOnboardedConfig(
   baseUrl: string,
-  mode: ApertureMode,
+  proxyEnabled: boolean,
+  dedicatedEnabled: boolean,
   upstreamProviders: { id: string; shouldCheckGatewayModels: boolean }[],
   dedicatedProviders: DedicatedProviderConfig[],
 ): ApertureConfig {
   return {
     baseUrl,
-    mode,
-    onboardingDone: mode === "proxy",
+    onboardingDone: true,
     onboarding: {
-      enabled: mode === "dedicated",
+      enabled: false,
     },
     proxy: {
+      enabled: proxyEnabled,
       upstreamProviders: upstreamProviders.map((p) => ({
         id: p.id,
         shouldCheckGatewayModels: p.shouldCheckGatewayModels,
       })),
     },
     dedicated: {
+      enabled: dedicatedEnabled,
       providers: dedicatedProviders,
     },
   };

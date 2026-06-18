@@ -8,8 +8,8 @@ import type {
 } from "@aliou/pi-utils-settings";
 import type { Component, TUI } from "@earendil-works/pi-tui";
 import { Input, Key, matchesKey } from "@earendil-works/pi-tui";
-import { checkApertureHealth } from "../../lib/gateway";
-import { normalizeInputUrl } from "../../lib/url";
+import { ApertureClient } from "../../../src/api/client";
+import { normalizeInputUrl } from "../../../src/url";
 
 export const SPINNER_FRAMES = [
   "⠋",
@@ -68,21 +68,25 @@ export class UrlStep implements Component {
       this.tui.requestRender();
     }, 80);
 
-    checkApertureHealth(url).then((res) => {
-      if (this.timer) clearInterval(this.timer);
-      this.timer = null;
-
-      if (res.ok) {
+    new ApertureClient(url)
+      .health()
+      .then(() => {
+        if (this.timer) clearInterval(this.timer);
+        this.timer = null;
         this.state = "ok";
         this.onUrl(url);
         this.wizCtx.markComplete();
+        this.wizCtx.goNext();
         this.tui.requestRender();
-      } else {
+      })
+      .catch((error: unknown) => {
+        if (this.timer) clearInterval(this.timer);
+        this.timer = null;
         this.state = "error";
-        this.errorMessage = res.error ?? "unknown error";
+        this.errorMessage =
+          error instanceof Error ? error.message : String(error);
         this.tui.requestRender();
-      }
-    });
+      });
   }
 
   render(width: number): string[] {
@@ -98,7 +102,7 @@ export class UrlStep implements Component {
       const spinner = SPINNER_FRAMES[this.frame];
       lines.push(this.theme.hint(`  ${spinner} Checking connection...`));
     } else if (this.state === "ok") {
-      lines.push(this.theme.hint("  Connected. Press Enter to continue."));
+      lines.push(this.theme.hint("  Connected."));
     } else if (this.state === "error") {
       lines.push(this.theme.hint(`  Could not connect: ${this.errorMessage}`));
       lines.push(this.theme.hint("  Fix the URL and press Enter to retry."));
