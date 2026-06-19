@@ -80,6 +80,7 @@ describe("ApertureRuntime.sync", () => {
         model("openai", "gpt-5.5", "openai-responses"),
         model("openai-codex", "gpt-5.5", "openai-codex-responses"),
       ],
+      getSessionId: vi.fn(() => "session-id"),
     });
 
     expect(registerProvider).toHaveBeenCalledWith(
