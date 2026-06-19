@@ -5,8 +5,11 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import { ApertureClient } from "../../../src/api/client";
 import type { ApertureProvider } from "../../../src/api/types";
+import {
+  configLoader,
+  type ResolvedConfig,
+} from "../../../src/shared/config/loader";
 import { resolveGatewayUrl, resolveProviderBaseUrl } from "../../../src/url";
-import { configLoader, type ResolvedConfig } from "../shared/config/loader";
 import {
   buildStreamSimple,
   getApiForCompatibility,

@@ -1,10 +1,10 @@
 import { readFileSync } from "node:fs";
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import { configLoader } from "../shared/config/loader";
-import type { Api, Model } from "../shared/types";
+import { configLoader } from "../../../src/shared/config/loader";
+import type { Api, Model } from "../../../src/shared/types";
 import { ApertureRuntime, shouldUseGatewayRootForProxy } from "./runtime";
 
-vi.mock("../shared/config/loader", () => ({
+vi.mock("../../../src/shared/config/loader", () => ({
   configLoader: {
     getConfig: vi.fn(),
   },

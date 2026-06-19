@@ -1,6 +1,6 @@
 import type { Api, Model } from "@earendil-works/pi-ai";
-import type { DedicatedProviderConfig } from "../extensions/aperture/shared/config/loader";
 import type { ApertureProvider, ApertureProviderConfigInfo } from "./api/types";
+import type { DedicatedProviderConfig } from "./shared/config/loader";
 
 function normalizeProviderBaseUrl(url: string): string[] {
   const normalized = url.replace(/\/+$/, "");

@@ -1,8 +1,7 @@
 import { getApiProvider } from "@earendil-works/pi-ai";
 import { ApertureClient } from "../../../src/api/client";
 import type { ApertureProvider } from "../../../src/api/types";
-import { resolveGatewayUrl, resolveProviderBaseUrl } from "../../../src/url";
-import { configLoader } from "../shared/config/loader";
+import { configLoader } from "../../../src/shared/config/loader";
 import type {
   Api,
   AssistantMessageEventStream,
@@ -11,7 +10,8 @@ import type {
   Model,
   SimpleStreamOptions,
   SyncDeps,
-} from "../shared/types";
+} from "../../../src/shared/types";
+import { resolveGatewayUrl, resolveProviderBaseUrl } from "../../../src/url";
 
 const APERTURE_PROVENANCE_HEADERS = {
   Referer: "https://pi.dev",
