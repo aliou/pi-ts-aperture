@@ -20,7 +20,7 @@ After installing, run the onboarding wizard:
 /aperture:onboarding
 ```
 
-[![Onboarding walkthrough](https://assets.aliou.me/pi-extensions/demos/aperture/v0.6.0/onboarding.gif)](https://assets.aliou.me/pi-extensions/demos/aperture/v0.6.0/onboarding.mp4)
+[![Onboarding walkthrough](https://assets.aliou.me/pi-extensions/demos/aperture/v0.6.0/onboarding-both-modes.gif)](https://assets.aliou.me/pi-extensions/demos/aperture/v0.6.0/onboarding-both-modes.mp4)
 
 The wizard walks you through:
 
