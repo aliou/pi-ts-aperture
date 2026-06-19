@@ -3,6 +3,11 @@ import type {
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import { configLoader } from "../../src/shared/config/loader";
+import {
+  APERTURE_FEATURE_REGISTER_EVENT,
+  APERTURE_FEATURE_REQUEST_EVENT,
+  createFeatureRequestPayload,
+} from "../../src/shared/events";
 import { emitConfigSync } from "../../src/shared/sync-bus";
 import { DedicatedRuntime } from "./dedicated/runtime";
 import { registerOnboarding } from "./onboarding";
@@ -32,6 +37,13 @@ export default async function (pi: ExtensionAPI): Promise<void> {
   let knownModels = [] as ReturnType<
     ExtensionContext["modelRegistry"]["getAll"]
   >;
+
+  const loadedFeatures = new Set<string>();
+
+  pi.events.on(APERTURE_FEATURE_REGISTER_EVENT, (data: unknown) => {
+    const payload = data as { feature?: { id: string } };
+    if (payload.feature?.id) loadedFeatures.add(payload.feature.id);
+  });
 
   const updateKnownModels = (ctx: ExtensionContext): void => {
     knownModels = ctx.modelRegistry.getAll();
@@ -83,6 +95,11 @@ export default async function (pi: ExtensionAPI): Promise<void> {
   };
 
   pi.on("session_start", (_event, ctx) => {
+    loadedFeatures.clear();
+    pi.events.emit(
+      APERTURE_FEATURE_REQUEST_EVENT,
+      createFeatureRequestPayload(),
+    );
     onSync(ctx);
   });
 
