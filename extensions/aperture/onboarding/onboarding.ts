@@ -38,7 +38,7 @@ import {
 import type {
   ApertureConfig,
   DedicatedProviderConfig,
-} from "../shared/config/loader";
+} from "../../../src/shared/config/loader";
 import { UrlStep } from "./setup-wizard";
 
 // --- Onboarding state ---

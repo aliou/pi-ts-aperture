@@ -11,6 +11,8 @@ export interface DedicatedProviderConfig {
 
 export type ApertureMode = "proxy" | "dedicated";
 
+export type ApertureFeatureId = "connectors";
+
 export interface ApertureConfig {
   baseUrl?: string;
   onboardingDone?: boolean;
@@ -26,6 +28,7 @@ export interface ApertureConfig {
     providers?: DedicatedProviderConfig[];
     cachedModels?: unknown[];
   };
+  features?: Partial<Record<ApertureFeatureId, boolean>>;
 
   // Legacy-only migration inputs.
   mode?: ApertureMode;
@@ -48,6 +51,7 @@ export interface ResolvedConfig {
     enabled: boolean;
     providers: DedicatedProviderConfig[];
   };
+  features: Record<ApertureFeatureId, boolean>;
 }
 
 export interface Migration<TConfig> {

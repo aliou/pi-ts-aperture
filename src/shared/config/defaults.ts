@@ -14,4 +14,7 @@ export const DEFAULT_CONFIG: ResolvedConfig = {
     enabled: true,
     providers: [],
   },
+  features: {
+    connectors: false,
+  },
 };

@@ -5,7 +5,7 @@ import type {
   AssistantMessageEventStream,
   Context,
   SimpleStreamOptions,
-} from "../shared/types";
+} from "../../../src/shared/types";
 
 interface ModelRoute {
   api: Api;
