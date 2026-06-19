@@ -16,13 +16,13 @@ import {
   mapDedicatedProviders,
   mapProxyProviders,
 } from "../../src/provider-mapping";
-import { normalizeInputUrl } from "../../src/url";
 import type {
   ApertureConfig,
   DedicatedProviderConfig,
   ResolvedConfig,
-} from "./shared/config/loader";
-import { configLoader } from "./shared/config/loader";
+} from "../../src/shared/config/loader";
+import { configLoader } from "../../src/shared/config/loader";
+import { normalizeInputUrl } from "../../src/url";
 
 function boolLabel(value: boolean): string {
   return value ? "enabled" : "disabled";

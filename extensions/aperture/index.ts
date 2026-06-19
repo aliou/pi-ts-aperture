@@ -2,12 +2,12 @@ import type {
   ExtensionAPI,
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
+import { configLoader } from "../../src/shared/config/loader";
+import { emitConfigSync } from "../../src/shared/sync-bus";
 import { DedicatedRuntime } from "./dedicated/runtime";
 import { registerOnboarding } from "./onboarding";
 import { ApertureRuntime } from "./proxy/runtime";
 import { registerApertureSettings } from "./settings-command";
-import { configLoader } from "./shared/config/loader";
-import { emitConfigSync } from "./shared/sync-bus";
 
 export default async function (pi: ExtensionAPI): Promise<void> {
   await configLoader.load();
