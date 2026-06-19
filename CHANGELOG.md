@@ -1,5 +1,11 @@
 # @aliou/pi-ts-aperture
 
+## 0.6.1
+
+### Patch Changes
+
+- a81a786: fix(proxy): define sesison id in the static provider's headers
+
 ## 0.6.0
 
 ### Minor Changes
