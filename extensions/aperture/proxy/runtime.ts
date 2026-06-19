@@ -30,11 +30,15 @@ export function shouldUseGatewayRootForProxy(api: Api): boolean {
   return ROOT_BASE_URL_APIS.has(api);
 }
 
-function resolveProviderHeaders(models: Model<Api>[]): Record<string, string> {
+function resolveProviderHeaders(
+  models: Model<Api>[],
+  sessionId: string,
+): Record<string, string> {
   const modelHeaders = models.find((m) => m.headers)?.headers ?? {};
   return {
     ...APERTURE_PROVENANCE_HEADERS,
     ...modelHeaders,
+    "x-session-id": sessionId,
   };
 }
 
@@ -69,7 +73,7 @@ export class ApertureRuntime {
       deps.registerProvider(providerName, {
         baseUrl: providerBaseUrl,
         apiKey: "-",
-        headers: resolveProviderHeaders(providerModels),
+        headers: resolveProviderHeaders(providerModels, deps.getSessionId()),
         api,
         streamSimple: builtIn
           ? (

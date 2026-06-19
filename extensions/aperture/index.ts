@@ -46,6 +46,7 @@ export default async function (pi: ExtensionAPI): Promise<void> {
       .sync({
         registerProvider: pi.registerProvider.bind(pi),
         getModels: () => ctx.modelRegistry.getAll(),
+        getSessionId: () => ctx.sessionManager.getSessionId(),
       })
       .then(() => {
         const active = ctx.model;

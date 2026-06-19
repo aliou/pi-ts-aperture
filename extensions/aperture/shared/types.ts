@@ -37,6 +37,7 @@ export interface SyncDeps {
     },
   ) => void;
   getModels: () => Model<Api>[];
+  getSessionId: () => string;
 }
 
 /**
