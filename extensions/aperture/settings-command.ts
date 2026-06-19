@@ -76,6 +76,8 @@ export function registerApertureSettings(
         draft.proxy?.upstreamProviders ?? resolved.proxy.upstreamProviders;
       const dedicatedProviders =
         draft.dedicated?.providers ?? resolved.dedicated.providers;
+      const connectorsEnabled =
+        draft.features?.connectors ?? resolved.features.connectors;
       const onboardingDone = draft.onboardingDone ?? resolved.onboardingDone;
       const onboardingEnabled =
         draft.onboarding?.enabled ?? resolved.onboarding.enabled;
@@ -136,6 +138,13 @@ export function registerApertureSettings(
               label: "Dedicated Aperture provider",
               description: "Register a standalone aperture provider",
               currentValue: boolLabel(dedicatedEnabled),
+              values: ["enabled", "disabled"],
+            },
+            {
+              id: "features.connectors",
+              label: "Connector tools",
+              description: "Register MCP connector tools from Aperture",
+              currentValue: boolLabel(connectorsEnabled),
               values: ["enabled", "disabled"],
             },
           ],
@@ -349,6 +358,11 @@ export function registerApertureSettings(
         updated.dedicated = {
           ...updated.dedicated,
           enabled: newValue === "enabled",
+        };
+      if (id === "features.connectors")
+        updated.features = {
+          ...updated.features,
+          connectors: newValue === "enabled",
         };
       if (id === "onboardingDone") {
         updated.onboardingDone = newValue === "completed";

@@ -27,7 +27,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 // Mock the config loader so the runtime never touches real config.
-vi.mock("../shared/config/loader", () => ({
+vi.mock("../../../src/shared/config/loader", () => ({
   configLoader: {
     getConfig: mocks.getConfig,
   },
@@ -47,7 +47,7 @@ vi.mock("../../../src/api/client", () => ({
   ApertureClient: mocks.client,
 }));
 
-const { configLoader } = await import("../shared/config/loader");
+const { configLoader } = await import("../../../src/shared/config/loader");
 const { DedicatedRuntime } = await import("./runtime");
 
 const getConfig = vi.mocked(configLoader.getConfig);
