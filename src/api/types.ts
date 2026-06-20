@@ -1,36 +1,59 @@
-export interface ProviderCompatibility {
-  openai_chat?: boolean;
-  openai_responses?: boolean;
-  anthropic_messages?: boolean;
-  gemini_generate_content?: boolean;
-  google_generate_content?: boolean;
-  google_raw_predict?: boolean;
-  bedrock_model_invoke?: boolean;
-  bedrock_converse?: boolean;
-  experimental_gemini_cli_vertex_compat?: boolean;
-}
+import { type Static, Type } from "typebox";
 
-export interface ApertureProviderConfigInfo {
-  id: string;
-  name?: string;
-  baseUrl: string;
-}
+export const ProviderCompatibilitySchema = Type.Object(
+  {
+    openai_chat: Type.Optional(Type.Boolean()),
+    openai_responses: Type.Optional(Type.Boolean()),
+    anthropic_messages: Type.Optional(Type.Boolean()),
+    gemini_generate_content: Type.Optional(Type.Boolean()),
+    google_generate_content: Type.Optional(Type.Boolean()),
+    google_raw_predict: Type.Optional(Type.Boolean()),
+    bedrock_model_invoke: Type.Optional(Type.Boolean()),
+    bedrock_converse: Type.Optional(Type.Boolean()),
+    experimental_gemini_cli_vertex_compat: Type.Optional(Type.Boolean()),
+  },
+  { additionalProperties: true, default: {} },
+);
 
-export interface ApertureProvider {
-  id: string;
-  name: string;
-  description?: string;
-  baseUrl?: string;
-  models: string[];
-  compatibility: ProviderCompatibility;
-}
+export type ProviderCompatibility = Static<typeof ProviderCompatibilitySchema>;
 
-export interface ConnectorInfo {
-  id: string;
-  description?: string;
-  protocol?: string;
-  provider?: string;
-  category?: string;
-  status?: string;
-  authType?: string;
-}
+export const ApertureProviderSchema = Type.Object(
+  {
+    id: Type.String(),
+    name: Type.String(),
+    description: Type.String({ default: "" }),
+    models: Type.Array(Type.String(), { default: [] }),
+    compatibility: ProviderCompatibilitySchema,
+  },
+  { additionalProperties: true },
+);
+
+export type ApertureProvider = Static<typeof ApertureProviderSchema>;
+
+export const ApertureProviderConfigInfoSchema = Type.Object(
+  {
+    id: Type.String(),
+    name: Type.Optional(Type.String()),
+    baseUrl: Type.String(),
+  },
+  { additionalProperties: true },
+);
+
+export type ApertureProviderConfigInfo = Static<
+  typeof ApertureProviderConfigInfoSchema
+>;
+
+export const ConnectorInfoSchema = Type.Object(
+  {
+    id: Type.String(),
+    description: Type.String({ default: "" }),
+    protocol: Type.String({ default: "" }),
+    provider: Type.String({ default: "" }),
+    category: Type.String({ default: "" }),
+    status: Type.String({ default: "" }),
+    auth_type: Type.Optional(Type.String()),
+  },
+  { additionalProperties: true },
+);
+
+export type ConnectorInfo = Static<typeof ConnectorInfoSchema>;
