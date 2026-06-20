@@ -14,6 +14,18 @@ export default async function (pi: ExtensionAPI): Promise<void> {
 
   const proxyRuntime = new ApertureRuntime();
   const dedicatedRuntime = new DedicatedRuntime();
+
+  // Stale-while-revalidate seed for dedicated Aperture models.
+  //
+  // Dedicated models are only discoverable by hitting the Aperture
+  // `/api/providers` endpoint, which we can do inside `session_start`. Pi
+  // validates scoped models during startup, *before* `session_start` fires,
+  // so we synchronously restore the previous session's fetch from the on-disk
+  // cache so the provider is registered with cached models at load time.
+  // `session_start` then revalidates from the live gateway, writes the cache
+  // back, and re-registers with fresh models. First run with no cache still
+  // warns once until the first revalidation persists a cache.
+  dedicatedRuntime.registerCached(pi);
   let lastProxyProviders = configLoader
     .getConfig()
     .proxy.upstreamProviders.map((p) => p.id);
