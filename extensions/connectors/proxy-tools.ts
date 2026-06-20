@@ -11,7 +11,7 @@ import { randomBytes } from "node:crypto";
 import { writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ToolBody, ToolCallHeader, ToolFooter } from "@aliou/pi-utils-ui";
+import { ToolCallHeader } from "@aliou/pi-utils-ui";
 import type {
   AgentToolResult,
   Theme,
@@ -22,16 +22,22 @@ import {
   DEFAULT_MAX_BYTES,
   defineTool,
   formatSize,
+  getMarkdownTheme,
   truncateHead,
 } from "@earendil-works/pi-coding-agent";
-import { Text } from "@earendil-works/pi-tui";
+import { Markdown, Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import type { ConnectorInfo } from "../../src/api/types";
 import type { McpContentItem, McpSession, McpTool } from "../../src/mcp-client";
 
 // ---------------------------------------------------------------------------
-// Schema formatting helpers for connector_tool_describe
+// Shared helpers
 // ---------------------------------------------------------------------------
+
+function truncateDescription(desc: string, max = 80): string {
+  if (!desc || desc.length <= max) return desc;
+  return `${desc.slice(0, max - 3)}...`;
+}
 
 function formatProperty(
   key: string,
@@ -61,7 +67,7 @@ function formatProperty(
   }
 
   const prefix = "  ".repeat(indent);
-  const line = `${prefix}- ${key} (${typeStr}, ${reqStr})${desc ? `: ${desc}` : ""}`;
+  const line = `${prefix}- \`${key}\` (${typeStr}, ${reqStr})${desc ? `: ${desc}` : ""}`;
 
   if (type === "object" && s.properties) {
     const props = s.properties as Record<string, unknown>;
@@ -85,10 +91,6 @@ function formatJsonSchema(schema: unknown): string {
     .map(([key, prop]) => formatProperty(key, prop, required.has(key)))
     .join("\n");
 }
-
-// ---------------------------------------------------------------------------
-// Truncation / rendering helpers shared with connector_tool_call
-// ---------------------------------------------------------------------------
 
 interface CallToolDetails {
   toolName: string;
@@ -189,25 +191,20 @@ export function createConnectorListTool(
         };
       }
 
-      const lines = connectors.map((c) => {
+      const lines: string[] = [];
+      for (const c of connectors) {
         const toolCount = counts.get(c.id) ?? 0;
-        const parts = [
-          `${c.id}: ${c.description || "(no description)"}`,
-          c.category ? `  category: ${c.category}` : "",
-          c.status ? `  status: ${c.status}` : "",
-          c.protocol ? `  protocol: ${c.protocol}` : "",
-          c.provider ? `  provider: ${c.provider}` : "",
-          c.auth_type ? `  auth: ${c.auth_type}` : "",
-          `  tools: ${toolCount}`,
-        ];
-        return parts.filter(Boolean).join("\n");
-      });
+        const desc = truncateDescription(c.description || "(no description)");
+        lines.push(
+          `- **${c.provider || c.id}** (\`${c.id}\`): ${desc} — ${toolCount} tool${toolCount === 1 ? "" : "s"} — ${c.status || "unknown"}`,
+        );
+      }
 
       return {
         content: [
           {
             type: "text",
-            text: `${connectors.length} connector(s) available:\n\n${lines.join("\n\n")}`,
+            text: `${connectors.length} connector(s) available:\n\n${lines.join("\n")}`,
           },
         ],
         details: { connectors, counts },
@@ -221,85 +218,47 @@ export function createConnectorListTool(
     renderResult(
       result: AgentToolResult<ListDetails>,
       options: ToolRenderResultOptions,
-      theme: Theme,
+      _theme: Theme,
     ) {
       const details = result.details;
+      const mdTheme = getMarkdownTheme();
+
       if (!details || details.connectors.length === 0) {
         const text = result.content[0];
         const content = text?.type === "text" ? text.text : "No result";
-        return new Text(theme.fg("muted", content), 0, 0);
+        return new Text(content, 0, 0);
       }
 
-      const fields: Array<
-        { label: string; value: string; showCollapsed?: boolean } | Text
-      > = [];
       const lines: string[] = [];
 
-      for (const c of details.connectors) {
-        const toolCount = details.counts.get(c.id) ?? 0;
-        const statusColor =
-          c.status === "ready"
-            ? "success"
-            : c.status === "error"
-              ? "error"
-              : "warning";
-
-        if (!options.expanded) {
+      if (!options.expanded) {
+        for (const c of details.connectors) {
+          const toolCount = details.counts.get(c.id) ?? 0;
+          const desc = truncateDescription(c.description || "(no description)");
           lines.push(
-            `  ${theme.fg("success", "•")} ${theme.fg("accent", c.id)} ${theme.fg("muted", "-")} ${theme.fg("toolOutput", c.description || "(no description)")} ${theme.fg("muted", "-")} ${theme.fg(statusColor, `${toolCount} tool${toolCount === 1 ? "" : "s"}`)}`,
+            `- **${c.provider || c.id}** (\`${c.id}\`): ${desc} — ${toolCount} tool${toolCount === 1 ? "" : "s"} — ${c.status || "unknown"}`,
           );
-        } else {
+        }
+      } else {
+        for (const c of details.connectors) {
+          const toolCount = details.counts.get(c.id) ?? 0;
           if (lines.length > 0) lines.push("");
-          lines.push(
-            `${theme.fg("muted", "┌─")} ${theme.fg("accent", c.id)} ${theme.fg("muted", "•")} ${theme.fg(statusColor, c.status || "unknown")}`,
-          );
+          lines.push(`### ${c.provider || c.id} (\`${c.id}\`)`);
           if (c.description) {
-            lines.push(
-              `${theme.fg("muted", "│")} ${theme.fg("dim", c.description)}`,
-            );
+            lines.push(c.description);
           }
-          if (c.category) {
-            lines.push(
-              `${theme.fg("muted", "│")} ${theme.fg("muted", "category:")} ${theme.fg("dim", c.category)}`,
-            );
-          }
-          if (c.protocol) {
-            lines.push(
-              `${theme.fg("muted", "│")} ${theme.fg("muted", "protocol:")} ${theme.fg("dim", c.protocol)}`,
-            );
-          }
-          if (c.provider) {
-            lines.push(
-              `${theme.fg("muted", "│")} ${theme.fg("muted", "provider:")} ${theme.fg("dim", c.provider)}`,
-            );
-          }
-          if (c.auth_type) {
-            lines.push(
-              `${theme.fg("muted", "│")} ${theme.fg("muted", "auth:")} ${theme.fg("dim", c.auth_type)}`,
-            );
-          }
-          lines.push(
-            `${theme.fg("muted", "│")} ${theme.fg("muted", "tools:")} ${theme.fg("toolOutput", `${toolCount}`)}`,
-          );
-          lines.push(theme.fg("muted", "└─"));
+          lines.push("");
+          if (c.category) lines.push(`- **Category:** ${c.category}`);
+          if (c.status) lines.push(`- **Status:** ${c.status}`);
+          if (c.protocol) lines.push(`- **Protocol:** ${c.protocol}`);
+          if (c.provider && c.provider !== c.id)
+            lines.push(`- **Provider:** ${c.provider}`);
+          if (c.auth_type) lines.push(`- **Auth:** \`${c.auth_type}\``);
+          lines.push(`- **Tools:** ${toolCount}`);
         }
       }
 
-      if (lines.length > 0) {
-        fields.push(new Text(lines.join("\n"), 0, 0));
-      }
-
-      const footer = new ToolFooter(theme, {
-        items: [
-          {
-            label: "connectors",
-            value: String(details.connectors.length),
-            tone: "success",
-          },
-        ],
-      });
-
-      return new ToolBody({ fields, footer }, options, theme);
+      return new Markdown(lines.join("\n"), 0, 0, mdTheme);
     },
   });
 }
@@ -402,24 +361,33 @@ export function createConnectorToolSearchTool(
         return a[0].localeCompare(b[0]);
       });
 
-      const header = `Found ${matches.length} tool(s) from ${sortedGroups.filter(([k]) => k !== "other").length} connector(s): ${sortedGroups
-        .filter(([k]) => k !== "other")
-        .map(([k]) => k)
-        .join(
-          ", ",
-        )}${groups.has("other") ? ` + ${groups.get("other")?.length ?? 0} unclassified` : ""}`;
+      const lines: string[] = [];
 
-      const lines: string[] = [header, ""];
-      for (const [prefix, list] of sortedGroups) {
-        lines.push(`${prefix}:`);
-        for (const t of list) {
-          lines.push(`  - ${t.name}: ${t.description ?? "(no description)"}`);
+      if (!connector) {
+        // No connector filter: group by connector with headers
+        for (const [prefix, list] of sortedGroups) {
+          lines.push(`### ${prefix} (${list.length})`);
+          for (const t of list) {
+            const desc = truncateDescription(t.description ?? "", 100);
+            lines.push(`- \`${t.name}\`: ${desc || "(no description)"}`);
+          }
+          lines.push("");
         }
-        lines.push("");
+      } else {
+        // Connector filter applied: flat list
+        for (const t of matches) {
+          const desc = truncateDescription(t.description ?? "", 100);
+          lines.push(`- \`${t.name}\`: ${desc || "(no description)"}`);
+        }
       }
 
       return {
-        content: [{ type: "text", text: lines.join("\n").trimEnd() }],
+        content: [
+          {
+            type: "text",
+            text: lines.join("\n").trimEnd(),
+          },
+        ],
         details: {
           query,
           connector,
@@ -447,7 +415,7 @@ export function createConnectorToolSearchTool(
       const optionArgs: Array<{
         label: string;
         value: string;
-        tone?: "accent" | "muted" | "dim";
+        tone?: "accent" | "muted";
       }> = [];
       if (connector) {
         optionArgs.push({
@@ -473,82 +441,56 @@ export function createConnectorToolSearchTool(
     renderResult(
       result: AgentToolResult<SearchDetails>,
       options: ToolRenderResultOptions,
-      theme: Theme,
+      _theme: Theme,
     ) {
       const details = result.details;
+      const mdTheme = getMarkdownTheme();
+
       if (!details || details.matches === 0) {
         const text = result.content[0];
         const content = text?.type === "text" ? text.text : "No result";
-        return new Text(theme.fg("muted", content), 0, 0);
+        return new Text(content, 0, 0);
       }
 
-      const fields: Array<
-        { label: string; value: string; showCollapsed?: boolean } | Text
-      > = [];
       const lines: string[] = [];
+      const COLLAPSED_COUNT = 5;
 
-      for (const [prefix, list] of details.groups) {
-        const isOther = prefix === "other";
-        const prefixColor = isOther ? "warning" : "accent";
+      if (!options.expanded) {
+        // Flat list, first 5 across all groups
+        let shown = 0;
+        let remaining = 0;
 
-        if (!options.expanded) {
-          lines.push(
-            `${theme.fg(prefixColor, `${prefix}:`)} ${theme.fg("muted", `${list.length} tool${list.length === 1 ? "" : "s"}`)}`,
-          );
+        for (const [_prefix, list] of details.groups) {
           for (const t of list) {
-            const desc = t.description ?? "";
-            const shortDesc =
-              desc.length > 60 ? `${desc.slice(0, 57)}...` : desc;
-            lines.push(
-              `  ${theme.fg("success", "•")} ${theme.fg("toolOutput", t.name)} ${theme.fg("muted", shortDesc || "(no description)")}`,
-            );
-          }
-        } else {
-          if (lines.length > 0) lines.push("");
-          lines.push(
-            `${theme.fg("muted", "┌─")} ${theme.fg(prefixColor, prefix)} ${theme.fg("muted", `• ${list.length} tool${list.length === 1 ? "" : "s"}`)}`,
-          );
-          for (const t of list) {
-            lines.push(
-              `${theme.fg("muted", "│")} ${theme.fg("success", "•")} ${theme.fg("toolOutput", t.name)}`,
-            );
-            if (t.description) {
-              lines.push(
-                `${theme.fg("muted", "│")}   ${theme.fg("dim", t.description)}`,
-              );
+            if (shown < COLLAPSED_COUNT) {
+              const desc = truncateDescription(t.description ?? "", 60);
+              lines.push(`- \`${t.name}\`: ${desc || "(no description)"}`);
+              shown++;
+            } else {
+              remaining++;
             }
           }
-          lines.push(theme.fg("muted", "└─"));
+        }
+
+        if (remaining > 0) {
+          lines.push("");
+          lines.push(
+            `*And ${remaining} more...* Use \`connector_tool_search\` with a query or expand to see all.`,
+          );
+        }
+      } else {
+        // Expanded: group by connector with headers
+        for (const [prefix, list] of details.groups) {
+          lines.push(`### ${prefix} (${list.length})`);
+          for (const t of list) {
+            const desc = truncateDescription(t.description ?? "", 100);
+            lines.push(`- \`${t.name}\`: ${desc || "(no description)"}`);
+          }
+          lines.push("");
         }
       }
 
-      if (lines.length > 0) {
-        fields.push(new Text(lines.join("\n"), 0, 0));
-      }
-
-      const footerItems: Array<{
-        label: string;
-        value: string;
-        tone?: "success" | "muted" | "accent" | "warning";
-      }> = [
-        {
-          label: "matches",
-          value: String(details.matches),
-          tone: "success",
-        },
-        { label: "limit", value: String(details.limit), tone: "muted" },
-      ];
-      if (details.connector) {
-        footerItems.push({
-          label: "connector",
-          value: details.connector,
-          tone: "accent",
-        });
-      }
-
-      const footer = new ToolFooter(theme, { items: footerItems });
-
-      return new ToolBody({ fields, footer }, options, theme);
+      return new Markdown(lines.join("\n"), 0, 0, mdTheme);
     },
   });
 }
@@ -596,10 +538,13 @@ export function createConnectorToolDescribeTool(tools: McpTool[]) {
           : "(no parameters)";
 
       const text = [
-        `Tool: ${tool.name}`,
-        `Description: ${tool.description ?? "(no description)"}`,
+        `### ${tool.name}`,
+        tool.description || "(no description)",
         "",
-        `Parameters:\n${schemaText}`,
+        "**Parameters:**",
+        "```",
+        schemaText,
+        "```",
       ].join("\n");
 
       return {
@@ -625,13 +570,15 @@ export function createConnectorToolDescribeTool(tools: McpTool[]) {
     renderResult(
       result: AgentToolResult<DescribeDetails>,
       options: ToolRenderResultOptions,
-      theme: Theme,
+      _theme: Theme,
     ) {
       const details = result.details;
+      const mdTheme = getMarkdownTheme();
+
       if (!details) {
         const text = result.content[0];
         const content = text?.type === "text" ? text.text : "No result";
-        return new Text(theme.fg("error", content), 0, 0);
+        return new Text(content, 0, 0);
       }
 
       const tool = details.tool;
@@ -640,57 +587,36 @@ export function createConnectorToolDescribeTool(tools: McpTool[]) {
           ? formatJsonSchema(tool.inputSchema)
           : "(no parameters)";
 
-      const fields: Array<
-        { label: string; value: string; showCollapsed?: boolean } | Text
-      > = [];
       const lines: string[] = [];
 
       if (!options.expanded) {
-        lines.push(
-          `${theme.fg("accent", tool.name)} ${theme.fg("muted", tool.description ? `— ${tool.description.length > 80 ? `${tool.description.slice(0, 77)}...` : tool.description}` : "")}`,
-        );
-        lines.push("");
-        lines.push(theme.fg("muted", "Parameters:"));
-        const paramLines = schemaText.split("\n").slice(0, 4);
-        for (const line of paramLines) {
-          lines.push(`  ${theme.fg("dim", line)}`);
+        lines.push(`### ${tool.name}`);
+        if (tool.description) {
+          lines.push(truncateDescription(tool.description, 120));
         }
-        if (schemaText.split("\n").length > 4) {
-          lines.push(
-            `  ${theme.fg("muted", `... and ${schemaText.split("\n").length - 4} more`)}`,
-          );
+        lines.push("");
+        lines.push("**Parameters:**");
+        const paramLines = schemaText.split("\n");
+        const shown = paramLines.slice(0, 4);
+        for (const line of shown) {
+          lines.push(line);
+        }
+        if (paramLines.length > 4) {
+          lines.push(`*... and ${paramLines.length - 4} more*  `);
         }
       } else {
-        lines.push(`${theme.fg("accent", tool.name)}`);
+        lines.push(`### ${tool.name}`);
         if (tool.description) {
-          lines.push(theme.fg("dim", tool.description));
+          lines.push(tool.description);
         }
         lines.push("");
-        lines.push(theme.fg("muted", "Parameters:"));
-        for (const line of schemaText.split("\n")) {
-          lines.push(theme.fg("dim", line));
-        }
+        lines.push("**Parameters:**");
+        lines.push("```");
+        lines.push(schemaText);
+        lines.push("```");
       }
 
-      fields.push(new Text(lines.join("\n"), 0, 0));
-
-      const paramCount =
-        tool.inputSchema &&
-        typeof tool.inputSchema === "object" &&
-        (tool.inputSchema as Record<string, unknown>).properties
-          ? Object.keys(
-              (tool.inputSchema as Record<string, unknown>)
-                .properties as Record<string, unknown>,
-            ).length
-          : 0;
-
-      const footer = new ToolFooter(theme, {
-        items: [
-          { label: "params", value: String(paramCount), tone: "success" },
-        ],
-      });
-
-      return new ToolBody({ fields, footer }, options, theme);
+      return new Markdown(lines.join("\n"), 0, 0, mdTheme);
     },
   });
 }
@@ -796,13 +722,14 @@ export function createConnectorToolCallTool(
     renderResult(
       result: AgentToolResult<unknown>,
       options: ToolRenderResultOptions,
-      theme: Theme,
+      _theme: Theme,
     ) {
       const details = result.details as CallToolDetails | undefined;
+      const mdTheme = getMarkdownTheme();
 
       if (options.isPartial) {
         const toolName = details?.toolName ?? "connector";
-        return new Text(theme.fg("muted", `Calling ${toolName}...`), 0, 0);
+        return new Text(`Calling ${toolName}...`, 0, 0);
       }
 
       const textBlock = result.content.find((c) => c.type === "text");
@@ -810,76 +737,65 @@ export function createConnectorToolCallTool(
       const rawResult = details?.rawResult ?? modelText;
 
       if (!modelText && !details?.rawResult) {
-        return new Text(theme.fg("error", "Connector call failed"), 0, 0);
+        return new Text("Connector call failed", 0, 0);
       }
 
       let displayText = rawResult;
+      let isJson = false;
       try {
         const parsed = JSON.parse(rawResult);
         displayText = JSON.stringify(parsed, null, 2);
+        isJson = true;
       } catch {
         // not JSON, keep raw
       }
 
-      const fields: Array<
-        { label: string; value: string; showCollapsed?: boolean } | Text
-      > = [];
+      const lines: string[] = [];
 
       if (!options.expanded) {
-        const lines = displayText.split("\n");
-        let preview = lines.slice(0, 3).join("\n");
-        const hasMore = lines.length > 3 || displayText.length > 120;
+        const previewLines = displayText.split("\n").slice(0, 3);
+        let preview = previewLines.join("\n");
+        const hasMore =
+          displayText.split("\n").length > 3 || displayText.length > 120;
         if (preview.length > 120) {
           preview = `${preview.slice(0, 117)}...`;
         } else if (hasMore) {
           preview += "...";
         }
-        fields.push({
-          label: "",
-          value: theme.fg("toolOutput", preview),
-          showCollapsed: true,
-        });
+        lines.push(preview);
       } else {
-        const codeBlock = `\`\`\`json\n${displayText}\n\`\`\``;
-        fields.push(new Text(codeBlock, 0, 0));
+        if (isJson) {
+          lines.push("```json");
+          lines.push(displayText);
+          lines.push("```");
+        } else {
+          lines.push(displayText);
+        }
       }
 
-      const footerItems: Array<{
-        label: string;
-        value: string;
-        tone?: "muted" | "warning" | "error" | "success";
-      }> = [];
-
+      // Footer info as markdown text
+      const warnings: string[] = [];
       if (details?.fullOutputPath) {
-        footerItems.push({
-          label: "full output",
-          value: details.fullOutputPath,
-          tone: "muted",
-        });
+        warnings.push(`Full output: \`${details.fullOutputPath}\``);
       }
       if (details?.truncation?.truncated) {
         const t = details.truncation;
         if (t.truncatedBy === "lines") {
-          footerItems.push({
-            label: "truncated",
-            value: `${t.outputLines} of ${t.totalLines} lines`,
-            tone: "warning",
-          });
+          warnings.push(
+            `Truncated: showing ${t.outputLines} of ${t.totalLines} lines`,
+          );
         } else {
-          footerItems.push({
-            label: "truncated",
-            value: `${t.outputLines} lines (${formatSize(t.maxBytes ?? DEFAULT_MAX_BYTES)} limit)`,
-            tone: "warning",
-          });
+          warnings.push(
+            `Truncated: ${t.outputLines} lines shown (${formatSize(t.maxBytes ?? DEFAULT_MAX_BYTES)} limit)`,
+          );
         }
       }
+      if (warnings.length > 0) {
+        lines.push("");
+        lines.push(`*${warnings.join(". ")}*`);
+      }
 
-      const footer =
-        footerItems.length > 0
-          ? new ToolFooter(theme, { items: footerItems })
-          : undefined;
-
-      return new ToolBody({ fields, footer }, options, theme);
+      return new Markdown(lines.join("\n"), 0, 0, mdTheme);
     },
   });
 }
