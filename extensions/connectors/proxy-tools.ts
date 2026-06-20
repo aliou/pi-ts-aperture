@@ -165,6 +165,39 @@ async function executeConnectorCall(
   };
 }
 
+async function autoCallAssociatedTool(
+  resourceUri: string,
+  host: McpAppHost,
+  tools: McpTool[],
+  session: McpSession,
+): Promise<void> {
+  // Normalize the resource URI scheme for matching.
+  // Aperture returns github-ui://... while tool metadata uses ui://...
+  const normalizedUri = resourceUri.replace(/^github-/, "");
+
+  const tool = tools.find((t) => {
+    const meta = t._meta as Record<string, unknown> | undefined;
+    const ui = meta?.ui as Record<string, unknown> | undefined;
+    const uri = ui?.resourceUri as string | undefined;
+    return uri && (uri === normalizedUri || uri === resourceUri);
+  });
+
+  if (!tool) return;
+
+  // Only auto-call tools with no required arguments for now.
+  const schema = tool.inputSchema as Record<string, unknown> | undefined;
+  const required = schema?.required as string[] | undefined;
+  if (required && required.length > 0) return;
+
+  try {
+    const result = await session.callTool(tool.name, {});
+    host.sendNotification("ui/notifications/tool-input", {});
+    host.sendNotification("ui/notifications/tool-result", result);
+  } catch {
+    // Ignore auto-call failures; the iframe can still call tools manually.
+  }
+}
+
 // ---------------------------------------------------------------------------
 // connector_list
 // ---------------------------------------------------------------------------
@@ -1077,6 +1110,7 @@ interface ResourceServeToolOptions {
   getSession: () => McpSession | undefined;
   createBridge: (ctx: ExtensionContext) => McpAppBridge;
   activeHosts: McpAppHost[];
+  cachedTools: McpTool[];
 }
 
 export function createConnectorResourceServeTool(
@@ -1166,6 +1200,12 @@ export function createConnectorResourceServeTool(
           signal,
         });
         options.activeHosts.push(host);
+
+        // Auto-call the associated tool and push results to the iframe.
+        // MCP Apps expect the host to send ui/notifications/tool-input
+        // and ui/notifications/tool-result after initialization.
+        void autoCallAssociatedTool(uri, host, options.cachedTools, session);
+
         return {
           content: [
             {

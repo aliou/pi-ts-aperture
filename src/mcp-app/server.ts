@@ -101,6 +101,12 @@ export async function startMcpAppHost(
         return;
       }
 
+      // eslint-disable-next-line no-console
+      console.log(
+        "[mcp-app] recv:",
+        message.method,
+        isRequest(message) ? message.id : "-",
+      );
       await handleMessage(ws, message, options.bridge, abort);
     });
 
@@ -127,6 +133,12 @@ export async function startMcpAppHost(
 
       resolve({
         url,
+        sendNotification(method: string, params?: unknown): void {
+          const msg = { jsonrpc: "2.0", method, params };
+          for (const client of clients) {
+            sendJson(client, msg);
+          }
+        },
         close: async () => {
           if (closing) return;
           closing = true;
@@ -208,6 +220,12 @@ export async function startMcpAppHost(
       return;
     }
 
+    // eslint-disable-next-line no-console
+    console.log(
+      "[mcp-app] handle:",
+      message.method,
+      isRequest(message) ? message.id : "-",
+    );
     if (message.method === "ui/initialize") {
       const initResult: UiInitializeResult = {
         protocolVersion: "2024-11-05",
@@ -288,11 +306,20 @@ async function executeBridgeMethod(
   bridge: McpAppBridge,
   signal: AbortSignal,
 ): Promise<unknown> {
+  // eslint-disable-next-line no-console
+  console.log("[mcp-app] bridge method:", method, JSON.stringify(params));
   switch (method) {
     case "tools/call": {
       const name = requireStringParam(params, "name");
       const args = requireRecordParam(params, "arguments");
-      return bridge.callTool(name, args, signal);
+      const result = await bridge.callTool(name, args, signal);
+      // eslint-disable-next-line no-console
+      console.log(
+        "[mcp-app] tool result:",
+        name,
+        JSON.stringify(result).slice(0, 200),
+      );
+      return result;
     }
 
     case "ui/message": {

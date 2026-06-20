@@ -112,6 +112,7 @@ export default async function apertureConnectors(
         getSession: () => mcpSession,
         createBridge: (ctx) => createMcpAppBridge(pi, ctx, () => mcpSession),
         activeHosts: activeAppHosts,
+        cachedTools,
       }),
     );
 

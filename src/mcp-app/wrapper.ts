@@ -46,6 +46,7 @@ export function generateWrapperHtml(options: WrapperHtmlOptions): string {
       window.addEventListener('message', function (event) {
         if (event.source !== iframe.contentWindow) return;
         if (!event.data || event.data.jsonrpc !== '2.0') return;
+        console.log('[mcp-app-host] iframe → server', event.data.method, event.data.id);
         if (ws.readyState === WebSocket.OPEN) {
           ws.send(JSON.stringify(event.data));
         }
@@ -54,6 +55,7 @@ export function generateWrapperHtml(options: WrapperHtmlOptions): string {
       ws.onmessage = function (event) {
         try {
           const msg = JSON.parse(event.data);
+          console.log('[mcp-app-host] server → iframe', msg.method || msg.id, msg.result ? 'result' : msg.error ? 'error' : 'notif');
           iframe.contentWindow.postMessage(msg, '*');
         } catch (e) {
           console.error('Invalid message from bridge:', event.data);

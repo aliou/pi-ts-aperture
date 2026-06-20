@@ -68,6 +68,8 @@ export interface McpAppHostOptions {
 export interface McpAppHost {
   /** URL of the wrapper HTML page hosting the MCP App. */
   url: string;
+  /** Send a JSON-RPC notification to all connected iframe clients. */
+  sendNotification(method: string, params?: unknown): void;
   /** Stop the server and close all connections. */
   close(): Promise<void>;
 }

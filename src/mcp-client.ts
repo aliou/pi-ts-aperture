@@ -15,6 +15,7 @@ export interface McpTool {
   name: string;
   description?: string;
   inputSchema?: unknown;
+  _meta?: unknown;
 }
 
 export interface McpResource {
@@ -50,6 +51,8 @@ export interface McpContentItem {
 export interface McpCallResult {
   content: McpContentItem[];
   isError?: boolean;
+  structuredContent?: unknown;
+  [key: string]: unknown;
 }
 
 interface JsonRpcRequest {
