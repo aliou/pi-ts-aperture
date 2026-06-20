@@ -163,7 +163,7 @@ export async function startMcpAppHost(
       res.writeHead(200, {
         "Content-Type": "text/html; charset=utf-8",
         "Content-Security-Policy":
-          "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; frame-src 'self' blob:;",
+          "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; frame-src 'self' blob:;",
       });
       res.end(html);
       return;

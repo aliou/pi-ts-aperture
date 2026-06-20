@@ -56,9 +56,19 @@ describe("mcp-app wrapper", () => {
       appHtml: "<h1>Hello</h1>",
       wsUrl: "ws://127.0.0.1:1234/ws?token=abc",
     });
-    expect(html).toContain("<h1>Hello</h1>");
+    // '<' is escaped as \u003c so app HTML cannot break the wrapper script tag.
+    expect(html).toContain("\\u003ch1>Hello\\u003c/h1>");
     expect(html).toContain("ws://127.0.0.1:1234/ws?token=abc");
     expect(html).toContain('sandbox="allow-scripts allow-forms"');
+  });
+
+  it("escapes app HTML so it cannot break the script tag", () => {
+    const html = generateWrapperHtml({
+      appHtml: "</script><script>alert(1)</script>",
+      wsUrl: "",
+    });
+    expect(html).toContain('iframe.srcdoc = "\\u003c/script>');
+    expect(html).not.toContain('iframe.srcdoc = "</script>');
   });
 
   it("escapes the title", () => {

@@ -15,8 +15,13 @@ export interface WrapperHtmlOptions {
 
 export function generateWrapperHtml(options: WrapperHtmlOptions): string {
   const title = options.title ?? "MCP App Host";
-  const appHtmlLiteral = JSON.stringify(options.appHtml);
-  const wsUrlLiteral = JSON.stringify(options.wsUrl);
+  // Escape '<' as a JS unicode escape so the app HTML cannot close our
+  // <script> element prematurely (e.g. a </script> tag inside srcdoc).
+  const appHtmlLiteral = JSON.stringify(options.appHtml).replace(
+    /</g,
+    "\\u003c",
+  );
+  const wsUrlLiteral = JSON.stringify(options.wsUrl).replace(/</g, "\\u003c");
 
   return `<!DOCTYPE html>
 <html lang="en">
