@@ -3,3 +3,4 @@ node_modules/
 .envrc
 *.html
 .pi-no-env/
+.env.test
