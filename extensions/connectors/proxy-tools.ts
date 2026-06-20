@@ -8,7 +8,10 @@
  */
 
 import { randomBytes } from "node:crypto";
-import { writeFile } from "node:fs/promises";
+import { createReadStream } from "node:fs";
+import { unlink, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
+import { createServer as createNetServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ToolCallHeader } from "@aliou/pi-utils-ui";
@@ -28,7 +31,14 @@ import {
 import { Markdown, Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import type { ConnectorInfo } from "../../src/api/types";
-import type { McpContentItem, McpSession, McpTool } from "../../src/mcp-client";
+import type {
+  McpContentItem,
+  McpReadResourceResult,
+  McpResource,
+  McpResourceTemplate,
+  McpSession,
+  McpTool,
+} from "../../src/mcp-client";
 
 // ---------------------------------------------------------------------------
 // Shared helpers
@@ -798,6 +808,486 @@ export function createConnectorToolCallTool(
       if (warnings.length > 0) {
         lines.push("");
         lines.push(`*${warnings.join(". ")}*`);
+      }
+
+      return new Markdown(lines.join("\n"), 0, 0, mdTheme);
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Resource helpers
+// ---------------------------------------------------------------------------
+
+function findAvailablePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const server = createNetServer();
+    server.unref();
+    server.on("error", reject);
+    server.listen(0, () => {
+      const port = (server.address() as { port: number }).port;
+      server.close(() => resolve(port));
+    });
+  });
+}
+
+async function serveFile(filePath: string, port: number): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const server = createServer((_req, res) => {
+      res.writeHead(200, { "Content-Type": "text/html" });
+      const stream = createReadStream(filePath);
+      stream.pipe(res);
+      stream.on("error", (err) => {
+        res.destroy(err);
+      });
+      res.on("finish", () => {
+        server.close();
+        unlink(filePath).catch(() => {
+          // ignore cleanup failure
+        });
+      });
+    });
+
+    server.listen(port, () => {
+      const url = `http://localhost:${port}`;
+      resolve(url);
+    });
+
+    server.on("error", reject);
+
+    // Auto-close after 5 minutes and clean up
+    setTimeout(
+      () => {
+        server.close();
+        unlink(filePath).catch(() => {
+          // ignore cleanup failure
+        });
+      },
+      5 * 60 * 1000,
+    ).unref();
+  });
+}
+
+// ---------------------------------------------------------------------------
+// connector_resource_search
+// ---------------------------------------------------------------------------
+
+interface ResourceSearchDetails {
+  templates: McpResourceTemplate[];
+  resources: McpResource[];
+}
+
+export function createConnectorResourceSearchTool(
+  getSession: () => McpSession | undefined,
+) {
+  return defineTool({
+    name: "connector_resource_search",
+    label: "Connector Resource Search",
+    description:
+      "List available resource templates and static resources from Aperture connectors. Resource templates are parameterized URI patterns (e.g. github-repo://{owner}/{repo}/contents). Static resources are pre-built HTML UIs.",
+    parameters: Type.Object({}),
+    promptSnippet: "List available connector resources",
+
+    async execute() {
+      const session = getSession();
+      if (!session) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: "Connector session is not available.",
+            },
+          ],
+          details: { templates: [], resources: [] } as ResourceSearchDetails,
+        };
+      }
+
+      const [templates, resources] = await Promise.all([
+        session.listResourceTemplates(),
+        session.listResources(),
+      ]);
+
+      const lines: string[] = [];
+
+      if (templates.length > 0) {
+        lines.push(`## Resource Templates (${templates.length})`);
+        for (const t of templates) {
+          const desc = truncateDescription(t.description ?? "", 100);
+          lines.push(
+            `- \`${t.name}\`: \`${t.uriTemplate}\`${desc ? ` — ${desc}` : ""}`,
+          );
+        }
+        lines.push("");
+      }
+
+      if (resources.length > 0) {
+        lines.push(`## Static Resources (${resources.length})`);
+        for (const r of resources) {
+          const desc = truncateDescription(r.description ?? "", 100);
+          lines.push(
+            `- \`${r.name}\`: \`${r.uri}\`${desc ? ` — ${desc}` : ""}${r.mimeType ? ` (\`${r.mimeType}\`)` : ""}`,
+          );
+        }
+      }
+
+      if (templates.length === 0 && resources.length === 0) {
+        lines.push("No resources or templates available.");
+      }
+
+      return {
+        content: [{ type: "text", text: lines.join("\n").trimEnd() }],
+        details: { templates, resources },
+      };
+    },
+
+    renderCall(_args, theme) {
+      return new ToolCallHeader(
+        { toolName: "Connector Resource Search" },
+        theme,
+      );
+    },
+
+    renderResult(
+      result: AgentToolResult<ResourceSearchDetails>,
+      options: ToolRenderResultOptions,
+      _theme: Theme,
+    ) {
+      const details = result.details;
+      const mdTheme = getMarkdownTheme();
+
+      if (!details) {
+        const text = result.content[0];
+        const content = text?.type === "text" ? text.text : "No result";
+        return new Text(content, 0, 0);
+      }
+
+      const lines: string[] = [];
+
+      if (!options.expanded) {
+        const total = details.templates.length + details.resources.length;
+        lines.push(`${total} resource(s) available`);
+        if (details.templates.length > 0) {
+          lines.push(`- ${details.templates.length} template(s)`);
+        }
+        if (details.resources.length > 0) {
+          lines.push(`- ${details.resources.length} static resource(s)`);
+        }
+      } else {
+        if (details.templates.length > 0) {
+          lines.push(`## Resource Templates (${details.templates.length})`);
+          for (const t of details.templates) {
+            const desc = truncateDescription(t.description ?? "", 100);
+            lines.push(
+              `- **${t.name}**: \`${t.uriTemplate}\`${desc ? ` — ${desc}` : ""}`,
+            );
+          }
+          lines.push("");
+        }
+
+        if (details.resources.length > 0) {
+          lines.push(`## Static Resources (${details.resources.length})`);
+          for (const r of details.resources) {
+            const desc = truncateDescription(r.description ?? "", 100);
+            lines.push(
+              `- **${r.name}**: \`${r.uri}\`${desc ? ` — ${desc}` : ""}${r.mimeType ? ` (\`${r.mimeType}\`)` : ""}`,
+            );
+          }
+        }
+      }
+
+      return new Markdown(lines.join("\n"), 0, 0, mdTheme);
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// connector_resource_describe
+// ---------------------------------------------------------------------------
+
+interface ResourceDescribeDetails {
+  template: McpResourceTemplate;
+}
+
+export function createConnectorResourceDescribeTool(
+  getSession: () => McpSession | undefined,
+) {
+  return defineTool({
+    name: "connector_resource_describe",
+    label: "Connector Resource Describe",
+    description:
+      "Describe a resource template by name, showing its URI pattern, parameters, and mime type. Use connector_resource_search first to find available templates.",
+    parameters: Type.Object({
+      name: Type.String({
+        description: "Name of the resource template to describe",
+      }),
+    }),
+    promptSnippet: "Describe a connector resource template",
+
+    async execute(_id, params) {
+      const name = params.name as string;
+      const session = getSession();
+      if (!session) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: "Connector session is not available.",
+            },
+          ],
+          details: {} as ResourceDescribeDetails,
+        };
+      }
+
+      const templates = await session.listResourceTemplates();
+      const template = templates.find((t) => t.name === name);
+
+      if (!template) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Template "${name}" not found. Use connector_resource_search to list available templates.`,
+            },
+          ],
+          details: {} as ResourceDescribeDetails,
+        };
+      }
+
+      const text = [
+        `### ${template.name}`,
+        template.description || "(no description)",
+        "",
+        `- **URI Template:** \`${template.uriTemplate}\``,
+        template.mimeType ? `- **MIME Type:** \`${template.mimeType}\`` : "",
+      ]
+        .filter(Boolean)
+        .join("\n");
+
+      return {
+        content: [{ type: "text", text }],
+        details: { template },
+      };
+    },
+
+    renderCall(args, theme) {
+      const name =
+        args && typeof args === "object"
+          ? String((args as Record<string, unknown>).name || "")
+          : "";
+      return new ToolCallHeader(
+        {
+          toolName: "Connector Resource Describe",
+          mainArg: name || undefined,
+        },
+        theme,
+      );
+    },
+
+    renderResult(
+      result: AgentToolResult<ResourceDescribeDetails>,
+      _options: ToolRenderResultOptions,
+      _theme: Theme,
+    ) {
+      const details = result.details;
+      const mdTheme = getMarkdownTheme();
+
+      if (!details?.template) {
+        const text = result.content[0];
+        const content = text?.type === "text" ? text.text : "No result";
+        return new Text(content, 0, 0);
+      }
+
+      const t = details.template;
+      const lines: string[] = [
+        `### ${t.name}`,
+        t.description || "(no description)",
+        "",
+        `- **URI Template:** \`${t.uriTemplate}\``,
+      ];
+      if (t.mimeType) {
+        lines.push(`- **MIME Type:** \`${t.mimeType}\``);
+      }
+
+      return new Markdown(lines.join("\n"), 0, 0, mdTheme);
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// connector_resource_serve
+// ---------------------------------------------------------------------------
+
+interface ResourceServeDetails {
+  uri: string;
+  url?: string;
+  htmlLength?: number;
+  mimeType?: string;
+  error?: string;
+}
+
+export function createConnectorResourceServeTool(
+  getSession: () => McpSession | undefined,
+) {
+  return defineTool({
+    name: "connector_resource_serve",
+    label: "Connector Resource Serve",
+    description:
+      "Read a connector resource by URI and serve it locally. For HTML resources, starts a local HTTP server and returns the URL. For text resources, displays the content directly.",
+    parameters: Type.Object({
+      uri: Type.String({
+        description:
+          "URI of the resource to serve. Use connector_resource_search to discover available URIs and templates.",
+      }),
+    }),
+    promptSnippet: "Open a connector resource in browser",
+
+    async execute(_id, params, signal) {
+      const uri = params.uri as string;
+      const session = getSession();
+      if (!session) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: "Connector session is not available.",
+            },
+          ],
+          details: { uri, error: "No session" },
+        };
+      }
+
+      let result: McpReadResourceResult;
+      try {
+        result = await session.readResource(uri, signal);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Failed to read resource: ${message}`,
+            },
+          ],
+          details: { uri, error: message },
+        };
+      }
+
+      const content = result.contents[0];
+      if (!content) {
+        return {
+          content: [{ type: "text", text: "Resource returned no content." }],
+          details: { uri },
+        };
+      }
+
+      const html = content.text;
+      const mimeType = content.mimeType;
+
+      if (!html || !mimeType?.startsWith("text/html")) {
+        // Non-HTML: return text directly
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Resource \`${uri}\` (\`${mimeType || "unknown"}\`):\n\n${html || "(no text content)"}`,
+            },
+          ],
+          details: { uri, htmlLength: html?.length ?? 0, mimeType },
+        };
+      }
+
+      // HTML: write to temp file, serve from disk, return URL only
+      try {
+        const tempId = randomBytes(8).toString("hex");
+        const tempPath = join(tmpdir(), `pi-aperture-resource-${tempId}.html`);
+        await writeFile(tempPath, html, "utf-8");
+
+        const port = await findAvailablePort();
+        const url = await serveFile(tempPath, port);
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Serving \`${uri}\` at ${url}`,
+            },
+          ],
+          details: { uri, url, htmlLength: html.length, mimeType },
+        };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Failed to serve resource: ${message}`,
+            },
+          ],
+          details: { uri, error: message },
+        };
+      }
+    },
+
+    renderCall(args, theme) {
+      const uri =
+        args && typeof args === "object"
+          ? String((args as Record<string, unknown>).uri || "")
+          : "";
+      return new ToolCallHeader(
+        {
+          toolName: "Connector Resource Serve",
+          mainArg: uri || undefined,
+        },
+        theme,
+      );
+    },
+
+    renderResult(
+      result: AgentToolResult<ResourceServeDetails>,
+      options: ToolRenderResultOptions,
+      _theme: Theme,
+    ) {
+      const details = result.details;
+      const mdTheme = getMarkdownTheme();
+
+      if (!details) {
+        const text = result.content[0];
+        const content = text?.type === "text" ? text.text : "No result";
+        return new Text(content, 0, 0);
+      }
+
+      const lines: string[] = [];
+
+      if (details.error) {
+        lines.push(`**Error:** ${details.error}`);
+        return new Markdown(lines.join("\n"), 0, 0, mdTheme);
+      }
+
+      if (details.url) {
+        lines.push(`Serving **${details.uri}** locally`);
+        lines.push("");
+        lines.push(`- **URL:** ${details.url}`);
+        if (details.htmlLength) {
+          lines.push(`- **Size:** ${formatSize(details.htmlLength)}`);
+        }
+        lines.push("");
+        lines.push("Open this URL in your browser to view the resource.");
+      } else if (
+        details.mimeType &&
+        !details.mimeType.startsWith("text/html")
+      ) {
+        const textBlock = result.content.find((c) => c.type === "text");
+        const text = textBlock?.type === "text" ? textBlock.text : "";
+        const body = text.replace(/^Resource `[^`]+` \(`[^`]+`\):\n\n/, "");
+        lines.push(`**${details.uri}** (\`${details.mimeType}\`)`);
+        lines.push("");
+        if (!options.expanded) {
+          const preview = body.slice(0, 200);
+          lines.push(preview + (body.length > 200 ? "..." : ""));
+        } else {
+          lines.push("```");
+          lines.push(body);
+          lines.push("```");
+        }
       }
 
       return new Markdown(lines.join("\n"), 0, 0, mdTheme);

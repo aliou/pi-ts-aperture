@@ -17,6 +17,31 @@ export interface McpTool {
   inputSchema?: unknown;
 }
 
+export interface McpResource {
+  uri: string;
+  name: string;
+  description?: string;
+  mimeType?: string;
+}
+
+export interface McpResourceTemplate {
+  uriTemplate: string;
+  name: string;
+  description?: string;
+  mimeType?: string;
+}
+
+export interface McpResourceContent {
+  uri: string;
+  mimeType?: string;
+  text?: string;
+  blob?: string;
+}
+
+export interface McpReadResourceResult {
+  contents: McpResourceContent[];
+}
+
 export interface McpContentItem {
   type: string;
   text?: string;
@@ -54,6 +79,12 @@ export interface McpSession {
     args: Record<string, unknown>,
     signal?: AbortSignal,
   ): Promise<McpCallResult>;
+  listResourceTemplates(signal?: AbortSignal): Promise<McpResourceTemplate[]>;
+  listResources(signal?: AbortSignal): Promise<McpResource[]>;
+  readResource(
+    uri: string,
+    signal?: AbortSignal,
+  ): Promise<McpReadResourceResult>;
   close(): void;
 }
 
@@ -204,6 +235,57 @@ export async function createMcpSession(
       const result = res.result as McpCallResult | undefined;
       if (!result) {
         throw new Error(`MCP tools/call returned empty result for ${name}`);
+      }
+      return result;
+    },
+
+    async listResourceTemplates(
+      callSignal?: AbortSignal,
+    ): Promise<McpResourceTemplate[]> {
+      const s = callSignal ?? AbortSignal.timeout(CALL_TIMEOUT_MS);
+      const res = await postJsonRpc(
+        url,
+        { jsonrpc: "2.0", method: "resources/templates/list", id: nextId++ },
+        sessionId,
+        s,
+      );
+      const result = res.result as
+        | { resourceTemplates?: McpResourceTemplate[] }
+        | undefined;
+      return result?.resourceTemplates ?? [];
+    },
+
+    async listResources(callSignal?: AbortSignal): Promise<McpResource[]> {
+      const s = callSignal ?? AbortSignal.timeout(CALL_TIMEOUT_MS);
+      const res = await postJsonRpc(
+        url,
+        { jsonrpc: "2.0", method: "resources/list", id: nextId++ },
+        sessionId,
+        s,
+      );
+      const result = res.result as { resources?: McpResource[] } | undefined;
+      return result?.resources ?? [];
+    },
+
+    async readResource(
+      uri: string,
+      callSignal?: AbortSignal,
+    ): Promise<McpReadResourceResult> {
+      const s = callSignal ?? AbortSignal.timeout(CALL_TIMEOUT_MS);
+      const res = await postJsonRpc(
+        url,
+        {
+          jsonrpc: "2.0",
+          method: "resources/read",
+          params: { uri },
+          id: nextId++,
+        },
+        sessionId,
+        s,
+      );
+      const result = res.result as McpReadResourceResult | undefined;
+      if (!result) {
+        throw new Error(`MCP resources/read returned empty result for ${uri}`);
       }
       return result;
     },

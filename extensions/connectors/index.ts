@@ -26,6 +26,9 @@ import {
 } from "../../src/shared/events";
 import {
   createConnectorListTool,
+  createConnectorResourceDescribeTool,
+  createConnectorResourceSearchTool,
+  createConnectorResourceServeTool,
   createConnectorToolCallTool,
   createConnectorToolDescribeTool,
   createConnectorToolSearchTool,
@@ -95,5 +98,8 @@ export default async function apertureConnectors(
     pi.registerTool(createConnectorToolSearchTool(cachedTools, connectorIds));
     pi.registerTool(createConnectorToolDescribeTool(cachedTools));
     pi.registerTool(createConnectorToolCallTool(cachedTools, () => mcpSession));
+    pi.registerTool(createConnectorResourceSearchTool(() => mcpSession));
+    pi.registerTool(createConnectorResourceDescribeTool(() => mcpSession));
+    pi.registerTool(createConnectorResourceServeTool(() => mcpSession));
   });
 }
