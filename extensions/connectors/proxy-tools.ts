@@ -1,7 +1,7 @@
 /**
- * MCP proxy meta-tools: search, describe, and call.
+ * Connector proxy meta-tools: search, describe, and call.
  *
- * Instead of registering every MCP tool as a Pi tool (high context cost),
+ * Instead of registering every connector tool as a Pi tool (high context cost),
  * we register three proxy tools. The model discovers tools via search,
  * inspects schemas via describe, then executes via call.
  */
@@ -27,7 +27,7 @@ import { Type } from "typebox";
 import type { McpContentItem, McpSession, McpTool } from "../../src/mcp-client";
 
 // ---------------------------------------------------------------------------
-// Schema formatting helpers for mcp_describe
+// Schema formatting helpers for connector_describe
 // ---------------------------------------------------------------------------
 
 function formatProperty(
@@ -84,7 +84,7 @@ function formatJsonSchema(schema: unknown): string {
 }
 
 // ---------------------------------------------------------------------------
-// Truncation / rendering helpers shared with mcp_call
+// Truncation / rendering helpers shared with connector_call
 // ---------------------------------------------------------------------------
 
 interface CallToolDetails {
@@ -93,7 +93,7 @@ interface CallToolDetails {
   fullOutputPath?: string;
 }
 
-async function executeMcpCall(
+async function executeConnectorCall(
   toolName: string,
   args: Record<string, unknown>,
   session: McpSession,
@@ -147,18 +147,21 @@ async function executeMcpCall(
   };
 }
 
-// NOTE: renderResult is inlined below to avoid Theme type mismatches.
-
 // ---------------------------------------------------------------------------
-// mcp_search
+// connector_search
 // ---------------------------------------------------------------------------
 
-export function createMcpSearchTool(tools: McpTool[]) {
+export function createConnectorSearchTool(
+  tools: McpTool[],
+  connectorIds: string[],
+) {
+  const knownIds = new Set(connectorIds.map((id) => id.toLowerCase()));
+
   return defineTool({
-    name: "mcp_search",
-    label: "MCP Search",
+    name: "connector_search",
+    label: "Connector Search",
     description:
-      "Search for available MCP tools from Aperture connectors by name or description. Use this when you need to find a tool to accomplish a task but don't know its exact name. Pass an empty query to list all tools.",
+      "Search for available tools from Aperture connectors by name or description. Use this when you need to find a tool to accomplish a task but don't know its exact name. Pass an empty query to list all tools.",
     parameters: Type.Object({
       query: Type.Optional(
         Type.String({
@@ -175,7 +178,7 @@ export function createMcpSearchTool(tools: McpTool[]) {
       connector: Type.Optional(
         Type.String({
           description:
-            "Filter to a specific connector prefix, e.g. 'github' or 'aperture'",
+            "Filter to a specific connector, e.g. 'github' or 'aperture'",
         }),
       ),
     }),
@@ -216,16 +219,41 @@ export function createMcpSearchTool(tools: McpTool[]) {
         };
       }
 
-      const lines = matches.map(
-        (t, i) =>
-          `${i + 1}. ${t.name} — ${t.description ?? "(no description)"}`,
-      );
+      // Group by verified connector ID; unknown prefixes go to "other"
+      const groups = new Map<string, McpTool[]>();
+      for (const t of matches) {
+        const idx = t.name.indexOf("_");
+        const prefix = idx > 0 ? t.name.slice(0, idx) : t.name;
+        const key = knownIds.has(prefix.toLowerCase()) ? prefix : "other";
+        const list = groups.get(key) ?? [];
+        list.push(t);
+        groups.set(key, list);
+      }
+
+      const connectors = Array.from(groups.keys()).sort((a, b) => {
+        if (a === "other") return 1;
+        if (b === "other") return -1;
+        return a.localeCompare(b);
+      });
+
+      const header = `Found ${matches.length} tool(s) from ${connectors.filter((c) => c !== "other").length} connector(s): ${connectors.filter((c) => c !== "other").join(", ")}${groups.has("other") ? ` + ${groups.get("other")?.length ?? 0} unclassified` : ""}`;
+
+      const lines: string[] = [header, ""];
+      for (const prefix of connectors) {
+        lines.push(`${prefix}:`);
+        const list = groups.get(prefix);
+        if (!list) continue;
+        for (const t of list) {
+          lines.push(`  - ${t.name}: ${t.description ?? "(no description)"}`);
+        }
+        lines.push("");
+      }
 
       return {
         content: [
           {
             type: "text",
-            text: `Found ${matches.length} tool(s):\n\n${lines.join("\n")}`,
+            text: lines.join("\n").trimEnd(),
           },
         ],
         details: {},
@@ -235,21 +263,21 @@ export function createMcpSearchTool(tools: McpTool[]) {
 }
 
 // ---------------------------------------------------------------------------
-// mcp_describe
+// connector_describe
 // ---------------------------------------------------------------------------
 
-export function createMcpDescribeTool(tools: McpTool[]) {
+export function createConnectorDescribeTool(tools: McpTool[]) {
   return defineTool({
-    name: "mcp_describe",
-    label: "MCP Describe",
+    name: "connector_describe",
+    label: "Connector Describe",
     description:
-      "Get the full description and parameter schema for a specific MCP tool. Call this before mcp_call to understand what arguments the tool expects.",
+      "Get the full description and parameter schema for a specific connector tool. Call this before connector_call to understand what arguments the tool expects.",
     parameters: Type.Object({
       tool: Type.String({
-        description: "Name of the MCP tool to describe",
+        description: "Name of the connector tool to describe",
       }),
     }),
-    promptSnippet: "Describe an MCP tool's parameters",
+    promptSnippet: "Describe a connector tool's parameters",
     async execute(_id, params) {
       const toolName = params.tool as string;
       const tool = tools.find((t) => t.name === toolName);
@@ -259,7 +287,7 @@ export function createMcpDescribeTool(tools: McpTool[]) {
           content: [
             {
               type: "text",
-              text: `Tool "${toolName}" not found. Use mcp_search to find available tools.`,
+              text: `Tool "${toolName}" not found. Use connector_search to find available tools.`,
             },
           ],
           details: {},
@@ -287,30 +315,30 @@ export function createMcpDescribeTool(tools: McpTool[]) {
 }
 
 // ---------------------------------------------------------------------------
-// mcp_call
+// connector_call
 // ---------------------------------------------------------------------------
 
-export function createMcpCallTool(
+export function createConnectorCallTool(
   tools: McpTool[],
   getSession: () => McpSession | undefined,
 ) {
   return defineTool({
-    name: "mcp_call",
-    label: "MCP Call",
+    name: "connector_call",
+    label: "Connector Call",
     description:
-      "Execute an MCP tool by name with JSON arguments. Call mcp_describe first to see the required parameters. The args field must be a valid JSON object string matching the tool's schema.",
+      "Execute a connector tool by name with JSON arguments. Call connector_describe first to see the required parameters. The args field must be a valid JSON object string matching the tool's schema.",
     parameters: Type.Object({
       tool: Type.String({
-        description: "Name of the MCP tool to execute",
+        description: "Name of the connector tool to execute",
       }),
       args: Type.Optional(
         Type.String({
           description:
-            "Arguments as a JSON object string. Call mcp_describe first to see the expected schema. Omit if the tool takes no arguments.",
+            "Arguments as a JSON object string. Call connector_describe first to see the expected schema. Omit if the tool takes no arguments.",
         }),
       ),
     }),
-    promptSnippet: "Call an MCP connector tool",
+    promptSnippet: "Call a connector tool",
 
     async execute(_id, params, signal, onUpdate) {
       const toolName = params.tool as string;
@@ -322,7 +350,7 @@ export function createMcpCallTool(
           content: [
             {
               type: "text",
-              text: `Tool "${toolName}" not found. Use mcp_search to find available tools.`,
+              text: `Tool "${toolName}" not found. Use connector_search to find available tools.`,
             },
           ],
           details: {},
@@ -342,7 +370,7 @@ export function createMcpCallTool(
           content: [
             {
               type: "text",
-              text: `Invalid args JSON: ${e instanceof Error ? e.message : String(e)}. Use mcp_describe("${toolName}") to see the expected schema.`,
+              text: `Invalid args JSON: ${e instanceof Error ? e.message : String(e)}. Use connector_describe("${toolName}") to see the expected schema.`,
             },
           ],
           details: {},
@@ -360,14 +388,14 @@ export function createMcpCallTool(
           content: [
             {
               type: "text",
-              text: "MCP session is not available. The connectors feature may be disabled or the Aperture host unreachable.",
+              text: "Connector session is not available. The connectors feature may be disabled or the Aperture host unreachable.",
             },
           ],
           details: {},
         };
       }
 
-      return executeMcpCall(toolName, args, session, signal);
+      return executeConnectorCall(toolName, args, session, signal);
     },
 
     renderCall(args, theme) {
@@ -375,15 +403,16 @@ export function createMcpCallTool(
         args && typeof args === "object"
           ? (args as Record<string, unknown>).tool
           : "";
+      const displayName = String(toolName ?? "");
       return new ToolCallHeader(
-        { toolName: "MCP Call", mainArg: String(toolName ?? "") },
+        { toolName: displayName || "Connector Call", mainArg: "" },
         theme,
       );
     },
 
     renderResult(result, options, theme) {
       if (options.isPartial) {
-        return new Text(theme.fg("muted", "MCP Call: calling..."), 0, 0);
+        return new Text(theme.fg("muted", "Connector Call: calling..."), 0, 0);
       }
 
       const details = (result as AgentToolResult<CallToolDetails>).details as
@@ -394,7 +423,7 @@ export function createMcpCallTool(
       const rawResult = details?.rawResult ?? modelText;
 
       if (!modelText && !details?.rawResult) {
-        return new Text(theme.fg("error", "MCP Call failed"), 0, 0);
+        return new Text(theme.fg("error", "Connector Call failed"), 0, 0);
       }
 
       let displayText = rawResult;

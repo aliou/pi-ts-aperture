@@ -24,3 +24,13 @@ export interface ApertureProvider {
   models: string[];
   compatibility: ProviderCompatibility;
 }
+
+export interface ConnectorInfo {
+  id: string;
+  description?: string;
+  protocol?: string;
+  provider?: string;
+  category?: string;
+  status?: string;
+  authType?: string;
+}

@@ -1,4 +1,8 @@
-import type { ApertureProvider, ApertureProviderConfigInfo } from "./types";
+import type {
+  ApertureProvider,
+  ApertureProviderConfigInfo,
+  ConnectorInfo,
+} from "./types";
 
 interface ProvidersResponse {
   providers?: unknown;
@@ -131,6 +135,49 @@ export class ApertureClient {
   async providerBaseUrls(signal?: AbortSignal): Promise<Map<string, string>> {
     const infos = await this.providerConfigInfos(signal);
     return new Map([...infos].map(([id, info]) => [id, info.baseUrl]));
+  }
+
+  async connectors(signal?: AbortSignal): Promise<ConnectorInfo[]> {
+    const res = await fetch(
+      `${this.baseUrl.replace(/\/+$/, "")}/api/connectors`,
+      {
+        method: "GET",
+        signal: signal ?? AbortSignal.timeout(5000),
+      },
+    );
+    if (!res.ok) {
+      throw new Error(
+        `Aperture connectors request failed: HTTP ${res.status} ${res.statusText}`,
+      );
+    }
+
+    const body = (await res.json()) as { connectors?: unknown[] };
+    if (!Array.isArray(body.connectors)) return [];
+
+    return body.connectors
+      .map((c): ConnectorInfo | null => {
+        if (!c || typeof c !== "object") return null;
+        const record = c as Record<string, unknown>;
+        const id = typeof record.id === "string" ? record.id : undefined;
+        if (!id) return null;
+        return {
+          id,
+          description:
+            typeof record.description === "string"
+              ? record.description
+              : undefined,
+          protocol:
+            typeof record.protocol === "string" ? record.protocol : undefined,
+          provider:
+            typeof record.provider === "string" ? record.provider : undefined,
+          category:
+            typeof record.category === "string" ? record.category : undefined,
+          status: typeof record.status === "string" ? record.status : undefined,
+          authType:
+            typeof record.auth_type === "string" ? record.auth_type : undefined,
+        };
+      })
+      .filter((c): c is ConnectorInfo => c !== null);
   }
 
   async health(signal?: AbortSignal): Promise<void> {
