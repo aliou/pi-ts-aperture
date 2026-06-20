@@ -1,9 +1,9 @@
 /**
- * Dynamic MCP tool registration from Aperture connectors.
+ * Connector proxy meta-tools for Aperture.
  *
  * Discovers tools via Aperture's /v1/mcp endpoint and registers three
  * proxy meta-tools (search, describe, call) so models can discover and
- * invoke MCP tools without inflating the system prompt with individual
+ * invoke connector tools without inflating the system prompt with individual
  * tool definitions.
  */
 
@@ -11,6 +11,7 @@ import type {
   ExtensionAPI,
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
+import { ApertureClient } from "../../src/api/client";
 import {
   createMcpSession,
   type McpSession,
@@ -23,13 +24,14 @@ import {
   createFeatureRegisterPayload,
 } from "../../src/shared/events";
 import {
-  createMcpCallTool,
-  createMcpDescribeTool,
-  createMcpSearchTool,
+  createConnectorCallTool,
+  createConnectorDescribeTool,
+  createConnectorSearchTool,
 } from "./proxy-tools";
 
 // Module-level state — refreshed on each session_start
 let cachedTools: McpTool[] = [];
+let cachedConnectorIds: string[] = [];
 let mcpSession: McpSession | undefined;
 
 export default async function apertureConnectors(
@@ -59,7 +61,10 @@ export default async function apertureConnectors(
       mcpSession = await createMcpSession(baseUrl);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      ctx.ui.notify(`[connectors] MCP session failed: ${message}`, "error");
+      ctx.ui.notify(
+        `[connectors] connector session failed: ${message}`,
+        "error",
+      );
       return;
     }
 
@@ -67,12 +72,24 @@ export default async function apertureConnectors(
       cachedTools = await mcpSession.listTools();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      ctx.ui.notify(`[connectors] MCP tools/list failed: ${message}`, "error");
+      ctx.ui.notify(
+        `[connectors] connector tools/list failed: ${message}`,
+        "error",
+      );
       return;
     }
 
-    pi.registerTool(createMcpSearchTool(cachedTools));
-    pi.registerTool(createMcpDescribeTool(cachedTools));
-    pi.registerTool(createMcpCallTool(cachedTools, () => mcpSession));
+    try {
+      const client = new ApertureClient(baseUrl);
+      const connectors = await client.connectors();
+      cachedConnectorIds = connectors.map((c) => c.id);
+    } catch {
+      // Fall back to empty list; search will group everything under "other"
+      cachedConnectorIds = [];
+    }
+
+    pi.registerTool(createConnectorSearchTool(cachedTools, cachedConnectorIds));
+    pi.registerTool(createConnectorDescribeTool(cachedTools));
+    pi.registerTool(createConnectorCallTool(cachedTools, () => mcpSession));
   });
 }
