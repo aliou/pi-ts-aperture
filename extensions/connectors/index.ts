@@ -89,6 +89,17 @@ export default async function apertureConnectors(
       cachedConnectors = [];
     }
 
+    // Only surface connectors that actually expose tools
+    const toolCounts = new Map<string, number>();
+    for (const t of cachedTools) {
+      const idx = t.name.indexOf("_");
+      const prefix = idx > 0 ? t.name.slice(0, idx) : "other";
+      toolCounts.set(prefix, (toolCounts.get(prefix) ?? 0) + 1);
+    }
+    cachedConnectors = cachedConnectors.filter(
+      (c) => (toolCounts.get(c.id) ?? 0) > 0,
+    );
+
     const connectorIds = cachedConnectors.map((c) => c.id);
 
     pi.registerTool(createConnectorListTool(cachedConnectors, cachedTools));
