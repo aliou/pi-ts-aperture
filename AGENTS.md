@@ -16,6 +16,7 @@ The capabilities are independent. Users can enable dedicated, proxy, or both.
 - `extensions/aperture/dedicated/runtime.ts` - `DedicatedRuntime` for registering the standalone `aperture` provider from Aperture gateway providers and models.
 - `extensions/aperture/dedicated/api-routing.ts` - Aperture compatibility-to-Pi API routing helpers for dedicated mode.
 - `extensions/aperture/dedicated/model-defaults.ts` - Safe default model config builder for Aperture provider models.
+- `extensions/aperture/dedicated/models-cache.ts` - Stale-while-revalidate disk cache (`getAgentDir()/cache/aperture-dedicated-models.json`) for dedicated models and per-model upstream API routes, used to register the provider instantly on startup.
 - `extensions/aperture/onboarding/index.ts` - Registers temporary onboarding affordances while onboarding is enabled.
 - `extensions/aperture/onboarding/onboarding.ts` - Onboarding wizard (`/aperture:onboarding`). Steps: welcome, URL, capability selection, provider selection, recap.
 - `extensions/aperture/onboarding/setup-command.ts` - `/aperture:onboarding` command registration. Saves config and reloads Pi after completion.
@@ -87,6 +88,7 @@ There is no current `mode` setting. Legacy `mode` configs are migrated to capabi
 - A non-empty dedicated provider list with all `enabled: false` means no dedicated models are registered.
 - Dedicated mode builds safe defaults for every gateway model: 128k context, 8k output, text-only, no reasoning.
 - Dedicated mode fetches provider compatibility from `/aperture/config` and maps it to Pi APIs: OpenAI chat/completions, Anthropic messages, OpenAI responses, Gemini generate content, Google Vertex, or Bedrock converse.
+- Dedicated mode uses a stale-while-revalidate on-disk cache for gateway models and per-model upstream API routes, stored at `getAgentDir()/cache/aperture-dedicated-models.json` (shape: `{ version, gatewayUrl, models, routes }`). The provider is registered from the cache synchronously in the extension factory body so Pi can validate scoped models during startup, then `session_start`/`onSync` revalidates from the live gateway, writes the cache back, and re-registers with fresh models. The cache is ignored when its `gatewayUrl` no longer matches the configured gateway, until revalidation rewrites it. First run with no cache still resolves nothing until the first revalidation.
 - `apiKey` is set to `"-"` because Aperture injects the upstream provider key server-side. Pi OAuth credentials still take precedence when available.
 - Provider requests include provenance headers: `Referer: https://pi.dev`, `X-Title: npm:@aliou/pi-ts-aperture`.
 - Provider requests include `x-session-id` set to the Pi session ID.
