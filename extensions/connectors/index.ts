@@ -1,10 +1,14 @@
 /**
  * Connector proxy meta-tools for Aperture.
  *
- * Discovers tools via Aperture's /v1/mcp endpoint and registers four
- * proxy meta-tools (list, search, describe, call) so models can discover
- * and invoke connector tools without inflating the system prompt with
- * individual tool definitions.
+ * Discovers tools via Aperture's /v1/mcp endpoint and registers proxy
+ * meta-tools (list, search, describe, call) plus resource proxies so models
+ * can discover and invoke connector tools without inflating the system prompt
+ * with individual tool definitions.
+ *
+ * For HTML MCP Apps, this extension becomes a host: it starts a local
+ * HTTP/WebSocket server, serves a sandboxed iframe wrapper, and bridges
+ * postMessage JSON-RPC to the MCP session and Pi agent.
  */
 
 import type {
@@ -13,6 +17,7 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import { ApertureClient } from "../../src/api/client";
 import type { ConnectorInfo } from "../../src/api/types";
+import type { McpAppHost } from "../../src/mcp-app/types";
 import {
   createMcpSession,
   type McpSession,
@@ -24,6 +29,7 @@ import {
   APERTURE_FEATURE_REQUEST_EVENT,
   createFeatureRegisterPayload,
 } from "../../src/shared/events";
+import { createMcpAppBridge } from "./mcp-app-bridge";
 import {
   createConnectorListTool,
   createConnectorResourceDescribeTool,
@@ -38,6 +44,7 @@ import {
 let cachedTools: McpTool[] = [];
 let cachedConnectors: ConnectorInfo[] = [];
 let mcpSession: McpSession | undefined;
+const activeAppHosts: McpAppHost[] = [];
 
 export default async function apertureConnectors(
   pi: ExtensionAPI,
@@ -92,17 +99,6 @@ export default async function apertureConnectors(
       cachedConnectors = [];
     }
 
-    // Only surface connectors that actually expose tools
-    const toolCounts = new Map<string, number>();
-    for (const t of cachedTools) {
-      const idx = t.name.indexOf("_");
-      const prefix = idx > 0 ? t.name.slice(0, idx) : "other";
-      toolCounts.set(prefix, (toolCounts.get(prefix) ?? 0) + 1);
-    }
-    cachedConnectors = cachedConnectors.filter(
-      (c) => (toolCounts.get(c.id) ?? 0) > 0,
-    );
-
     const connectorIds = cachedConnectors.map((c) => c.id);
 
     pi.registerTool(createConnectorListTool(cachedConnectors, cachedTools));
@@ -111,6 +107,24 @@ export default async function apertureConnectors(
     pi.registerTool(createConnectorToolCallTool(cachedTools, () => mcpSession));
     pi.registerTool(createConnectorResourceSearchTool(() => mcpSession));
     pi.registerTool(createConnectorResourceDescribeTool(() => mcpSession));
-    pi.registerTool(createConnectorResourceServeTool(() => mcpSession));
+    pi.registerTool(
+      createConnectorResourceServeTool({
+        getSession: () => mcpSession,
+        createBridge: (ctx) => createMcpAppBridge(pi, ctx, () => mcpSession),
+        activeHosts: activeAppHosts,
+      }),
+    );
+
+    pi.on("session_shutdown", async () => {
+      for (const host of activeAppHosts) {
+        await host.close().catch(() => {
+          // ignore cleanup failures
+        });
+      }
+      activeAppHosts.length = 0;
+      mcpSession = undefined;
+      cachedTools = [];
+      cachedConnectors = [];
+    });
   });
 }

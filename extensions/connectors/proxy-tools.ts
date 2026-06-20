@@ -8,15 +8,14 @@
  */
 
 import { randomBytes } from "node:crypto";
-import { createReadStream } from "node:fs";
-import { unlink, writeFile } from "node:fs/promises";
-import { createServer } from "node:http";
-import { createServer as createNetServer } from "node:net";
+import { writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ToolCallHeader } from "@aliou/pi-utils-ui";
 import type {
   AgentToolResult,
+  AgentToolUpdateCallback,
+  ExtensionContext,
   Theme,
   ToolRenderResultOptions,
   TruncationResult,
@@ -31,6 +30,8 @@ import {
 import { Markdown, Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import type { ConnectorInfo } from "../../src/api/types";
+import { startMcpAppHost } from "../../src/mcp-app/server";
+import type { McpAppBridge, McpAppHost } from "../../src/mcp-app/types";
 import type {
   McpContentItem,
   McpReadResourceResult,
@@ -816,59 +817,6 @@ export function createConnectorToolCallTool(
 }
 
 // ---------------------------------------------------------------------------
-// Resource helpers
-// ---------------------------------------------------------------------------
-
-function findAvailablePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const server = createNetServer();
-    server.unref();
-    server.on("error", reject);
-    server.listen(0, () => {
-      const port = (server.address() as { port: number }).port;
-      server.close(() => resolve(port));
-    });
-  });
-}
-
-async function serveFile(filePath: string, port: number): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const server = createServer((_req, res) => {
-      res.writeHead(200, { "Content-Type": "text/html" });
-      const stream = createReadStream(filePath);
-      stream.pipe(res);
-      stream.on("error", (err) => {
-        res.destroy(err);
-      });
-      res.on("finish", () => {
-        server.close();
-        unlink(filePath).catch(() => {
-          // ignore cleanup failure
-        });
-      });
-    });
-
-    server.listen(port, () => {
-      const url = `http://localhost:${port}`;
-      resolve(url);
-    });
-
-    server.on("error", reject);
-
-    // Auto-close after 5 minutes and clean up
-    setTimeout(
-      () => {
-        server.close();
-        unlink(filePath).catch(() => {
-          // ignore cleanup failure
-        });
-      },
-      5 * 60 * 1000,
-    ).unref();
-  });
-}
-
-// ---------------------------------------------------------------------------
 // connector_resource_search
 // ---------------------------------------------------------------------------
 
@@ -1125,8 +1073,14 @@ interface ResourceServeDetails {
   error?: string;
 }
 
+interface ResourceServeToolOptions {
+  getSession: () => McpSession | undefined;
+  createBridge: (ctx: ExtensionContext) => McpAppBridge;
+  activeHosts: McpAppHost[];
+}
+
 export function createConnectorResourceServeTool(
-  getSession: () => McpSession | undefined,
+  options: ResourceServeToolOptions,
 ) {
   return defineTool({
     name: "connector_resource_serve",
@@ -1141,9 +1095,15 @@ export function createConnectorResourceServeTool(
     }),
     promptSnippet: "Open a connector resource in browser",
 
-    async execute(_id, params, signal) {
-      const uri = params.uri as string;
-      const session = getSession();
+    async execute(
+      _id: string,
+      params: { uri: string },
+      signal: AbortSignal | undefined,
+      _onUpdate: AgentToolUpdateCallback<ResourceServeDetails> | undefined,
+      ctx: ExtensionContext,
+    ): Promise<AgentToolResult<ResourceServeDetails>> {
+      const uri = params.uri;
+      const session = options.getSession();
       if (!session) {
         return {
           content: [
@@ -1196,22 +1156,29 @@ export function createConnectorResourceServeTool(
         };
       }
 
-      // HTML: write to temp file, serve from disk, return URL only
+      // HTML MCP App: start a host bridge and return the wrapper URL
       try {
-        const tempId = randomBytes(8).toString("hex");
-        const tempPath = join(tmpdir(), `pi-aperture-resource-${tempId}.html`);
-        await writeFile(tempPath, html, "utf-8");
-
-        const port = await findAvailablePort();
-        const url = await serveFile(tempPath, port);
+        const bridge = options.createBridge(ctx);
+        const host = await startMcpAppHost({
+          appHtml: html,
+          title: uri,
+          bridge,
+          signal,
+        });
+        options.activeHosts.push(host);
         return {
           content: [
             {
               type: "text",
-              text: `Serving \`${uri}\` at ${url}`,
+              text: `Serving MCP App \`${uri}\` at ${host.url}`,
             },
           ],
-          details: { uri, url, htmlLength: html.length, mimeType },
+          details: {
+            uri,
+            url: host.url,
+            htmlLength: html.length,
+            mimeType,
+          },
         };
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -1263,14 +1230,16 @@ export function createConnectorResourceServeTool(
       }
 
       if (details.url) {
-        lines.push(`Serving **${details.uri}** locally`);
+        lines.push(`Serving MCP App **${details.uri}** locally`);
         lines.push("");
         lines.push(`- **URL:** ${details.url}`);
         if (details.htmlLength) {
           lines.push(`- **Size:** ${formatSize(details.htmlLength)}`);
         }
         lines.push("");
-        lines.push("Open this URL in your browser to view the resource.");
+        lines.push(
+          "Open this URL in your browser. The embedded MCP App can call connector tools and send messages back to Pi.",
+        );
       } else if (
         details.mimeType &&
         !details.mimeType.startsWith("text/html")

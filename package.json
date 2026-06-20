@@ -33,7 +33,8 @@
   },
   "dependencies": {
     "@aliou/pi-utils-settings": "^0.17.0",
-    "@jaxxstorm/hujsonkit": "^0.4.0"
+    "@jaxxstorm/hujsonkit": "^0.4.0",
+    "ws": "^8.21.0"
   },
   "peerDependencies": {
     "@earendil-works/pi-ai": "0.74.0",
@@ -70,6 +71,7 @@
     "@changesets/cli": "^2.27.11",
     "@earendil-works/pi-coding-agent": "0.74.0",
     "@types/node": "^25.0.10",
+    "@types/ws": "^8.18.1",
     "@vitest/coverage-v8": "^4.0.18",
     "dotenv": "^17.4.2",
     "husky": "^9.1.7",
