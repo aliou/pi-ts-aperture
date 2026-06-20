@@ -1,10 +1,10 @@
 /**
  * Connector proxy meta-tools for Aperture.
  *
- * Discovers tools via Aperture's /v1/mcp endpoint and registers three
- * proxy meta-tools (search, describe, call) so models can discover and
- * invoke connector tools without inflating the system prompt with individual
- * tool definitions.
+ * Discovers tools via Aperture's /v1/mcp endpoint and registers four
+ * proxy meta-tools (list, search, describe, call) so models can discover
+ * and invoke connector tools without inflating the system prompt with
+ * individual tool definitions.
  */
 
 import type {
@@ -12,6 +12,7 @@ import type {
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import { ApertureClient } from "../../src/api/client";
+import type { ConnectorInfo } from "../../src/api/types";
 import {
   createMcpSession,
   type McpSession,
@@ -24,14 +25,15 @@ import {
   createFeatureRegisterPayload,
 } from "../../src/shared/events";
 import {
-  createConnectorCallTool,
-  createConnectorDescribeTool,
-  createConnectorSearchTool,
+  createConnectorListTool,
+  createConnectorToolCallTool,
+  createConnectorToolDescribeTool,
+  createConnectorToolSearchTool,
 } from "./proxy-tools";
 
 // Module-level state — refreshed on each session_start
 let cachedTools: McpTool[] = [];
-let cachedConnectorIds: string[] = [];
+let cachedConnectors: ConnectorInfo[] = [];
 let mcpSession: McpSession | undefined;
 
 export default async function apertureConnectors(
@@ -81,15 +83,17 @@ export default async function apertureConnectors(
 
     try {
       const client = new ApertureClient(baseUrl);
-      const connectors = await client.connectors();
-      cachedConnectorIds = connectors.map((c) => c.id);
+      cachedConnectors = await client.connectors();
     } catch {
       // Fall back to empty list; search will group everything under "other"
-      cachedConnectorIds = [];
+      cachedConnectors = [];
     }
 
-    pi.registerTool(createConnectorSearchTool(cachedTools, cachedConnectorIds));
-    pi.registerTool(createConnectorDescribeTool(cachedTools));
-    pi.registerTool(createConnectorCallTool(cachedTools, () => mcpSession));
+    const connectorIds = cachedConnectors.map((c) => c.id);
+
+    pi.registerTool(createConnectorListTool(cachedConnectors, cachedTools));
+    pi.registerTool(createConnectorToolSearchTool(cachedTools, connectorIds));
+    pi.registerTool(createConnectorToolDescribeTool(cachedTools));
+    pi.registerTool(createConnectorToolCallTool(cachedTools, () => mcpSession));
   });
 }
