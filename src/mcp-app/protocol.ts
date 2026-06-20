@@ -45,6 +45,8 @@ export interface JsonRpcResponse {
 export interface UiInitializeResult {
   protocolVersion: string;
   capabilities: Record<string, unknown>;
+  hostInfo: { name: string; version: string };
+  hostCapabilities: Record<string, unknown>;
   hostContext: McpAppHostContext;
 }
 

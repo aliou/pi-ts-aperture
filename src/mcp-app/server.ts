@@ -217,6 +217,13 @@ export async function startMcpAppHost(
             notifications: true,
           },
         },
+        hostInfo: { name: "pi-ts-aperture", version: "0.6.1" },
+        hostCapabilities: {
+          ui: {
+            displayModes: ["inline"],
+            notifications: true,
+          },
+        },
         hostContext,
       };
 
