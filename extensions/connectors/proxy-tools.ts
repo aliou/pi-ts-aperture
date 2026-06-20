@@ -27,7 +27,7 @@ import { Type } from "typebox";
 import type { McpContentItem, McpSession, McpTool } from "../../src/mcp-client";
 
 // ---------------------------------------------------------------------------
-// Schema formatting helpers for connector_describe
+// Schema formatting helpers for connector_tool_describe
 // ---------------------------------------------------------------------------
 
 function formatProperty(
@@ -84,7 +84,7 @@ function formatJsonSchema(schema: unknown): string {
 }
 
 // ---------------------------------------------------------------------------
-// Truncation / rendering helpers shared with connector_call
+// Truncation / rendering helpers shared with connector_tool_call
 // ---------------------------------------------------------------------------
 
 interface CallToolDetails {
@@ -148,18 +148,18 @@ async function executeConnectorCall(
 }
 
 // ---------------------------------------------------------------------------
-// connector_search
+// connector_tool_search
 // ---------------------------------------------------------------------------
 
-export function createConnectorSearchTool(
+export function createConnectorToolSearchTool(
   tools: McpTool[],
   connectorIds: string[],
 ) {
   const knownIds = new Set(connectorIds.map((id) => id.toLowerCase()));
 
   return defineTool({
-    name: "connector_search",
-    label: "Connector Search",
+    name: "connector_tool_search",
+    label: "Connector Tool Search",
     description:
       "Search for available tools from Aperture connectors by name or description. Use this when you need to find a tool to accomplish a task but don't know its exact name. Pass an empty query to list all tools.",
     parameters: Type.Object({
@@ -263,15 +263,15 @@ export function createConnectorSearchTool(
 }
 
 // ---------------------------------------------------------------------------
-// connector_describe
+// connector_tool_describe
 // ---------------------------------------------------------------------------
 
-export function createConnectorDescribeTool(tools: McpTool[]) {
+export function createConnectorToolDescribeTool(tools: McpTool[]) {
   return defineTool({
-    name: "connector_describe",
-    label: "Connector Describe",
+    name: "connector_tool_describe",
+    label: "Connector Tool Describe",
     description:
-      "Get the full description and parameter schema for a specific connector tool. Call this before connector_call to understand what arguments the tool expects.",
+      "Get the full description and parameter schema for a specific connector tool. Call this before connector_tool_call to understand what arguments the tool expects.",
     parameters: Type.Object({
       tool: Type.String({
         description: "Name of the connector tool to describe",
@@ -287,7 +287,7 @@ export function createConnectorDescribeTool(tools: McpTool[]) {
           content: [
             {
               type: "text",
-              text: `Tool "${toolName}" not found. Use connector_search to find available tools.`,
+              text: `Tool "${toolName}" not found. Use connector_tool_search to find available tools.`,
             },
           ],
           details: {},
@@ -315,18 +315,18 @@ export function createConnectorDescribeTool(tools: McpTool[]) {
 }
 
 // ---------------------------------------------------------------------------
-// connector_call
+// connector_tool_call
 // ---------------------------------------------------------------------------
 
-export function createConnectorCallTool(
+export function createConnectorToolCallTool(
   tools: McpTool[],
   getSession: () => McpSession | undefined,
 ) {
   return defineTool({
-    name: "connector_call",
-    label: "Connector Call",
+    name: "connector_tool_call",
+    label: "Connector Tool Call",
     description:
-      "Execute a connector tool by name with JSON arguments. Call connector_describe first to see the required parameters. The args field must be a valid JSON object string matching the tool's schema.",
+      "Execute a connector tool by name with JSON arguments. Call connector_tool_describe first to see the required parameters. The args field must be a valid JSON object string matching the tool's schema.",
     parameters: Type.Object({
       tool: Type.String({
         description: "Name of the connector tool to execute",
@@ -334,7 +334,7 @@ export function createConnectorCallTool(
       args: Type.Optional(
         Type.String({
           description:
-            "Arguments as a JSON object string. Call connector_describe first to see the expected schema. Omit if the tool takes no arguments.",
+            "Arguments as a JSON object string. Call connector_tool_describe first to see the expected schema. Omit if the tool takes no arguments.",
         }),
       ),
     }),
@@ -350,7 +350,7 @@ export function createConnectorCallTool(
           content: [
             {
               type: "text",
-              text: `Tool "${toolName}" not found. Use connector_search to find available tools.`,
+              text: `Tool "${toolName}" not found. Use connector_tool_search to find available tools.`,
             },
           ],
           details: {},
@@ -370,7 +370,7 @@ export function createConnectorCallTool(
           content: [
             {
               type: "text",
-              text: `Invalid args JSON: ${e instanceof Error ? e.message : String(e)}. Use connector_describe("${toolName}") to see the expected schema.`,
+              text: `Invalid args JSON: ${e instanceof Error ? e.message : String(e)}. Use connector_tool_describe("${toolName}") to see the expected schema.`,
             },
           ],
           details: {},
@@ -472,6 +472,77 @@ export function createConnectorCallTool(
           : codeBlock;
 
       return new Markdown(fullRender, 0, 0, markdownTheme);
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// connector_list
+// ---------------------------------------------------------------------------
+
+export function createConnectorListTool(
+  connectors: {
+    id: string;
+    description?: string;
+    category?: string;
+    status?: string;
+    protocol?: string;
+    provider?: string;
+    authType?: string;
+  }[],
+  tools: McpTool[],
+) {
+  // Count tools per connector
+  const counts = new Map<string, number>();
+  for (const t of tools) {
+    const idx = t.name.indexOf("_");
+    const prefix = idx > 0 ? t.name.slice(0, idx) : "other";
+    counts.set(prefix, (counts.get(prefix) ?? 0) + 1);
+  }
+
+  return defineTool({
+    name: "connector_list",
+    label: "Connector List",
+    description:
+      "List all available Aperture connectors and their metadata. Use this to discover which connectors are configured and how many tools each exposes.",
+    parameters: Type.Object({}),
+    promptSnippet: "List available connectors",
+    async execute() {
+      if (connectors.length === 0) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: "No connectors are currently configured.",
+            },
+          ],
+          details: {},
+        };
+      }
+
+      const lines = connectors.map((c) => {
+        const toolCount = counts.get(c.id) ?? 0;
+        const parts = [
+          `${c.id}: ${c.description || "(no description)"}`,
+          c.category ? `  category: ${c.category}` : "",
+          c.status ? `  status: ${c.status}` : "",
+          c.protocol ? `  protocol: ${c.protocol}` : "",
+          c.provider ? `  provider: ${c.provider}` : "",
+          c.authType ? `  auth: ${c.authType}` : "",
+          `  tools: ${toolCount}`,
+        ];
+        return parts.filter(Boolean).join("\n");
+      });
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: `${connectors.length} connector(s) available:\n\n${lines.join("\n\n")}`,
+          },
+        ],
+        details: {},
+      };
     },
   });
 }
