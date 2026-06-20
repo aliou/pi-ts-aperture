@@ -35,8 +35,9 @@ import type { McpContentItem, McpSession, McpTool } from "../../src/mcp-client";
 // ---------------------------------------------------------------------------
 
 function truncateDescription(desc: string, max = 80): string {
-  if (!desc || desc.length <= max) return desc;
-  return `${desc.slice(0, max - 3)}...`;
+  const flat = desc.replace(/\n+/g, " ").replace(/\s+/g, " ").trim();
+  if (!flat || flat.length <= max) return flat;
+  return `${flat.slice(0, max - 3)}...`;
 }
 
 function formatProperty(
@@ -240,6 +241,7 @@ export function createConnectorListTool(
           );
         }
       } else {
+        lines.push("");
         for (const c of details.connectors) {
           const toolCount = details.counts.get(c.id) ?? 0;
           if (lines.length > 0) lines.push("");
@@ -480,6 +482,7 @@ export function createConnectorToolSearchTool(
         }
       } else {
         // Expanded: group by connector with headers
+        lines.push("");
         for (const [prefix, list] of details.groups) {
           lines.push(`### ${prefix} (${list.length})`);
           for (const t of list) {
@@ -605,6 +608,7 @@ export function createConnectorToolDescribeTool(tools: McpTool[]) {
           lines.push(`*... and ${paramLines.length - 4} more*  `);
         }
       } else {
+        lines.push("");
         lines.push(`### ${tool.name}`);
         if (tool.description) {
           lines.push(tool.description);
@@ -764,6 +768,7 @@ export function createConnectorToolCallTool(
         }
         lines.push(preview);
       } else {
+        lines.push("");
         if (isJson) {
           lines.push("```json");
           lines.push(displayText);
