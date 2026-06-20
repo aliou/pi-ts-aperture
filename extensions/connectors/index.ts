@@ -26,6 +26,9 @@ import {
 } from "../../src/shared/events";
 import {
   createConnectorListTool,
+  createConnectorResourceDescribeTool,
+  createConnectorResourceSearchTool,
+  createConnectorResourceServeTool,
   createConnectorToolCallTool,
   createConnectorToolDescribeTool,
   createConnectorToolSearchTool,
@@ -138,15 +141,20 @@ export default async function apertureConnectors(
     // decorrelated from pinned tools: pinning still runs whenever
     // `connectors.enabled` is on, but the meta-tools are skipped when
     // `connectors.discoveryTools` is off.
-    if (!registerDiscoveryTools) {
-      return;
-    }
+    if (registerDiscoveryTools) {
+      pi.registerTool(createConnectorListTool(cachedConnectors, proxiedTools));
+      pi.registerTool(
+        createConnectorToolSearchTool(proxiedTools, connectorIds),
+      );
+      pi.registerTool(createConnectorToolDescribeTool(proxiedTools));
+      pi.registerTool(
+        createConnectorToolCallTool(proxiedTools, () => mcpSession),
+      );
 
-    pi.registerTool(createConnectorListTool(cachedConnectors, proxiedTools));
-    pi.registerTool(createConnectorToolSearchTool(proxiedTools, connectorIds));
-    pi.registerTool(createConnectorToolDescribeTool(proxiedTools));
-    pi.registerTool(
-      createConnectorToolCallTool(proxiedTools, () => mcpSession),
-    );
+      // Resource proxy tools (search / describe / serve).
+      pi.registerTool(createConnectorResourceSearchTool(() => mcpSession));
+      pi.registerTool(createConnectorResourceDescribeTool(() => mcpSession));
+      pi.registerTool(createConnectorResourceServeTool(() => mcpSession));
+    }
   });
 }
