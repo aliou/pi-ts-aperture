@@ -15,7 +15,6 @@ describe("ApertureClient", () => {
             id: "anthropic",
             name: "Anthropic",
             description: "Claude models",
-            baseUrl: "https://api.anthropic.com/v1",
             models: ["claude-3-5-sonnet"],
             compatibility: { anthropic_messages: true },
           },
@@ -31,7 +30,6 @@ describe("ApertureClient", () => {
         id: "anthropic",
         name: "Anthropic",
         description: "Claude models",
-        baseUrl: "https://api.anthropic.com/v1",
         models: ["claude-3-5-sonnet"],
         compatibility: { anthropic_messages: true },
       },
@@ -42,7 +40,7 @@ describe("ApertureClient", () => {
     );
   });
 
-  test("parses /api/providers object response with baseurl", async () => {
+  test("parses /api/providers object response", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({
@@ -51,7 +49,7 @@ describe("ApertureClient", () => {
           providers: {
             openrouter: {
               name: "OpenRouter",
-              baseurl: "https://openrouter.ai/api/",
+              description: "",
               models: ["openai/gpt-5"],
               compatibility: { openai_chat: true },
             },
@@ -66,7 +64,7 @@ describe("ApertureClient", () => {
       {
         id: "openrouter",
         name: "OpenRouter",
-        baseUrl: "https://openrouter.ai/api/",
+        description: "",
         models: ["openai/gpt-5"],
         compatibility: { openai_chat: true },
       },
@@ -81,8 +79,14 @@ describe("ApertureClient", () => {
         json: async () => ({
           config: JSON.stringify({
             providers: {
-              anthropic: { baseurl: "https://api.anthropic.com" },
-              openrouter: { baseurl: "https://openrouter.ai/api/" },
+              anthropic: {
+                baseurl: "https://api.anthropic.com",
+                name: "Anthropic",
+              },
+              openrouter: {
+                baseurl: "https://openrouter.ai/api/",
+                name: "OpenRouter",
+              },
             },
           }),
         }),

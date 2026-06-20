@@ -1,15 +1,18 @@
-import type {
-  ApertureProvider,
-  ApertureProviderConfigInfo,
-  ConnectorInfo,
+import { parse as parseHujson, toJsonValue } from "@jaxxstorm/hujsonkit";
+import type { TSchema } from "typebox";
+import { Value } from "typebox/value";
+import {
+  type ApertureProvider,
+  type ApertureProviderConfigInfo,
+  ApertureProviderConfigInfoSchema,
+  ApertureProviderSchema,
+  type ConnectorInfo,
+  ConnectorInfoSchema,
 } from "./types";
 
-interface ProvidersResponse {
-  providers?: unknown;
-}
-
-interface ConfigResponse {
-  config?: unknown;
+function validate<T>(schema: TSchema, value: unknown): T | null {
+  const withDefaults = Value.Default(schema, value);
+  return Value.Check(schema, withDefaults) ? (withDefaults as T) : null;
 }
 
 function parseProvider(
@@ -20,56 +23,61 @@ function parseProvider(
   const record = value as Record<string, unknown>;
   const id = typeof record.id === "string" ? record.id : fallbackId;
   if (!id) return null;
-  return {
+
+  return validate<ApertureProvider>(ApertureProviderSchema, {
+    ...record,
     id,
-    name: typeof record.name === "string" ? record.name : id,
-    description:
-      typeof record.description === "string" ? record.description : undefined,
-    baseUrl:
-      typeof record.baseUrl === "string"
-        ? record.baseUrl
-        : typeof record.base_url === "string"
-          ? record.base_url
-          : typeof record.baseurl === "string"
-            ? record.baseurl
-            : undefined,
-    models: Array.isArray(record.models)
-      ? record.models.filter(
-          (model): model is string => typeof model === "string",
-        )
-      : [],
-    compatibility:
-      record.compatibility && typeof record.compatibility === "object"
-        ? (record.compatibility as ApertureProvider["compatibility"])
-        : {},
-  };
+    name: record.name ?? id,
+  });
 }
 
 export class ApertureClient {
-  constructor(private readonly baseUrl: string) {}
+  private readonly baseUrl: string;
 
-  async providers(signal?: AbortSignal): Promise<ApertureProvider[]> {
-    const res = await fetch(
-      `${this.baseUrl.replace(/\/+$/, "")}/api/providers`,
-      {
-        method: "GET",
-        signal: signal ?? AbortSignal.timeout(5000),
-      },
-    );
+  constructor(baseUrl: string) {
+    this.baseUrl = baseUrl.replace(/\/+$/, "");
+  }
+
+  private async _fetch<T = unknown>(
+    path: string,
+    {
+      method = "GET",
+      signal,
+    }: {
+      method?: string;
+      signal?: AbortSignal;
+    },
+  ): Promise<T> {
+    const url = `${this.baseUrl}${path}`;
+
+    const timeoutSignal = AbortSignal.timeout(5000);
+    const composedSignal = signal
+      ? AbortSignal.any([signal, timeoutSignal])
+      : timeoutSignal;
+
+    const res = await fetch(url, { method, signal: composedSignal });
     if (!res.ok) {
       throw new Error(
-        `Aperture providers request failed: HTTP ${res.status} ${res.statusText}`,
+        `[Aperture] ${method} ${path}: -> ${res.status} ${res.statusText}`,
       );
     }
+    return res.json() as T;
+  }
 
-    const body = (await res.json()) as ProvidersResponse | unknown[];
+  async providers(signal?: AbortSignal): Promise<ApertureProvider[]> {
+    const body = await this._fetch<{ providers?: unknown } | unknown[]>(
+      "/api/providers",
+      {
+        signal,
+      },
+    );
     if (Array.isArray(body)) {
       return body
         .map((provider) => parseProvider(provider))
         .filter((p): p is ApertureProvider => p !== null);
     }
 
-    const providers = (body as ProvidersResponse).providers;
+    const providers = body.providers;
     if (Array.isArray(providers)) {
       return providers
         .map((provider) => parseProvider(provider))
@@ -88,25 +96,20 @@ export class ApertureClient {
   async providerConfigInfos(
     signal?: AbortSignal,
   ): Promise<Map<string, ApertureProviderConfigInfo>> {
-    const res = await fetch(
-      `${this.baseUrl.replace(/\/+$/, "")}/aperture/config`,
-      {
-        method: "GET",
-        signal: signal ?? AbortSignal.timeout(5000),
-      },
-    );
-    if (!res.ok) {
-      throw new Error(
-        `Aperture config request failed: HTTP ${res.status} ${res.statusText}`,
-      );
+    const body = await this._fetch<{ config?: unknown }>("/aperture/config", {
+      signal,
+    });
+    const configStr = typeof body.config === "string" ? body.config : undefined;
+    if (!configStr) return new Map();
+
+    let rawConfig: unknown;
+    try {
+      rawConfig = toJsonValue(parseHujson(configStr));
+    } catch {
+      return new Map();
     }
 
-    const body = (await res.json()) as ConfigResponse;
-    const config =
-      typeof body.config === "string" ? JSON.parse(body.config) : body.config;
-    if (!config || typeof config !== "object") return new Map();
-
-    const providers = (config as { providers?: unknown }).providers;
+    const providers = (rawConfig as Record<string, unknown>).providers;
     if (!providers || typeof providers !== "object") return new Map();
 
     const result = new Map<string, ApertureProviderConfigInfo>();
@@ -114,20 +117,16 @@ export class ApertureClient {
       if (!provider || typeof provider !== "object") continue;
       const record = provider as Record<string, unknown>;
       const baseUrl =
-        typeof record.baseurl === "string"
-          ? record.baseurl
-          : typeof record.baseUrl === "string"
-            ? record.baseUrl
-            : typeof record.base_url === "string"
-              ? record.base_url
-              : undefined;
-      if (baseUrl) {
-        result.set(id, {
-          id,
-          baseUrl,
-          name: typeof record.name === "string" ? record.name : undefined,
-        });
-      }
+        (typeof record.baseurl === "string" ? record.baseurl : undefined) ??
+        (typeof record.baseUrl === "string" ? record.baseUrl : undefined) ??
+        (typeof record.base_url === "string" ? record.base_url : undefined);
+      if (!baseUrl) continue;
+
+      const parsed = validate<ApertureProviderConfigInfo>(
+        ApertureProviderConfigInfoSchema,
+        { ...record, id, baseUrl },
+      );
+      if (parsed) result.set(id, parsed);
     }
     return result;
   }
@@ -138,44 +137,18 @@ export class ApertureClient {
   }
 
   async connectors(signal?: AbortSignal): Promise<ConnectorInfo[]> {
-    const res = await fetch(
-      `${this.baseUrl.replace(/\/+$/, "")}/api/connectors`,
+    const body = await this._fetch<{ connectors?: unknown[] }>(
+      "/api/connectors",
       {
-        method: "GET",
-        signal: signal ?? AbortSignal.timeout(5000),
+        signal,
       },
     );
-    if (!res.ok) {
-      throw new Error(
-        `Aperture connectors request failed: HTTP ${res.status} ${res.statusText}`,
-      );
-    }
-
-    const body = (await res.json()) as { connectors?: unknown[] };
     if (!Array.isArray(body.connectors)) return [];
 
     return body.connectors
       .map((c): ConnectorInfo | null => {
         if (!c || typeof c !== "object") return null;
-        const record = c as Record<string, unknown>;
-        const id = typeof record.id === "string" ? record.id : undefined;
-        if (!id) return null;
-        return {
-          id,
-          description:
-            typeof record.description === "string"
-              ? record.description
-              : undefined,
-          protocol:
-            typeof record.protocol === "string" ? record.protocol : undefined,
-          provider:
-            typeof record.provider === "string" ? record.provider : undefined,
-          category:
-            typeof record.category === "string" ? record.category : undefined,
-          status: typeof record.status === "string" ? record.status : undefined,
-          authType:
-            typeof record.auth_type === "string" ? record.auth_type : undefined,
-        };
+        return validate<ConnectorInfo>(ConnectorInfoSchema, c);
       })
       .filter((c): c is ConnectorInfo => c !== null);
   }
