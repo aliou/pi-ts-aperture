@@ -52,6 +52,8 @@ export default async function apertureConnectors(
     return;
   }
 
+  const registerDiscoveryTools = config.connectors.discoveryTools;
+
   pi.events.on(APERTURE_FEATURE_REQUEST_EVENT, () => {
     pi.events.emit(
       APERTURE_FEATURE_REGISTER_EVENT,
@@ -126,6 +128,14 @@ export default async function apertureConnectors(
 
     for (const tool of pinnedTools) {
       pi.registerTool(createStandaloneConnectorTool(tool, () => mcpSession));
+    }
+
+    // Discovery meta-tools (list / search / describe / call) are
+    // decorrelated from pinned tools: pinning still runs whenever
+    // `features.connectors` is on, but the meta-tools are skipped when
+    // `connectors.discoveryTools` is off.
+    if (!registerDiscoveryTools) {
+      return;
     }
 
     pi.registerTool(createConnectorListTool(cachedConnectors, proxiedTools));
