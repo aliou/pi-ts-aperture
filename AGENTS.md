@@ -21,7 +21,10 @@ The capabilities are independent. Users can enable dedicated, proxy, or both.
 - `extensions/aperture/onboarding/onboarding.ts` - Onboarding wizard (`/aperture:onboarding`). Steps: welcome, URL, capability selection, provider selection, recap.
 - `extensions/aperture/onboarding/setup-command.ts` - `/aperture:onboarding` command registration. Saves config and reloads Pi after completion.
 - `extensions/aperture/onboarding/setup-wizard.ts` - `UrlStep` TUI component with inline Aperture health check.
-- `extensions/aperture/settings-command.ts` - `/aperture:settings` settings UI via `registerSettingsCommand`.
+- `extensions/aperture/shared/filterable-checklist.ts` - Shared `FilterableChecklist` Component (search input + checkbox list with Space toggle, optional Esc-to-close). Used by the onboarding provider steps and the settings pinned-tools submenu.
+- `extensions/aperture/settings-command.ts` - `/aperture:settings` settings UI via `registerSettingsCommand`. Includes the pinned connector tools submenu (`connectors.pinnedTools`), which uses `FilterableChecklist` and reads the live gateway tool list via `createMcpSession().listTools()`.
+- `extensions/connectors/index.ts` - Connector extension entry point. Splits gateway tools into pinned (registered as first-class Pi tools) vs proxied (reached through the `connector_tool_*` meta-tools) based on `connectors.pinnedTools`.
+- `extensions/connectors/proxy-tools.ts` - Defines the four proxy meta-tools (list, search, describe, call), plus `createStandaloneConnectorTool` for pinned tools and the shared `renderConnectorCallResult` used by both the call meta-tool and standalone tools.
 - `extensions/aperture/shared/config/types.ts` - Config types.
 - `extensions/aperture/shared/config/defaults.ts` - Default config. Dedicated is enabled by default.
 - `extensions/aperture/shared/config/loader.ts` - Config loader instance.
@@ -46,8 +49,26 @@ interface ApertureConfig {
     enabled?: boolean;
     providers?: DedicatedProviderConfig[];
   };
+  connectors?: {
+    pinnedTools?: string[]; // MCP tool names registered as first-class Pi tools
+  };
+  features?: { connectors?: boolean };
 }
+```
 
+```ts
+interface ResolvedConfig {
+  baseUrl: string;
+  onboardingDone: boolean;
+  onboarding: { enabled: boolean };
+  proxy: { enabled: boolean; upstreamProviders: Required<ProxiedProviderConfig>[] };
+  dedicated: { enabled: boolean; providers: DedicatedProviderConfig[] };
+  connectors: { pinnedTools: string[] };
+  features: Record<ApertureFeatureId, boolean>;
+}
+```
+
+```ts
 interface ProxiedProviderConfig {
   id: string;
   shouldCheckGatewayModels?: boolean;
@@ -60,14 +81,14 @@ interface DedicatedProviderConfig {
 }
 ```
 
-Defaults: `dedicated.enabled: true`, `proxy.enabled: false`, `onboardingDone: false`, `onboarding.enabled: true`, empty proxy providers, empty dedicated provider filters.
+Defaults: `dedicated.enabled: true`, `proxy.enabled: false`, `connectors.pinnedTools: []`, `features.connectors: false`, `onboardingDone: false`, `onboarding.enabled: true`, empty proxy providers, empty dedicated provider filters.
 
 There is no current `mode` setting. Legacy `mode` configs are migrated to capability flags.
 
 ## Commands
 
 - `/aperture:onboarding` - Onboarding wizard. Only appears when onboarding is pending. Completion saves config and reloads Pi so selected providers register cleanly.
-- `/aperture:settings` - Edit config: connection URL, capabilities, proxy providers and gateway checks, dedicated provider filters, onboarding status, and onboarding extension enabled state. Settings saves sync providers without requiring reload.
+- `/aperture:settings` - Edit config: connection URL, capabilities, proxy providers and gateway checks, dedicated provider filters, pinned connector tools, onboarding status, and onboarding extension enabled state. Settings saves sync providers without requiring reload; pinned connector tools require a full Pi restart to apply (Pi cannot unregister tools at runtime).
 
 ## Key decisions
 
@@ -86,6 +107,13 @@ There is no current `mode` setting. Legacy `mode` configs are migrated to capabi
 - Dedicated mode tracks model routing internally as `modelId -> api`.
 - Dedicated mode can filter gateway models by enabled `dedicated.providers`; an empty provider filter means all gateway providers are included.
 - A non-empty dedicated provider list with all `enabled: false` means no dedicated models are registered.
+- Connector tools discovery goes through Aperture's `/v1/mcp` endpoint (Streamable HTTP, 2024-11-05 protocol). The MCP session is re-created on each `session_start`.
+- Connector tools default to four proxy meta-tools (`connector_list`, `connector_tool_search`, `connector_tool_describe`, `connector_tool_call`), so models discover tools via list/search/describe then call. This keeps individual tool schemas out of the system prompt.
+- `connectors.pinnedTools` is an allow-list of MCP tool names that should bypass the proxy meta-tools and be registered as first-class Pi tools. Names are matched verbatim against the gateway `tools/list` response.
+- Pinned tools use the raw MCP tool name (e.g. `github_list_repos`); no namespacing.
+- Pinned tools that no longer exist on the gateway are silently skipped on registration, with a single warning `ui.notify`. The allow-list stays harmless when stale.
+- Each pinned tool adds its full JSON Schema to the system prompt, raising context cost. The settings UI warns above a threshold (currently 10).
+- Pi cannot unregister tools at runtime, so pinning takes effect on the next full Pi restart (which re-runs the extension factory). The settings submenu reads the live gateway tool list every time it opens, but saved changes only apply after reload.
 - Dedicated mode builds safe defaults for every gateway model: 128k context, 8k output, text-only, no reasoning.
 - Dedicated mode fetches provider compatibility from `/aperture/config` and maps it to Pi APIs: OpenAI chat/completions, Anthropic messages, OpenAI responses, Gemini generate content, Google Vertex, or Bedrock converse.
 - Dedicated mode uses a stale-while-revalidate on-disk cache for gateway models and per-model upstream API routes, stored at `getAgentDir()/cache/aperture-dedicated-models.json` (shape: `{ version, gatewayUrl, models, routes }`). The provider is registered from the cache synchronously in the extension factory body so Pi can validate scoped models during startup, then `session_start`/`onSync` revalidates from the live gateway, writes the cache back, and re-registers with fresh models. The cache is ignored when its `gatewayUrl` no longer matches the configured gateway, until revalidation rewrites it. First run with no cache still resolves nothing until the first revalidation.

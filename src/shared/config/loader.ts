@@ -15,6 +15,7 @@ export const configLoader = new ConfigLoader<ApertureConfig, ResolvedConfig>(
 export type {
   ApertureConfig,
   ApertureMode,
+  ConnectorsConfig,
   DedicatedProviderConfig,
   ProxiedProviderConfig,
   ResolvedConfig,

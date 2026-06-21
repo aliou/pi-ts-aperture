@@ -13,6 +13,23 @@ export type ApertureMode = "proxy" | "dedicated";
 
 export type ApertureFeatureId = "connectors";
 
+/**
+ * Connector tool pinning.
+ *
+ * Pinned tool names are matched verbatim against the MCP tool names returned
+ * by Aperture's /v1/mcp endpoint. Pinned tools are registered as first-class
+ * Pi tools instead of being reached through the connector proxy meta-tools.
+ *
+ * Pinned names that no longer exist on the gateway are silently skipped on
+ * registration. The list is an allow-list, so stale entries are harmless.
+ *
+ * Each pinned tool adds its full schema to the system prompt, which raises
+ * context cost. Prefer pinning only the few tools you use every session.
+ */
+export interface ConnectorsConfig {
+  pinnedTools?: string[];
+}
+
 export interface ApertureConfig {
   baseUrl?: string;
   onboardingDone?: boolean;
@@ -28,6 +45,7 @@ export interface ApertureConfig {
     providers?: DedicatedProviderConfig[];
     cachedModels?: unknown[];
   };
+  connectors?: ConnectorsConfig;
   features?: Partial<Record<ApertureFeatureId, boolean>>;
 
   // Legacy-only migration inputs.
@@ -50,6 +68,9 @@ export interface ResolvedConfig {
   dedicated: {
     enabled: boolean;
     providers: DedicatedProviderConfig[];
+  };
+  connectors: {
+    pinnedTools: string[];
   };
   features: Record<ApertureFeatureId, boolean>;
 }
