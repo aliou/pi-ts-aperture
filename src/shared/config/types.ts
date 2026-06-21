@@ -28,6 +28,15 @@ export type ApertureFeatureId = "connectors";
  */
 export interface ConnectorsConfig {
   pinnedTools?: string[];
+  /**
+   * Register the connector discovery meta-tools (list / search /
+   * describe / call).
+   *
+   * When disabled, only pinned tools are registered as first-class Pi
+   * tools. Toggle independent of `features.connectors`, which still
+   * gates whether pinning runs at all.
+   */
+  discoveryTools?: boolean;
 }
 
 export interface ApertureConfig {
@@ -71,6 +80,7 @@ export interface ResolvedConfig {
   };
   connectors: {
     pinnedTools: string[];
+    discoveryTools: boolean;
   };
   features: Record<ApertureFeatureId, boolean>;
 }

@@ -16,6 +16,7 @@ export const DEFAULT_CONFIG: ResolvedConfig = {
   },
   connectors: {
     pinnedTools: [],
+    discoveryTools: true,
   },
   features: {
     connectors: false,

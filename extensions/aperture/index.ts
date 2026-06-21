@@ -12,7 +12,7 @@ import { emitConfigSync } from "../../src/shared/sync-bus";
 import { DedicatedRuntime } from "./dedicated/runtime";
 import { registerOnboarding } from "./onboarding";
 import { ApertureRuntime } from "./proxy/runtime";
-import { registerApertureSettings } from "./settings-command";
+import { registerApertureSettings } from "./settings";
 
 export default async function (pi: ExtensionAPI): Promise<void> {
   await configLoader.load();

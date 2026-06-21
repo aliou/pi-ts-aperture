@@ -13,11 +13,8 @@ importers:
   .:
     dependencies:
       '@aliou/pi-utils-settings':
-        specifier: ^0.17.0
-        version: 0.17.0(@earendil-works/pi-coding-agent@0.74.0(ws@8.19.0)(zod@3.25.76))(@earendil-works/pi-tui@0.74.0)
-      '@jaxxstorm/hujsonkit':
-        specifier: ^0.4.0
-        version: 0.4.0
+        specifier: ^0.18.0
+        version: 0.18.0(@earendil-works/pi-coding-agent@0.74.0(ws@8.19.0)(zod@3.25.76))(@earendil-works/pi-tui@0.74.0)
       '@earendil-works/pi-ai':
         specifier: 0.74.0
         version: 0.74.0(ws@8.19.0)(zod@3.25.76)
@@ -32,8 +29,8 @@ importers:
         specifier: ^0.8.1
         version: 0.8.1(@biomejs/biome@2.4.15)
       '@aliou/pi-utils-ui':
-        specifier: ^0.4.1
-        version: 0.4.1(@earendil-works/pi-coding-agent@0.74.0(ws@8.19.0)(zod@3.25.76))(@earendil-works/pi-tui@0.74.0)
+        specifier: ^0.5.0
+        version: 0.5.0(@earendil-works/pi-coding-agent@0.74.0(ws@8.19.0)(zod@3.25.76))(@earendil-works/pi-tui@0.74.0)
       '@biomejs/biome':
         specifier: ^2.4.15
         version: 2.4.15
@@ -72,8 +69,8 @@ packages:
     peerDependencies:
       '@biomejs/biome': '>=2.4.0'
 
-  '@aliou/pi-utils-settings@0.17.0':
-    resolution: {integrity: sha512-9HEowgN/qrRnXVtNpAHSkJdeid++C0JPNv8Z0R//uI5xMsWhDWDQtR6RJbRF0rNS1dvaw2FnjK7bX6bDdxuwzA==}
+  '@aliou/pi-utils-settings@0.18.0':
+    resolution: {integrity: sha512-ct3Jt9Q7yyv1pHLQLlNrrFqNp6zvxC9nxjN8ak68ZIEfjMlK4tcdvlFxoAqv7yO7VLNFSgS7Us9ICKriK605lQ==}
     peerDependencies:
       '@earendil-works/pi-coding-agent': '>=0.74.0 <1'
     peerDependenciesMeta:
@@ -82,6 +79,17 @@ packages:
 
   '@aliou/pi-utils-ui@0.4.1':
     resolution: {integrity: sha512-1oJraVjjlZD8UM41472MF1O8a41/4OvAxdH/HlQsahZH/gBkhahGw/EjlcVqXTWnCQfo+4X6PksRz63erNsPwQ==}
+    peerDependencies:
+      '@earendil-works/pi-coding-agent': '>=0.74.0 <1'
+      '@earendil-works/pi-tui': 0.74.0
+    peerDependenciesMeta:
+      '@earendil-works/pi-coding-agent':
+        optional: true
+      '@earendil-works/pi-tui':
+        optional: true
+
+  '@aliou/pi-utils-ui@0.5.0':
+    resolution: {integrity: sha512-3yM9HicP8iY5cwW9dDNRDPIlpFaXfE7PZQ/ZAN3wWxK5W01GDFCwpg/+Y8gATHS/hwHHOBNlgbgcjvER7c0WTA==}
     peerDependencies:
       '@earendil-works/pi-coding-agent': '>=0.74.0 <1'
       '@earendil-works/pi-tui': 0.74.0
@@ -1977,7 +1985,7 @@ snapshots:
     dependencies:
       '@biomejs/biome': 2.4.15
 
-  '@aliou/pi-utils-settings@0.17.0(@earendil-works/pi-coding-agent@0.74.0(ws@8.19.0)(zod@3.25.76))(@earendil-works/pi-tui@0.74.0)':
+  '@aliou/pi-utils-settings@0.18.0(@earendil-works/pi-coding-agent@0.74.0(ws@8.19.0)(zod@3.25.76))(@earendil-works/pi-tui@0.74.0)':
     dependencies:
       '@aliou/pi-utils-ui': 0.4.1(@earendil-works/pi-coding-agent@0.74.0(ws@8.19.0)(zod@3.25.76))(@earendil-works/pi-tui@0.74.0)
     optionalDependencies:
@@ -1986,6 +1994,11 @@ snapshots:
       - '@earendil-works/pi-tui'
 
   '@aliou/pi-utils-ui@0.4.1(@earendil-works/pi-coding-agent@0.74.0(ws@8.19.0)(zod@3.25.76))(@earendil-works/pi-tui@0.74.0)':
+    optionalDependencies:
+      '@earendil-works/pi-coding-agent': 0.74.0(ws@8.19.0)(zod@3.25.76)
+      '@earendil-works/pi-tui': 0.74.0
+
+  '@aliou/pi-utils-ui@0.5.0(@earendil-works/pi-coding-agent@0.74.0(ws@8.19.0)(zod@3.25.76))(@earendil-works/pi-tui@0.74.0)':
     optionalDependencies:
       '@earendil-works/pi-coding-agent': 0.74.0(ws@8.19.0)(zod@3.25.76)
       '@earendil-works/pi-tui': 0.74.0
