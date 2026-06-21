@@ -25,8 +25,9 @@ import {
   getMarkdownTheme,
   truncateHead,
 } from "@earendil-works/pi-coding-agent";
+import type { Component } from "@earendil-works/pi-tui";
 import { Markdown, Text } from "@earendil-works/pi-tui";
-import { Type } from "typebox";
+import { type TSchema, Type } from "typebox";
 import type { ConnectorInfo } from "../../src/api/types";
 import type { McpContentItem, McpSession, McpTool } from "../../src/mcp-client";
 
@@ -723,84 +724,188 @@ export function createConnectorToolCallTool(
       );
     },
 
-    renderResult(
-      result: AgentToolResult<unknown>,
-      options: ToolRenderResultOptions,
-      _theme: Theme,
-    ) {
-      const details = result.details as CallToolDetails | undefined;
-      const mdTheme = getMarkdownTheme();
+    renderResult: renderConnectorCallResult,
+  });
+}
 
-      if (options.isPartial) {
-        const toolName = details?.toolName ?? "connector";
-        return new Text(`Calling ${toolName}...`, 0, 0);
+// ---------------------------------------------------------------------------
+// Shared renderResult for connector tool call results
+// ---------------------------------------------------------------------------
+
+/**
+ * Renders the result of a connector tool call (either via the proxy
+ * `connector_tool_call` meta-tool or a pinned standalone tool).
+ *
+ * Handles partial ("calling...") state, JSON pretty-printing, collapsed
+ * preview vs expanded view, and truncation/footer warnings.
+ */
+function renderConnectorCallResult(
+  result: AgentToolResult<unknown>,
+  options: ToolRenderResultOptions,
+  _theme: Theme,
+): Component {
+  const details = result.details as CallToolDetails | undefined;
+  const mdTheme = getMarkdownTheme();
+
+  if (options.isPartial) {
+    const toolName = details?.toolName ?? "connector";
+    return new Text(`Calling ${toolName}...`, 0, 0);
+  }
+
+  const textBlock = result.content.find((c) => c.type === "text");
+  const modelText = textBlock?.type === "text" ? textBlock.text : "";
+  const rawResult = details?.rawResult ?? modelText;
+
+  if (!modelText && !details?.rawResult) {
+    return new Text("Connector call failed", 0, 0);
+  }
+
+  let displayText = rawResult;
+  let isJson = false;
+  try {
+    const parsed = JSON.parse(rawResult);
+    displayText = JSON.stringify(parsed, null, 2);
+    isJson = true;
+  } catch {
+    // not JSON, keep raw
+  }
+
+  const lines: string[] = [];
+
+  if (!options.expanded) {
+    const previewLines = displayText.split("\n").slice(0, 3);
+    let preview = previewLines.join("\n");
+    const hasMore =
+      displayText.split("\n").length > 3 || displayText.length > 120;
+    if (preview.length > 120) {
+      preview = `${preview.slice(0, 117)}...`;
+    } else if (hasMore) {
+      preview += "...";
+    }
+    lines.push(preview);
+  } else {
+    lines.push("");
+    if (isJson) {
+      lines.push("```json");
+      lines.push(displayText);
+      lines.push("```");
+    } else {
+      lines.push(displayText);
+    }
+  }
+
+  // Footer info as markdown text
+  const warnings: string[] = [];
+  if (details?.fullOutputPath) {
+    warnings.push(`Full output: \`${details.fullOutputPath}\``);
+  }
+  if (details?.truncation?.truncated) {
+    const t = details.truncation;
+    if (t.truncatedBy === "lines") {
+      warnings.push(
+        `Truncated: showing ${t.outputLines} of ${t.totalLines} lines`,
+      );
+    } else {
+      warnings.push(
+        `Truncated: ${t.outputLines} lines shown (${formatSize(t.maxBytes ?? DEFAULT_MAX_BYTES)} limit)`,
+      );
+    }
+  }
+  if (warnings.length > 0) {
+    lines.push("");
+    lines.push(`*${warnings.join(". ")}*`);
+  }
+
+  return new Markdown(lines.join("\n"), 0, 0, mdTheme);
+}
+
+// ---------------------------------------------------------------------------
+// Standalone (pinned) connector tool
+// ---------------------------------------------------------------------------
+
+/**
+ * Coerce an MCP tool's `inputSchema` (opaque JSON Schema from the gateway)
+ * into a TypeBox schema usable as a Pi tool's `parameters`.
+ *
+ * Returns `Type.Object({})` when the schema is missing or not a recognizable
+ * object schema, so the tool still registers. Pi validates arguments against
+ * whatever schema we hand it, so passing the raw schema through preserves the
+ * tool's real parameter shape for the model.
+ */
+function coerceInputSchema(schema: unknown): TSchema {
+  if (
+    schema &&
+    typeof schema === "object" &&
+    (schema as { type?: string }).type === "object"
+  ) {
+    return schema as TSchema;
+  }
+  return Type.Object({});
+}
+
+/**
+ * Build a first-class Pi tool for a single MCP connector tool.
+ *
+ * Pinned tools are registered directly with Pi instead of being routed
+ * through the `connector_tool_*` proxy meta-tools. Each pinned tool adds its
+ * full schema to the system prompt, so prefer pinning a small set of tools
+ * you use every session.
+ *
+ * Tool name and description come straight from the gateway. The execute and
+ * render paths reuse the same helpers as `connector_tool_call`, so behavior
+ * (truncation, temp-file overflow, JSON formatting) is identical.
+ */
+export function createStandaloneConnectorTool(
+  tool: McpTool,
+  getSession: () => McpSession | undefined,
+) {
+  const description =
+    tool.description?.trim() || `Aperture connector tool: ${tool.name}`;
+
+  return defineTool({
+    name: tool.name,
+    label: tool.name,
+    description,
+    parameters: coerceInputSchema(tool.inputSchema),
+    promptSnippet: truncateDescription(description, 80),
+
+    async execute(_id, args, signal, onUpdate) {
+      onUpdate?.({
+        content: [{ type: "text", text: `Calling ${tool.name}...` }],
+        details: {},
+      });
+
+      const session = getSession();
+      if (!session) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: "Connector session is not available. The connectors feature may be disabled or the Aperture host unreachable.",
+            },
+          ],
+          details: {} as CallToolDetails,
+        };
       }
 
-      const textBlock = result.content.find((c) => c.type === "text");
-      const modelText = textBlock?.type === "text" ? textBlock.text : "";
-      const rawResult = details?.rawResult ?? modelText;
-
-      if (!modelText && !details?.rawResult) {
-        return new Text("Connector call failed", 0, 0);
-      }
-
-      let displayText = rawResult;
-      let isJson = false;
-      try {
-        const parsed = JSON.parse(rawResult);
-        displayText = JSON.stringify(parsed, null, 2);
-        isJson = true;
-      } catch {
-        // not JSON, keep raw
-      }
-
-      const lines: string[] = [];
-
-      if (!options.expanded) {
-        const previewLines = displayText.split("\n").slice(0, 3);
-        let preview = previewLines.join("\n");
-        const hasMore =
-          displayText.split("\n").length > 3 || displayText.length > 120;
-        if (preview.length > 120) {
-          preview = `${preview.slice(0, 117)}...`;
-        } else if (hasMore) {
-          preview += "...";
-        }
-        lines.push(preview);
-      } else {
-        lines.push("");
-        if (isJson) {
-          lines.push("```json");
-          lines.push(displayText);
-          lines.push("```");
-        } else {
-          lines.push(displayText);
-        }
-      }
-
-      // Footer info as markdown text
-      const warnings: string[] = [];
-      if (details?.fullOutputPath) {
-        warnings.push(`Full output: \`${details.fullOutputPath}\``);
-      }
-      if (details?.truncation?.truncated) {
-        const t = details.truncation;
-        if (t.truncatedBy === "lines") {
-          warnings.push(
-            `Truncated: showing ${t.outputLines} of ${t.totalLines} lines`,
-          );
-        } else {
-          warnings.push(
-            `Truncated: ${t.outputLines} lines shown (${formatSize(t.maxBytes ?? DEFAULT_MAX_BYTES)} limit)`,
-          );
-        }
-      }
-      if (warnings.length > 0) {
-        lines.push("");
-        lines.push(`*${warnings.join(". ")}*`);
-      }
-
-      return new Markdown(lines.join("\n"), 0, 0, mdTheme);
+      return executeConnectorCall(
+        tool.name,
+        args as Record<string, unknown>,
+        session,
+        signal,
+      );
     },
+
+    renderCall(_args, theme) {
+      return new ToolCallHeader(
+        {
+          toolName: tool.name,
+          mainArg: "",
+        },
+        theme,
+      );
+    },
+
+    renderResult: renderConnectorCallResult,
   });
 }

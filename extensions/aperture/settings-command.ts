@@ -12,6 +12,7 @@ import type {
 import { getSettingsListTheme } from "@earendil-works/pi-coding-agent";
 import type { Component } from "@earendil-works/pi-tui";
 import { ApertureClient } from "../../src/api/client";
+import { createMcpSession, type McpTool } from "../../src/mcp-client";
 import {
   mapDedicatedProviders,
   mapProxyProviders,
@@ -23,9 +24,31 @@ import type {
 } from "../../src/shared/config/loader";
 import { configLoader } from "../../src/shared/config/loader";
 import { normalizeInputUrl } from "../../src/url";
+import {
+  type ChecklistItem,
+  FilterableChecklist,
+} from "./shared/filterable-checklist";
+
+/**
+ * Above this many pinned tools, the submodule title warns about the system
+ * prompt cost. Each pinned tool contributes its full JSON Schema to the
+ * prompt; the proxy meta-tools exist precisely to keep that cost down.
+ */
+const CONTEXT_COST_WARNING_THRESHOLD = 10;
 
 function boolLabel(value: boolean): string {
   return value ? "enabled" : "disabled";
+}
+
+/**
+ * Fetch the current connector tool list from the Aperture gateway.
+ *
+ * Used by the pinned-tools submenu so it always reflects live gateway
+ * state rather than the cached set from the last session_start.
+ */
+async function listConnectorTools(baseUrl: string): Promise<McpTool[]> {
+  const session = await createMcpSession(baseUrl);
+  return session.listTools();
 }
 
 class AsyncEditor implements Component {
@@ -44,8 +67,8 @@ class AsyncEditor implements Component {
 
   render(width: number): string[] {
     if (this.editor) return this.editor.render(width);
-    if (this.error) return [`Failed to refresh providers: ${this.error}`];
-    return ["Refreshing providers from Aperture..."];
+    if (this.error) return [`Failed to refresh connectors: ${this.error}`];
+    return ["Refreshing connectors from Aperture..."];
   }
 
   invalidate(): void {
@@ -66,7 +89,11 @@ export function registerApertureSettings(
     commandName: "aperture:settings",
     title: "Aperture Settings",
     configStore: configLoader,
-    buildSections: (tabConfig, resolved, { setDraft }): SettingsSection[] => {
+    buildSections: (
+      tabConfig,
+      resolved,
+      { setDraft, theme: settingsTheme },
+    ): SettingsSection[] => {
       const draft = tabConfig ?? {};
       const baseUrl = draft.baseUrl ?? resolved.baseUrl;
       const proxyEnabled = draft.proxy?.enabled ?? resolved.proxy.enabled;
@@ -78,6 +105,8 @@ export function registerApertureSettings(
         draft.dedicated?.providers ?? resolved.dedicated.providers;
       const connectorsEnabled =
         draft.features?.connectors ?? resolved.features.connectors;
+      const pinnedTools =
+        draft.connectors?.pinnedTools ?? resolved.connectors.pinnedTools;
       const onboardingDone = draft.onboardingDone ?? resolved.onboardingDone;
       const onboardingEnabled =
         draft.onboarding?.enabled ?? resolved.onboarding.enabled;
@@ -324,6 +353,106 @@ export function registerApertureSettings(
                     emptyStateText:
                       "No providers found on the Aperture gateway.",
                   });
+                }),
+            },
+          ],
+        },
+        {
+          label: "Connectors",
+          items: [
+            {
+              id: "connectors.pinnedTools",
+              label: "Pinned connector tools",
+              description:
+                "Register selected tools as first-class Pi tools (higher context cost)",
+              currentValue:
+                pinnedTools.length > 0
+                  ? `${pinnedTools.length} pinned`
+                  : "none",
+              submenu: (_val, submenuDone) =>
+                new AsyncEditor(async () => {
+                  const tools = await listConnectorTools(baseUrl);
+                  // De-dupe (gateway may return the same name from multiple
+                  // connectors) and preserve gateway order.
+                  const seen = new Set<string>();
+                  const uniqueTools = tools.filter((t) => {
+                    if (seen.has(t.name)) return false;
+                    seen.add(t.name);
+                    return true;
+                  });
+                  const enabled = new Set(pinnedTools);
+
+                  const summary = () =>
+                    uniqueTools.length > 0
+                      ? `${enabled.size}/${uniqueTools.length} pinned`
+                      : "none";
+
+                  const writeDraft = () => {
+                    const updated = structuredClone(draft) as ApertureConfig;
+                    updated.connectors = {
+                      ...updated.connectors,
+                      pinnedTools: uniqueTools
+                        .map((t) => t.name)
+                        .filter((name) => enabled.has(name)),
+                    };
+                    setDraft(updated);
+                  };
+
+                  const buildItems = (): ChecklistItem[] =>
+                    uniqueTools.map((t) => ({
+                      id: t.name,
+                      label: t.name,
+                      checked: enabled.has(t.name),
+                    }));
+
+                  const checklist = new FilterableChecklist(
+                    settingsTheme,
+                    buildItems(),
+                    (id) => {
+                      if (enabled.has(id)) enabled.delete(id);
+                      else enabled.add(id);
+                      writeDraft();
+                      checklist.updateItems(buildItems());
+                    },
+                    undefined,
+                    () => submenuDone(summary()),
+                  );
+
+                  return {
+                    render(width: number) {
+                      const count = enabled.size;
+                      const warn = count > CONTEXT_COST_WARNING_THRESHOLD;
+                      const title = ` Pinned Connector Tools (${count}/${uniqueTools.length})${
+                        warn ? " — high context cost" : ""
+                      }`;
+                      const lines = [settingsTheme.label(title, true), ""];
+                      if (uniqueTools.length === 0) {
+                        lines.push(
+                          settingsTheme.hint(
+                            "  No connector tools found on the Aperture gateway.",
+                          ),
+                        );
+                        lines.push("");
+                        lines.push(settingsTheme.hint("  Esc: back"));
+                        return lines;
+                      }
+                      if (warn) {
+                        checklist.setExtraHint(
+                          "Each pinned tool adds its full schema to the system prompt.",
+                        );
+                      } else {
+                        checklist.setExtraHint("");
+                      }
+                      lines.push(...checklist.render(width));
+                      return lines;
+                    },
+                    invalidate() {
+                      checklist.invalidate();
+                    },
+                    handleInput(data: string) {
+                      checklist.handleInput(data);
+                    },
+                  };
                 }),
             },
           ],

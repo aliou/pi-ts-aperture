@@ -29,6 +29,7 @@ import {
   createConnectorToolCallTool,
   createConnectorToolDescribeTool,
   createConnectorToolSearchTool,
+  createStandaloneConnectorTool,
 } from "./proxy-tools";
 
 // Module-level state — refreshed on each session_start
@@ -102,9 +103,36 @@ export default async function apertureConnectors(
 
     const connectorIds = cachedConnectors.map((c) => c.id);
 
-    pi.registerTool(createConnectorListTool(cachedConnectors, cachedTools));
-    pi.registerTool(createConnectorToolSearchTool(cachedTools, connectorIds));
-    pi.registerTool(createConnectorToolDescribeTool(cachedTools));
-    pi.registerTool(createConnectorToolCallTool(cachedTools, () => mcpSession));
+    // Split pinned tools (registered as first-class Pi tools) from the rest
+    // (reachable through the proxy meta-tools). Pinned names that no longer
+    // exist on the gateway are silently dropped here.
+    const pinnedNames = new Set(config.connectors.pinnedTools);
+    const pinnedTools = pinnedNames.size
+      ? cachedTools.filter((t) => pinnedNames.has(t.name))
+      : [];
+    const proxiedTools = pinnedNames.size
+      ? cachedTools.filter((t) => !pinnedNames.has(t.name))
+      : cachedTools;
+
+    const missingPins = pinnedNames.size
+      ? [...pinnedNames].filter((n) => !cachedTools.some((t) => t.name === n))
+      : [];
+    if (missingPins.length > 0) {
+      ctx.ui.notify(
+        `[connectors] pinned tool(s) not found on gateway: ${missingPins.join(", ")}`,
+        "warning",
+      );
+    }
+
+    for (const tool of pinnedTools) {
+      pi.registerTool(createStandaloneConnectorTool(tool, () => mcpSession));
+    }
+
+    pi.registerTool(createConnectorListTool(cachedConnectors, proxiedTools));
+    pi.registerTool(createConnectorToolSearchTool(proxiedTools, connectorIds));
+    pi.registerTool(createConnectorToolDescribeTool(proxiedTools));
+    pi.registerTool(
+      createConnectorToolCallTool(proxiedTools, () => mcpSession),
+    );
   });
 }
