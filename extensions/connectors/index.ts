@@ -43,7 +43,7 @@ export default async function apertureConnectors(
   await configLoader.load();
   const config = configLoader.getConfig();
 
-  if (!config.features.connectors) {
+  if (!config.connectors.enabled) {
     return;
   }
 
@@ -106,9 +106,13 @@ export default async function apertureConnectors(
     const connectorIds = cachedConnectors.map((c) => c.id);
 
     // Split pinned tools (registered as first-class Pi tools) from the rest
-    // (reachable through the proxy meta-tools). Pinned names that no longer
-    // exist on the gateway are silently dropped here.
-    const pinnedNames = new Set(config.connectors.pinnedTools);
+    // (reachable through the proxy meta-tools). Pinned entries whose
+    // `toolName` no longer exists on the gateway are silently dropped here.
+    // Matching is by `toolName`; `connectorId` is stored only for
+    // traceability.
+    const pinnedNames = new Set(
+      config.connectors.pinnedTools.map((p) => p.toolName),
+    );
     const pinnedTools = pinnedNames.size
       ? cachedTools.filter((t) => pinnedNames.has(t.name))
       : [];
@@ -132,7 +136,7 @@ export default async function apertureConnectors(
 
     // Discovery meta-tools (list / search / describe / call) are
     // decorrelated from pinned tools: pinning still runs whenever
-    // `features.connectors` is on, but the meta-tools are skipped when
+    // `connectors.enabled` is on, but the meta-tools are skipped when
     // `connectors.discoveryTools` is off.
     if (!registerDiscoveryTools) {
       return;

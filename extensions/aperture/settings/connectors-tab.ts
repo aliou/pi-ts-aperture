@@ -9,6 +9,7 @@ import { EmptyState } from "@aliou/pi-utils-ui";
 import type { Component } from "@earendil-works/pi-tui";
 import type {
   ApertureConfig,
+  PinnedConnectorTool,
   ResolvedConfig,
 } from "../../../src/shared/config/loader";
 import {
@@ -54,7 +55,7 @@ export function buildConnectorsTab(): ExtraSettingsTab<
       const { setDraftForScope, theme: settingsTheme } = ctx;
       const baseUrl = draft.baseUrl ?? ctx.resolved.baseUrl;
       const connectorsEnabled =
-        draft.features?.connectors ?? ctx.resolved.features.connectors;
+        draft.connectors?.enabled ?? ctx.resolved.connectors.enabled;
       const discoveryTools =
         draft.connectors?.discoveryTools ??
         ctx.resolved.connectors.discoveryTools;
@@ -63,7 +64,7 @@ export function buildConnectorsTab(): ExtraSettingsTab<
 
       const items: SectionedSettingItem[] = [
         {
-          id: "features.connectors",
+          id: "connectors.enabled",
           label: "Connector tools",
           description: "Register MCP connector tools from Aperture",
           currentValue: boolLabel(connectorsEnabled),
@@ -116,13 +117,24 @@ export function buildConnectorsTab(): ExtraSettingsTab<
 interface PinnedToolsEditorOptions {
   baseUrl: string;
   draft: ApertureConfig;
-  enabledInitial: string[];
+  enabledInitial: PinnedConnectorTool[];
   settingsTheme: SettingsTheme;
   submenuDone: (summary?: string) => void;
   setDraftForScope: (
     scope: typeof GLOBAL_SCOPE,
     config: ApertureConfig,
   ) => void;
+}
+
+/**
+ * Derive the connector id for a gateway tool name.
+ *
+ * Matches the prefix grouping used by the connectors extension: the segment
+ * before the first `_`. Tools without an underscore fall back to "other".
+ */
+function connectorIdFromToolName(name: string): string {
+  const idx = name.indexOf("_");
+  return idx > 0 ? name.slice(0, idx) : "other";
 }
 
 async function buildPinnedToolsEditor(
@@ -146,7 +158,7 @@ async function buildPinnedToolsEditor(
     seen.add(t.name);
     return true;
   });
-  const enabled = new Set(enabledInitial);
+  const enabled = new Set(enabledInitial.map((p) => p.toolName));
 
   const summary = () =>
     uniqueTools.length > 0
@@ -158,8 +170,11 @@ async function buildPinnedToolsEditor(
     updated.connectors = {
       ...updated.connectors,
       pinnedTools: uniqueTools
-        .map((t) => t.name)
-        .filter((name) => enabled.has(name)),
+        .filter((t) => enabled.has(t.name))
+        .map((t) => ({
+          connectorId: connectorIdFromToolName(t.name),
+          toolName: t.name,
+        })),
     };
     setDraftForScope(GLOBAL_SCOPE, updated);
   };

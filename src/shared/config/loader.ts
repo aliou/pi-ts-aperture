@@ -18,6 +18,7 @@ export type {
   ApertureConfig,
   ConnectorsConfig,
   DedicatedProviderConfig,
+  PinnedConnectorTool,
   ProxiedProviderConfig,
   ResolvedConfig,
 } from "./types";
