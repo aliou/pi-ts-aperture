@@ -1,5 +1,11 @@
 # @aliou/pi-ts-aperture
 
+## 0.6.3
+
+### Patch Changes
+
+- 9f0255d: Parse Aperture provider config as hujson so commented gateway configs work in settings.
+
 ## 0.6.2
 
 ### Patch Changes
