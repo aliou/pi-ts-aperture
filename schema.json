@@ -1,0 +1,131 @@
+{
+  "$ref": "#/definitions/ApertureConfig",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "definitions": {
+    "ApertureConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "baseUrl": {
+          "description": "Aperture gateway base URL (e.g. `https://aperture.example.com`).",
+          "type": "string"
+        },
+        "connectors": {
+          "$ref": "#/definitions/ConnectorsConfig"
+        },
+        "dedicated": {
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "description": "Register a standalone `aperture` provider from gateway models.",
+              "type": "boolean"
+            },
+            "providers": {
+              "items": {
+                "$ref": "#/definitions/DedicatedProviderConfig"
+              },
+              "type": "array"
+            }
+          },
+          "type": "object"
+        },
+        "features": {
+          "additionalProperties": false,
+          "properties": {
+            "connectors": {
+              "type": "boolean"
+            }
+          },
+          "type": "object"
+        },
+        "onboarding": {
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "description": "Whether the onboarding extension affordances are active.",
+              "type": "boolean"
+            }
+          },
+          "type": "object"
+        },
+        "onboardingDone": {
+          "description": "Whether onboarding has been completed.",
+          "type": "boolean"
+        },
+        "proxy": {
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "description": "Reroute selected Pi providers through Aperture.",
+              "type": "boolean"
+            },
+            "upstreamProviders": {
+              "items": {
+                "$ref": "#/definitions/ProxiedProviderConfig"
+              },
+              "type": "array"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "ConnectorsConfig": {
+      "additionalProperties": false,
+      "description": "Connector tool pinning.\n\nPinned tool names are matched verbatim against the MCP tool names returned by Aperture's /v1/mcp endpoint. Pinned tools are registered as first-class Pi tools instead of being reached through the connector proxy meta-tools.\n\nPinned names that no longer exist on the gateway are silently skipped on registration. The list is an allow-list, so stale entries are harmless.\n\nEach pinned tool adds its full schema to the system prompt, which raises context cost. Prefer pinning only the few tools you use every session.",
+      "properties": {
+        "discoveryTools": {
+          "description": "Register the connector discovery meta-tools (list / search / describe / call).\n\nWhen `false`, only pinned tools are registered as first-class Pi tools. Decorrelated from `features.connectors`, which still gates whether pinning runs at all. Defaults to `true`.",
+          "type": "boolean"
+        },
+        "pinnedTools": {
+          "description": "MCP tool names (from Aperture `/v1/mcp` `tools/list`) to register as first-class Pi tools instead of via the discovery meta-tools. Names are matched verbatim. Stale entries are silently skipped on registration.\n\nEach pinned tool adds its full JSON Schema to the system prompt, so prefer pinning only the few tools you use every session.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "DedicatedProviderConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "description": "Include this provider's models in the dedicated provider.",
+          "type": "boolean"
+        },
+        "id": {
+          "description": "Aperture provider id.",
+          "type": "string"
+        },
+        "name": {
+          "description": "Optional display name override.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "enabled"
+      ],
+      "type": "object"
+    },
+    "ProxiedProviderConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "Aperture provider id (matches `/api/providers` response).",
+          "type": "string"
+        },
+        "shouldCheckGatewayModels": {
+          "description": "Warn when configured local models are missing from the Aperture gateway.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    }
+  }
+}

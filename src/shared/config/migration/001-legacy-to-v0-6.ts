@@ -1,14 +1,19 @@
 import type { ApertureConfig, Migration } from "../types";
+import type { LegacyApertureConfig } from "./legacy";
 
 export const legacyToV06Migration: Migration<ApertureConfig> = {
   name: "001-legacy-to-v0-6",
-  shouldRun: (config) =>
-    config.providers !== undefined ||
-    config.checkGatewayModels !== undefined ||
-    config.apertureProvider !== undefined ||
-    (config.onboardingDone === undefined && config.baseUrl !== undefined),
+  shouldRun: (config) => {
+    const legacy = config as LegacyApertureConfig;
+    return (
+      legacy.providers !== undefined ||
+      legacy.checkGatewayModels !== undefined ||
+      legacy.apertureProvider !== undefined ||
+      (config.onboardingDone === undefined && config.baseUrl !== undefined)
+    );
+  },
   run: (config) => {
-    const migrated: ApertureConfig = { ...config };
+    const migrated = { ...config } as LegacyApertureConfig;
     const hadProviders =
       migrated.providers !== undefined ||
       migrated.checkGatewayModels !== undefined;
@@ -40,6 +45,6 @@ export const legacyToV06Migration: Migration<ApertureConfig> = {
       migrated.onboardingDone = true;
     }
 
-    return migrated;
+    return migrated satisfies ApertureConfig;
   },
 };

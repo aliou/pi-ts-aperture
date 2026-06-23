@@ -1,2 +1,7 @@
 pnpm run typecheck
 pnpm run lint
+pnpm run gen:schema
+if ! git diff --exit-code -- schema.json; then
+  echo "schema.json is out of date. Review and stage the generated schema.json changes."
+  exit 1
+fi
