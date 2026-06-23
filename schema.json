@@ -28,15 +28,6 @@
           },
           "type": "object"
         },
-        "features": {
-          "additionalProperties": false,
-          "properties": {
-            "connectors": {
-              "type": "boolean"
-            }
-          },
-          "type": "object"
-        },
         "onboarding": {
           "additionalProperties": false,
           "properties": {
@@ -72,16 +63,20 @@
     },
     "ConnectorsConfig": {
       "additionalProperties": false,
-      "description": "Connector tool pinning.\n\nPinned tool names are matched verbatim against the MCP tool names returned by Aperture's /v1/mcp endpoint. Pinned tools are registered as first-class Pi tools instead of being reached through the connector proxy meta-tools.\n\nPinned names that no longer exist on the gateway are silently skipped on registration. The list is an allow-list, so stale entries are harmless.\n\nEach pinned tool adds its full schema to the system prompt, which raises context cost. Prefer pinning only the few tools you use every session.",
+      "description": "Connector tools configuration.\n\n`enabled` gates the entire connectors feature: when `false`, no connector tools (pinned or discovery) are registered. It replaces the former `features.connectors` flag.",
       "properties": {
         "discoveryTools": {
-          "description": "Register the connector discovery meta-tools (list / search / describe / call).\n\nWhen `false`, only pinned tools are registered as first-class Pi tools. Decorrelated from `features.connectors`, which still gates whether pinning runs at all. Defaults to `true`.",
+          "description": "Register the connector discovery meta-tools (list / search / describe / call).\n\nWhen `false`, only pinned tools are registered as first-class Pi tools. Decorrelated from `enabled`, which still gates whether pinning runs at all. Defaults to `true`.",
+          "type": "boolean"
+        },
+        "enabled": {
+          "description": "Master switch for the connectors feature. When `false`, the connectors extension registers nothing. Defaults to `false`.",
           "type": "boolean"
         },
         "pinnedTools": {
-          "description": "MCP tool names (from Aperture `/v1/mcp` `tools/list`) to register as first-class Pi tools instead of via the discovery meta-tools. Names are matched verbatim. Stale entries are silently skipped on registration.\n\nEach pinned tool adds its full JSON Schema to the system prompt, so prefer pinning only the few tools you use every session.",
+          "description": "MCP tools to register as first-class Pi tools instead of via the discovery meta-tools. Matching is by `toolName`; stale entries are silently skipped on registration.\n\nEach pinned tool adds its full JSON Schema to the system prompt, so prefer pinning only the few tools you use every session.",
           "items": {
-            "type": "string"
+            "$ref": "#/definitions/PinnedConnectorTool"
           },
           "type": "array"
         }
@@ -107,6 +102,25 @@
       "required": [
         "id",
         "enabled"
+      ],
+      "type": "object"
+    },
+    "PinnedConnectorTool": {
+      "additionalProperties": false,
+      "description": "A pinned connector tool entry.\n\n`toolName` is matched verbatim against the MCP tool name returned by Aperture's /v1/mcp endpoint. `connectorId` is the connector that exposes the tool (the tool name prefix before the first `_`). It is stored for traceability; matching is done by `toolName`.\n\nPinned tools are registered as first-class Pi tools instead of being reached through the connector proxy meta-tools. Entries whose `toolName` no longer exists on the gateway are silently skipped on registration, so stale entries are harmless.\n\nEach pinned tool adds its full schema to the system prompt, which raises context cost. Prefer pinning only the few tools you use every session.",
+      "properties": {
+        "connectorId": {
+          "description": "Connector id exposing the tool (tool name prefix before the first `_`).",
+          "type": "string"
+        },
+        "toolName": {
+          "description": "MCP tool name (from Aperture `/v1/mcp` `tools/list`), matched verbatim.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "connectorId",
+        "toolName"
       ],
       "type": "object"
     },

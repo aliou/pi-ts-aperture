@@ -23,7 +23,7 @@ The capabilities are independent. Users can enable dedicated, proxy, or both.
 - `extensions/aperture/onboarding/setup-wizard.ts` - `UrlStep` TUI component with inline Aperture health check.
 - `extensions/aperture/shared/filterable-checklist.ts` - Shared `FilterableChecklist` Component (search input + checkbox list with Space toggle, optional Esc-to-close). Used by the onboarding provider steps and the settings pinned-tools submenu.
 - `extensions/aperture/settings/index.ts` - Registration entry for the `/aperture:settings` command via `registerSettingsCommand`. Per-tab files in `extensions/aperture/settings/` build the Global / Proxy / Dedicated / Connectors sections. Includes the pinned connector tools submenu (`connectors.pinnedTools`), which uses `FilterableChecklist` and reads the live gateway tool list via `createMcpSession().listTools()`.
-- `extensions/connectors/index.ts` - Connector extension entry point. Splits gateway tools into pinned (registered as first-class Pi tools) vs proxied (reached through the `connector_tool_*` meta-tools) based on `connectors.pinnedTools`. The discovery meta-tools only register when `connectors.discoveryTools` is on (default `true`); pinned tools register whenever `features.connectors` is on.
+- `extensions/connectors/index.ts` - Connector extension entry point. Splits gateway tools into pinned (registered as first-class Pi tools) vs proxied (reached through the `connector_tool_*` meta-tools) based on `connectors.pinnedTools`. The discovery meta-tools only register when `connectors.discoveryTools` is on (default `true`); pinned tools register whenever `connectors.enabled` is on.
 - `extensions/connectors/proxy-tools.ts` - Defines the four proxy meta-tools (list, search, describe, call), plus `createStandaloneConnectorTool` for pinned tools and the shared `renderConnectorCallResult` used by both the call meta-tool and standalone tools.
 - `extensions/aperture/shared/config/types.ts` - Config types.
 - `extensions/aperture/shared/config/defaults.ts` - Default config. Dedicated is enabled by default.
@@ -50,10 +50,10 @@ interface ApertureConfig {
     providers?: DedicatedProviderConfig[];
   };
   connectors?: {
-    pinnedTools?: string[]; // MCP tool names registered as first-class Pi tools
+    enabled?: boolean; // master switch for the connectors feature (default false)
+    pinnedTools?: { connectorId: string; toolName: string }[]; // MCP tools registered as first-class Pi tools
     discoveryTools?: boolean; // register the four discovery meta-tools (default true)
   };
-  features?: { connectors?: boolean };
 }
 ```
 
@@ -64,8 +64,7 @@ interface ResolvedConfig {
   onboarding: { enabled: boolean };
   proxy: { enabled: boolean; upstreamProviders: Required<ProxiedProviderConfig>[] };
   dedicated: { enabled: boolean; providers: DedicatedProviderConfig[] };
-  connectors: { pinnedTools: string[]; discoveryTools: boolean };
-  features: Record<ApertureFeatureId, boolean>;
+  connectors: { enabled: boolean; pinnedTools: { connectorId: string; toolName: string }[]; discoveryTools: boolean };
 }
 ```
 
@@ -82,7 +81,7 @@ interface DedicatedProviderConfig {
 }
 ```
 
-Defaults: `dedicated.enabled: true`, `proxy.enabled: false`, `connectors.pinnedTools: []`, `connectors.discoveryTools: true`, `features.connectors: false`, `onboardingDone: false`, `onboarding.enabled: true`, empty proxy providers, empty dedicated provider filters.
+Defaults: `dedicated.enabled: true`, `proxy.enabled: false`, `connectors.enabled: false`, `connectors.pinnedTools: []`, `connectors.discoveryTools: true`, `onboardingDone: false`, `onboarding.enabled: true`, empty proxy providers, empty dedicated provider filters.
 
 There is no current `mode` setting. Legacy `mode` configs are migrated to capability flags.
 
@@ -110,8 +109,8 @@ There is no current `mode` setting. Legacy `mode` configs are migrated to capabi
 - A non-empty dedicated provider list with all `enabled: false` means no dedicated models are registered.
 - Connector tools discovery goes through Aperture's `/v1/mcp` endpoint (Streamable HTTP, 2024-11-05 protocol). The MCP session is re-created on each `session_start`.
 - Connector tools default to four proxy meta-tools (`connector_list`, `connector_tool_search`, `connector_tool_describe`, `connector_tool_call`), so models discover tools via list/search/describe then call. This keeps individual tool schemas out of the system prompt.
-- `connectors.pinnedTools` is an allow-list of MCP tool names that should bypass the proxy meta-tools and be registered as first-class Pi tools. Names are matched verbatim against the gateway `tools/list` response.
-- `connectors.discoveryTools` (default `true`) toggles the four discovery meta-tools (list / search / describe / call). It is decorrelated from `connectors.pinnedTools`: pinning runs whenever `features.connectors` is on, even when discovery is disabled. Disabling discovery avoids registering the proxy meta-tools entirely, so the model only sees pinned tool schemas — pinning nothing and disabling discovery leaves the connector feature inert.
+- `connectors.pinnedTools` is an allow-list of MCP tools (stored as `{ connectorId, toolName }`) that should bypass the proxy meta-tools and be registered as first-class Pi tools. `toolName` is matched verbatim against the gateway `tools/list` response; `connectorId` is stored for traceability (it is the tool name prefix before the first `_`).
+- `connectors.discoveryTools` (default `true`) toggles the four discovery meta-tools (list / search / describe / call). It is decorrelated from `connectors.pinnedTools`: pinning runs whenever `connectors.enabled` is on, even when discovery is disabled. Disabling discovery avoids registering the proxy meta-tools entirely, so the model only sees pinned tool schemas — pinning nothing and disabling discovery leaves the connector feature inert.
 - Pinned tools use the raw MCP tool name (e.g. `github_list_repos`); no namespacing.
 - Pinned tools that no longer exist on the gateway are silently skipped on registration, with a single warning `ui.notify`. The allow-list stays harmless when stale.
 - Each pinned tool adds its full JSON Schema to the system prompt, raising context cost. The settings UI warns above a threshold (currently 10).

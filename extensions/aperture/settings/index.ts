@@ -56,10 +56,10 @@ export function registerApertureSettings(
           ...updated.dedicated,
           enabled: newValue === "enabled",
         };
-      if (id === "features.connectors")
-        updated.features = {
-          ...updated.features,
-          connectors: newValue === "enabled",
+      if (id === "connectors.enabled")
+        updated.connectors = {
+          ...updated.connectors,
+          enabled: newValue === "enabled",
         };
       if (id === "connectors.discoveryTools")
         updated.connectors = {
