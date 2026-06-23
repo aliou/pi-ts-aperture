@@ -1,10 +1,11 @@
 import type { ApertureConfig, Migration } from "../types";
+import type { LegacyApertureConfig } from "./legacy";
 
 export const modeToCapabilitiesMigration: Migration<ApertureConfig> = {
   name: "002-mode-to-capabilities",
-  shouldRun: (config) => config.mode !== undefined,
+  shouldRun: (config) => (config as LegacyApertureConfig).mode !== undefined,
   run: (config) => {
-    const migrated: ApertureConfig = { ...config };
+    const migrated = { ...config } as LegacyApertureConfig;
 
     if (migrated.mode === "proxy") {
       migrated.proxy = { ...migrated.proxy, enabled: true };
@@ -15,6 +16,6 @@ export const modeToCapabilitiesMigration: Migration<ApertureConfig> = {
     }
 
     delete migrated.mode;
-    return migrated;
+    return migrated satisfies ApertureConfig;
   },
 };

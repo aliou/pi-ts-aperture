@@ -22,6 +22,7 @@
     "src",
     "extensions",
     "README.md",
+    "schema.json",
     "!**/*.test.ts"
   ],
   "pi": {
@@ -61,7 +62,9 @@
     "version": "changeset version",
     "release": "pnpm changeset publish",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "gen:schema": "ts-json-schema-generator --path src/shared/config/types.ts --type ApertureConfig --no-type-check -o schema.json",
+    "check:schema": "ts-json-schema-generator --path src/shared/config/types.ts --type ApertureConfig --no-type-check -o /tmp/pi-ts-aperture-schema-check.json && diff -q schema.json /tmp/pi-ts-aperture-schema-check.json"
   },
   "devDependencies": {
     "@aliou/biome-plugins": "^0.8.1",
@@ -73,6 +76,7 @@
     "@vitest/coverage-v8": "^4.0.18",
     "dotenv": "^17.4.2",
     "husky": "^9.1.7",
+    "ts-json-schema-generator": "^2.9.0",
     "typebox": "^1.0.0",
     "typescript": "^5.9.3",
     "vitest": "^4.0.18"

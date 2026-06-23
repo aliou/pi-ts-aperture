@@ -1,4 +1,5 @@
 import type { ApertureConfig, Migration } from "../types";
+import type { LegacyApertureConfig } from "./legacy";
 
 export const normalizeCapabilitiesMigration: Migration<ApertureConfig> = {
   name: "003-normalize-capabilities",
@@ -7,9 +8,9 @@ export const normalizeCapabilitiesMigration: Migration<ApertureConfig> = {
     config.proxy?.upstreamProviders === undefined ||
     config.dedicated?.enabled === undefined ||
     config.dedicated?.providers === undefined ||
-    config.dedicated?.cachedModels !== undefined,
+    (config as LegacyApertureConfig).dedicated?.cachedModels !== undefined,
   run: (config) => {
-    const migrated: ApertureConfig = { ...config };
+    const migrated = { ...config } as LegacyApertureConfig;
     migrated.proxy = {
       ...migrated.proxy,
       enabled: migrated.proxy?.enabled ?? false,
@@ -20,7 +21,7 @@ export const normalizeCapabilitiesMigration: Migration<ApertureConfig> = {
       enabled: migrated.dedicated?.enabled ?? true,
       providers: migrated.dedicated?.providers ?? [],
     };
-    delete migrated.dedicated.cachedModels;
-    return migrated;
+    delete migrated.dedicated?.cachedModels;
+    return migrated satisfies ApertureConfig;
   },
 };

@@ -1,15 +1,18 @@
 export interface ProxiedProviderConfig {
+  /** Aperture provider id (matches `/api/providers` response). */
   id: string;
+  /** Warn when configured local models are missing from the Aperture gateway. */
   shouldCheckGatewayModels?: boolean;
 }
 
 export interface DedicatedProviderConfig {
+  /** Aperture provider id. */
   id: string;
+  /** Optional display name override. */
   name?: string;
+  /** Include this provider's models in the dedicated provider. */
   enabled: boolean;
 }
-
-export type ApertureMode = "proxy" | "dedicated";
 
 export type ApertureFeatureId = "connectors";
 
@@ -27,41 +30,47 @@ export type ApertureFeatureId = "connectors";
  * context cost. Prefer pinning only the few tools you use every session.
  */
 export interface ConnectorsConfig {
+  /**
+   * MCP tool names (from Aperture `/v1/mcp` `tools/list`) to register as
+   * first-class Pi tools instead of via the discovery meta-tools. Names are
+   * matched verbatim. Stale entries are silently skipped on registration.
+   *
+   * Each pinned tool adds its full JSON Schema to the system prompt, so
+   * prefer pinning only the few tools you use every session.
+   */
   pinnedTools?: string[];
   /**
-   * Register the connector discovery meta-tools (list / search /
-   * describe / call).
+   * Register the connector discovery meta-tools
+   * (list / search / describe / call).
    *
-   * When disabled, only pinned tools are registered as first-class Pi
-   * tools. Toggle independent of `features.connectors`, which still
-   * gates whether pinning runs at all.
+   * When `false`, only pinned tools are registered as first-class Pi tools.
+   * Decorrelated from `features.connectors`, which still gates whether
+   * pinning runs at all. Defaults to `true`.
    */
   discoveryTools?: boolean;
 }
 
 export interface ApertureConfig {
+  /** Aperture gateway base URL (e.g. `https://aperture.example.com`). */
   baseUrl?: string;
+  /** Whether onboarding has been completed. */
   onboardingDone?: boolean;
   onboarding?: {
+    /** Whether the onboarding extension affordances are active. */
     enabled?: boolean;
   };
   proxy?: {
+    /** Reroute selected Pi providers through Aperture. */
     enabled?: boolean;
     upstreamProviders?: ProxiedProviderConfig[];
   };
   dedicated?: {
+    /** Register a standalone `aperture` provider from gateway models. */
     enabled?: boolean;
     providers?: DedicatedProviderConfig[];
-    cachedModels?: unknown[];
   };
   connectors?: ConnectorsConfig;
   features?: Partial<Record<ApertureFeatureId, boolean>>;
-
-  // Legacy-only migration inputs.
-  mode?: ApertureMode;
-  providers?: string[];
-  checkGatewayModels?: string[];
-  apertureProvider?: boolean;
 }
 
 export interface ResolvedConfig {
