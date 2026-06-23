@@ -15,6 +15,9 @@ importers:
       '@aliou/pi-utils-settings':
         specifier: ^0.17.0
         version: 0.17.0(@earendil-works/pi-coding-agent@0.74.0(ws@8.19.0)(zod@3.25.76))(@earendil-works/pi-tui@0.74.0)
+      '@jaxxstorm/hujsonkit':
+        specifier: ^0.4.0
+        version: 0.4.0
       '@earendil-works/pi-ai':
         specifier: 0.74.0
         version: 0.74.0(ws@8.19.0)(zod@3.25.76)
@@ -524,6 +527,9 @@ packages:
   '@isaacs/cliui@9.0.0':
     resolution: {integrity: sha512-AokJm4tuBHillT+FpMtxQ60n8ObyXBatq7jD2/JA9dxbDDokKQm8KMht5ibGzLVU9IJDIKK4TPKgMHEYMn3lMg==}
     engines: {node: '>=18'}
+
+  '@jaxxstorm/hujsonkit@0.4.0':
+    resolution: {integrity: sha512-tpUsWwdsVPKDsWifFjTSfRWpyJgDoKfqZismY2SfXnRRE9E81PbLUm2mj/MZ3zVjdr46YV6uVqODsVQn4JxzFw==}
 
   '@jridgewell/resolve-uri@3.1.2':
     resolution: {integrity: sha512-bRISgCIjP20/tbWSPWMEi54QVPRZExkuD9lJL+UIxUKtwVJA8wW1Trb1jMs1RFXo1CBTNZ/5hpC9QvmKWdopKw==}
@@ -2576,6 +2582,8 @@ snapshots:
       wrap-ansi-cjs: wrap-ansi@7.0.0
 
   '@isaacs/cliui@9.0.0': {}
+
+  '@jaxxstorm/hujsonkit@0.4.0': {}
 
   '@jridgewell/resolve-uri@3.1.2': {}
 

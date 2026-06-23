@@ -98,4 +98,27 @@ describe("ApertureClient", () => {
       ]),
     );
   });
+
+  test("parses provider base URLs from commented /aperture/config", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          config: `
+            // Welcome to Aperture.
+            {
+              "providers": {
+                "anthropic": { "baseurl": "https://api.anthropic.com" },
+              },
+            }
+          `,
+        }),
+      }),
+    );
+
+    await expect(
+      new ApertureClient("http://gateway.test").providerBaseUrls(),
+    ).resolves.toEqual(new Map([["anthropic", "https://api.anthropic.com"]]));
+  });
 });

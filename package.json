@@ -31,7 +31,8 @@
     "video": "https://assets.aliou.me/github/aliou/pi-ts-aperture/demo.mp4"
   },
   "dependencies": {
-    "@aliou/pi-utils-settings": "^0.17.0"
+    "@aliou/pi-utils-settings": "^0.17.0",
+    "@jaxxstorm/hujsonkit": "^0.4.0"
   },
   "peerDependencies": {
     "@earendil-works/pi-ai": "0.74.0",

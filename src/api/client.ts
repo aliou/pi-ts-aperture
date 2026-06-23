@@ -1,3 +1,4 @@
+import { parse as parseHujson, toJsonValue } from "@jaxxstorm/hujsonkit";
 import type { ApertureProvider, ApertureProviderConfigInfo } from "./types";
 
 interface ProvidersResponse {
@@ -98,8 +99,14 @@ export class ApertureClient {
     }
 
     const body = (await res.json()) as ConfigResponse;
-    const config =
-      typeof body.config === "string" ? JSON.parse(body.config) : body.config;
+    let config = body.config;
+    if (typeof config === "string") {
+      try {
+        config = toJsonValue(parseHujson(config));
+      } catch {
+        return new Map();
+      }
+    }
     if (!config || typeof config !== "object") return new Map();
 
     const providers = (config as { providers?: unknown }).providers;
