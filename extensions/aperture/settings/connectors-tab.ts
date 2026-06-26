@@ -93,7 +93,7 @@ export function buildConnectorsTab(): ExtraSettingsTab<
               requestRender: submenuCtx.requestRender,
               onCancel: () => submenuDone(undefined),
               loadingDescription: "Fetching connector tools",
-              loader: async () =>
+              loader: async (signal) =>
                 buildPinnedToolsEditor({
                   baseUrl,
                   draft,
@@ -101,6 +101,7 @@ export function buildConnectorsTab(): ExtraSettingsTab<
                   settingsTheme,
                   submenuDone,
                   setDraftForScope,
+                  signal,
                 }),
             }),
         },
@@ -124,6 +125,8 @@ interface PinnedToolsEditorOptions {
     scope: typeof GLOBAL_SCOPE,
     config: ApertureConfig,
   ) => void;
+  /** Abort signal from the AsyncEditor; aborts the in-flight fetch on Esc. */
+  signal?: AbortSignal;
 }
 
 /**
@@ -147,9 +150,10 @@ async function buildPinnedToolsEditor(
     settingsTheme,
     submenuDone,
     setDraftForScope,
+    signal,
   } = options;
 
-  const tools = await listConnectorTools(baseUrl);
+  const tools = await listConnectorTools(baseUrl, signal);
   // De-dupe (gateway may return the same name from multiple
   // connectors) and preserve gateway order.
   const seen = new Set<string>();

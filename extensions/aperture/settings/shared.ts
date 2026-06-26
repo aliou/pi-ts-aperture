@@ -28,9 +28,12 @@ export function boolLabel(value: boolean): string {
  * Used by the pinned-tools submenu so it always reflects live gateway
  * state rather than the cached set from the last session_start.
  */
-export async function listConnectorTools(baseUrl: string): Promise<McpTool[]> {
-  const session = await createMcpSession(baseUrl);
-  return session.listTools();
+export async function listConnectorTools(
+  baseUrl: string,
+  signal?: AbortSignal,
+): Promise<McpTool[]> {
+  const session = await createMcpSession(baseUrl, signal);
+  return session.listTools(signal);
 }
 
 /**

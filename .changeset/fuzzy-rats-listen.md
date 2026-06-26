@@ -12,3 +12,4 @@ Add connectors extension and restructure shared config.
 - Config: extract shared config, types, and sync bus to `src/shared/`; add JSON Schema generation and `schema.json`; parse Aperture provider config as hujson so commented gateway configs work in settings.
 - API: Typebox schemas with response validation, live integration tests, and API-verified connector IDs.
 - Feature request/register event dispatching between aperture and connectors extensions.
+- Settings: cancel in-flight Aperture fetches when the user presses Esc on an async-loading submenu (`AsyncEditor`), instead of letting them run to the 5s timeout in the background. The abort signal is threaded through `ApertureClient`, `createMcpSession`, and `listTools`, and late resolves/rejects on a dismissed submenu are ignored so a slow gateway can no longer leave the settings panel unresponsive or silently mutate the draft.
