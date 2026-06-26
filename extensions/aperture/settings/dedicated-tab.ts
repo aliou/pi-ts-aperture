@@ -67,10 +67,10 @@ export function buildDedicatedTab(): ExtraSettingsTab<
                   requestRender: submenuCtx.requestRender,
                   onCancel: () => submenuDone(undefined),
                   loadingDescription: "Fetching gateway providers",
-                  loader: async () => {
+                  loader: async (signal) => {
                     const gatewayProviders = await new ApertureClient(
                       baseUrl,
-                    ).providers();
+                    ).providers(signal);
                     const providers: DedicatedProviderConfig[] =
                       mapDedicatedProviders(
                         gatewayProviders,

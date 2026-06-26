@@ -65,10 +65,13 @@ export function buildProxyTab(
                   requestRender: submenuCtx.requestRender,
                   onCancel: () => submenuDone(undefined),
                   loadingDescription: "Fetching gateway providers",
-                  loader: async () => {
+                  loader: async (signal) => {
                     const client = new ApertureClient(baseUrl);
                     const [providerInfos, gatewayProviders] = await Promise.all(
-                      [client.providerConfigInfos(), client.providers()],
+                      [
+                        client.providerConfigInfos(signal),
+                        client.providers(signal),
+                      ],
                     );
                     const providers = mapProxyProviders(
                       getKnownModels(),
