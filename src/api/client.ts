@@ -31,6 +31,26 @@ function parseProvider(
   });
 }
 
+/**
+ * HTTP error raised by {@link ApertureClient._fetch}. Carries the status
+ * code so callers can tolerate specific responses — for example the 403 that
+ * the admin-only `/aperture/config` endpoint returns to non-admin grants.
+ */
+export class ApertureHttpError extends Error {
+  readonly status: number;
+
+  constructor(
+    method: string,
+    path: string,
+    status: number,
+    statusText: string,
+  ) {
+    super(`[Aperture] ${method} ${path}: -> ${status} ${statusText}`);
+    this.name = "ApertureHttpError";
+    this.status = status;
+  }
+}
+
 export class ApertureClient {
   private readonly baseUrl: string;
 
@@ -57,9 +77,7 @@ export class ApertureClient {
 
     const res = await fetch(url, { method, signal: composedSignal });
     if (!res.ok) {
-      throw new Error(
-        `[Aperture] ${method} ${path}: -> ${res.status} ${res.statusText}`,
-      );
+      throw new ApertureHttpError(method, path, res.status, res.statusText);
     }
     return res.json() as T;
   }
@@ -96,9 +114,24 @@ export class ApertureClient {
   async providerConfigInfos(
     signal?: AbortSignal,
   ): Promise<Map<string, ApertureProviderConfigInfo>> {
-    const body = await this._fetch<{ config?: unknown }>("/aperture/config", {
-      signal,
-    });
+    // `/aperture/config` is admin-only on the Aperture gateway (requires
+    // role:admin). Non-admin grants get HTTP 403 and have no access to the
+    // upstream provider base URLs. We tolerate that and return an empty
+    // map so the rest of the client keeps working: proxy provider matching
+    // falls back to IDs via `/api/providers`, which non-admin grants can
+    // access (and dedicated mode never reads this endpoint). Any other
+    // failure still propagates.
+    let body: { config?: unknown };
+    try {
+      body = await this._fetch<{ config?: unknown }>("/aperture/config", {
+        signal,
+      });
+    } catch (error) {
+      if (error instanceof ApertureHttpError && error.status === 403) {
+        return new Map();
+      }
+      throw error;
+    }
     let config = body.config;
     if (typeof config === "string") {
       try {
