@@ -21,7 +21,11 @@ function provider(id: string, models: string[]) {
 }
 
 function proxyConfig(
-  upstreamProviders: { id: string; shouldCheckGatewayModels: boolean }[],
+  upstreamProviders: {
+    id: string;
+    apertureProviderId?: string;
+    shouldCheckGatewayModels: boolean;
+  }[],
 ) {
   return {
     baseUrl: "http://gateway.test",
@@ -154,6 +158,37 @@ describe("ApertureRuntime.checkMissingModels", () => {
       "openrouter: or-1, or-2, or-3, or-4, or-5, 2 more",
     );
     expect(message).toContain("synthetic: syn-2, syn-3");
+  });
+
+  test("checks gateway models under the mapped aperture provider id, not the Pi id", async () => {
+    // Manual mapping: Pi provider `claude-local` -> Aperture gateway provider
+    // `anthropic`. The gateway model check must look `claude-local` models up
+    // under `anthropic` on the gateway, and the warning must make the mapping
+    // explicit ("claude-local -> anthropic").
+    getConfig.mockReturnValue(
+      proxyConfig([
+        {
+          id: "claude-local",
+          apertureProviderId: "anthropic",
+          shouldCheckGatewayModels: true,
+        },
+      ]),
+    );
+    const notify = vi.fn();
+    const runtime = new ApertureRuntime();
+
+    await runtime.checkMissingModels(
+      {
+        getModels: () => [model("claude-local", "claude-3-5-sonnet")],
+        notify,
+      },
+      [provider("anthropic", ["claude-3-5-haiku"])],
+    );
+
+    expect(notify).toHaveBeenCalledOnce();
+    expect(notify.mock.calls[0][0]).toContain(
+      "claude-local -> anthropic: claude-3-5-sonnet",
+    );
   });
 
   test("skips when proxy is disabled", async () => {

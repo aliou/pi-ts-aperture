@@ -101,10 +101,15 @@ export class ApertureRuntime {
     const config = configLoader.getConfig();
     if (!config.proxy.enabled) return;
 
-    const checkedProviderIds = config.proxy.upstreamProviders
-      .filter((p) => p.shouldCheckGatewayModels)
-      .map((p) => p.id);
-    if (checkedProviderIds.length === 0) return;
+    // Pi provider id -> Aperture gateway provider id. The gateway model check
+    // must look models up under the Aperture provider id, which may differ
+    // from the Pi provider id for manual mappings (apertureProviderId).
+    const checkedByPiProvider = new Map(
+      config.proxy.upstreamProviders
+        .filter((p) => p.shouldCheckGatewayModels)
+        .map((p) => [p.id, p.apertureProviderId ?? p.id] as const),
+    );
+    if (checkedByPiProvider.size === 0) return;
 
     const gatewayUrl = resolveGatewayUrl(config);
     if (!gatewayUrl && !providers) return;
@@ -121,13 +126,11 @@ export class ApertureRuntime {
     );
 
     const allModels = deps.getModels();
-    const checkedProviders = new Set(checkedProviderIds);
-    const routedModels = allModels.filter((m) =>
-      checkedProviders.has(m.provider),
-    );
-    const missingModels = routedModels.filter(
-      (m) => !modelIdsByProvider.get(m.provider)?.has(m.id),
-    );
+    const missingModels = allModels.filter((model) => {
+      const apertureProviderId = checkedByPiProvider.get(model.provider);
+      if (!apertureProviderId) return false;
+      return !modelIdsByProvider.get(apertureProviderId)?.has(model.id);
+    });
 
     if (missingModels.length === 0) return;
 
@@ -138,14 +141,27 @@ export class ApertureRuntime {
       missingByProvider.set(model.provider, providerModels);
     }
 
+    const piToAperture = new Map(
+      config.proxy.upstreamProviders.map(
+        (p) => [p.id, p.apertureProviderId ?? p.id] as const,
+      ),
+    );
+
     const summary = Array.from(missingByProvider.entries())
       .map(([provider, models]) => {
+        const apertureProviderId = piToAperture.get(provider) ?? provider;
+        // Make the Pi -> Aperture mapping explicit in the warning when the two
+        // ids differ, so manual mappings are legible.
+        const providerLabel =
+          apertureProviderId === provider
+            ? provider
+            : `${provider} -> ${apertureProviderId}`;
         const shownModels = models
           .slice(0, MAX_MISSING_MODELS_PER_PROVIDER)
           .map((m) => m.id);
         const remainingCount = models.length - shownModels.length;
         const more = remainingCount > 0 ? `, ${remainingCount} more` : "";
-        return `${provider}: ${shownModels.join(", ")}${more}`;
+        return `${providerLabel}: ${shownModels.join(", ")}${more}`;
       })
       .join("; ");
 

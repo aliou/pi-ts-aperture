@@ -1,6 +1,22 @@
 export interface ProxiedProviderConfig {
-  /** Aperture provider id (matches `/api/providers` response). */
+  /**
+   * Pi provider id to reroute through Aperture. This is the id Pi uses to
+   * register the provider and match local models (`model.provider`). Routing
+   * does not use the Aperture gateway provider id — Aperture routes by the
+   * model id in the request body.
+   */
   id: string;
+  /**
+   * Aperture gateway provider id this Pi provider maps to, from
+   * `/api/providers`. Defaults to `id` when omitted (exact-id mapping), so
+   * existing configs keep working. Explicitly set this when the Pi provider
+   * id differs from the Aperture gateway provider id — e.g. for non-admin
+   * grants that cannot use automatic base-URL matching (they get 403 on the
+   * admin-only `/aperture/config`) and need a manual Pi→Aperture mapping.
+   *
+   * Used for the gateway model check and for display; never for routing.
+   */
+  apertureProviderId?: string;
   /** Warn when configured local models are missing from the Aperture gateway. */
   shouldCheckGatewayModels?: boolean;
 }

@@ -1,27 +1,32 @@
-import {
-  type ExtraSettingsTab,
-  SettingsDetailEditor,
-  type SettingsDetailField,
-  type SettingsSection,
-  type SettingsSubmenuContext,
+import type {
+  ExtraSettingsTab,
+  SettingsSection,
+  SettingsSubmenuContext,
 } from "@aliou/pi-utils-settings";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { ApertureClient } from "../../../src/api/client";
-import { mapProxyProviders } from "../../../src/provider-mapping";
 import type {
   ApertureConfig,
+  ProxiedProviderConfig,
   ResolvedConfig,
 } from "../../../src/shared/config/loader";
 import { AsyncEditor } from "./async-editor";
+import {
+  buildProxyRows,
+  ProxyUpstreamProvidersEditor,
+} from "./proxy-upstream-editor";
 import { boolLabel, GLOBAL_SCOPE, getTabConfig } from "./shared";
 
 /**
  * Build the Proxy extra tab.
  *
- * Hosts the proxy-enable toggle and the upstream-providers submenu, which
- * fetches Aperture gateway providers and lets the user toggle which Pi
- * providers get rerouted through Aperture (plus per-provider gateway model
- * checks).
+ * Hosts the proxy-enable toggle and the upstream-providers submenu. The
+ * submenu lists EVERY local Pi provider (not just auto-matched ones) and lets
+ * the user map any of them — including `anthropic` / `openai-codex` when they
+ * did not auto-match — to any Aperture gateway provider, or re-point an
+ * already-mapped provider to a different gateway endpoint. This is the escape
+ * hatch for non-admin grants that get 403 on the admin-only `/aperture/config`
+ * and so cannot use automatic base-URL matching.
  */
 export function buildProxyTab(
   getKnownModels: () => Model<Api>[],
@@ -51,7 +56,7 @@ export function buildProxyTab(
             {
               id: "proxy.upstreamProviders",
               label: "Upstream providers",
-              description: "Configured proxy providers and gateway checks",
+              description: "Proxied Pi providers and gateway model checks",
               currentValue:
                 upstreamProviders.length > 0
                   ? `${upstreamProviders.length} provider(s)`
@@ -73,92 +78,37 @@ export function buildProxyTab(
                         client.providers(signal),
                       ],
                     );
-                    const providers = mapProxyProviders(
-                      getKnownModels(),
-                      providerInfos,
+                    const knownModels = getKnownModels();
+                    const { entries, autoMatchUnavailable } = buildProxyRows(
+                      knownModels,
                       gatewayProviders,
+                      providerInfos,
                       upstreamProviders,
+                      // providerConfigInfos() returns an empty map on the 403
+                      // non-admin grants get from the admin-only
+                      // /aperture/config; surface that so the submenu can point
+                      // users to manual mapping instead of an opaque empty list.
+                      providerInfos.size === 0,
                     );
-                    const enabled = new Set(
-                      upstreamProviders.map((provider) => provider.id),
-                    );
-                    {
+
+                    const persist = (next: ProxiedProviderConfig[]) => {
                       const updated = structuredClone(draft) as ApertureConfig;
                       updated.proxy = {
                         ...updated.proxy,
-                        upstreamProviders: providers.filter((provider) =>
-                          enabled.has(provider.id),
-                        ),
+                        upstreamProviders: next,
                       };
                       setDraftForScope(GLOBAL_SCOPE, updated);
-                    }
-                    const fields: SettingsDetailField[] = providers.flatMap(
-                      (p, i) => [
-                        {
-                          type: "boolean" as const,
-                          id: `provider.${p.id}.enabled`,
-                          label: p.name ?? p.id,
-                          getValue: () => enabled.has(p.id),
-                          setValue: (value: boolean) => {
-                            if (value) enabled.add(p.id);
-                            else enabled.delete(p.id);
-                            const updated = structuredClone(
-                              draft,
-                            ) as ApertureConfig;
-                            updated.proxy = {
-                              ...updated.proxy,
-                              upstreamProviders: providers.filter((provider) =>
-                                enabled.has(provider.id),
-                              ),
-                            };
-                            setDraftForScope(GLOBAL_SCOPE, updated);
-                          },
-                          trueLabel: "enabled",
-                          falseLabel: "disabled",
-                        },
-                        {
-                          type: "boolean" as const,
-                          id: `provider.${p.id}.shouldCheckGatewayModels`,
-                          label: `${p.name ?? p.id} — gateway model check`,
-                          getValue: () => p.shouldCheckGatewayModels as boolean,
-                          setValue: (value: boolean) => {
-                            const provider = providers[i];
-                            if (provider)
-                              provider.shouldCheckGatewayModels = value;
-                            const updated = structuredClone(
-                              draft,
-                            ) as ApertureConfig;
-                            updated.proxy = {
-                              ...updated.proxy,
-                              upstreamProviders: providers.filter((provider) =>
-                                enabled.has(provider.id),
-                              ),
-                            };
-                            setDraftForScope(GLOBAL_SCOPE, updated);
-                          },
-                          trueLabel: "on",
-                          falseLabel: "off",
-                        },
-                      ],
-                    );
-                    return new SettingsDetailEditor({
-                      title: () =>
-                        `Upstream Providers (${enabled.size}/${providers.length})`,
-                      fields,
+                    };
+
+                    return new ProxyUpstreamProvidersEditor({
                       theme: settingsTheme,
                       requestRender: submenuCtx.requestRender,
-                      onDone: () =>
-                        submenuDone(
-                          providers.length > 0
-                            ? `${enabled.size}/${providers.length} enabled`
-                            : "none",
-                        ),
-                      getDoneSummary: () =>
-                        providers.length > 0
-                          ? `${enabled.size}/${providers.length} enabled`
-                          : "none",
-                      emptyStateText:
-                        "No local providers match the Aperture gateway provider base URLs.",
+                      onDone: (summary) => submenuDone(summary ?? "back"),
+                      gatewayProviders,
+                      entries,
+                      persist,
+                      autoMatchUnavailable,
+                      context: "settings",
                     });
                   },
                 }),

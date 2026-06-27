@@ -21,14 +21,15 @@ import { getMarkdownTheme } from "@earendil-works/pi-coding-agent";
 import type { Component, TUI } from "@earendil-works/pi-tui";
 import { Box, Key, Markdown, matchesKey, Text } from "@earendil-works/pi-tui";
 import { ApertureClient } from "../../../src/api/client";
-import {
-  mapDedicatedProviders,
-  mapProxyProviders,
-} from "../../../src/provider-mapping";
+import { mapDedicatedProviders } from "../../../src/provider-mapping";
 import type {
   ApertureConfig,
   DedicatedProviderConfig,
 } from "../../../src/shared/config/loader";
+import {
+  buildProxyRows,
+  ProxyUpstreamProvidersEditor,
+} from "../settings/proxy-upstream-editor";
 import {
   type ChecklistItem,
   FilterableChecklist,
@@ -42,7 +43,11 @@ export interface OnboardingResult {
   baseUrl: string;
   proxyEnabled: boolean;
   dedicatedEnabled: boolean;
-  upstreamProviders: { id: string; shouldCheckGatewayModels: boolean }[];
+  upstreamProviders: {
+    id: string;
+    apertureProviderId?: string;
+    shouldCheckGatewayModels: boolean;
+  }[];
   dedicatedProviders: DedicatedProviderConfig[];
 }
 
@@ -50,7 +55,11 @@ interface OnboardingState {
   baseUrl: string;
   proxyEnabled: boolean;
   dedicatedEnabled: boolean;
-  upstreamProviders: { id: string; shouldCheckGatewayModels: boolean }[];
+  upstreamProviders: {
+    id: string;
+    apertureProviderId?: string;
+    shouldCheckGatewayModels: boolean;
+  }[];
   dedicatedProviders: DedicatedProviderConfig[];
 }
 
@@ -181,12 +190,9 @@ class CapabilitiesStep implements Component {
 
 class ProxyProvidersStep implements Component {
   private readonly settingsTheme: SettingsTheme;
-  private providers: ReturnType<typeof mapProxyProviders> = [];
-  private readonly checked: Set<string>;
-  private checkAllGateway = true;
+  private editor: ProxyUpstreamProvidersEditor | null = null;
   private loading = true;
   private error = "";
-  private checklist: FilterableChecklist | null = null;
 
   constructor(
     theme: Theme,
@@ -196,11 +202,6 @@ class ProxyProvidersStep implements Component {
     private readonly wizCtx: WizardStepContext,
   ) {
     this.settingsTheme = getSettingsTheme(theme);
-    this.checked = new Set(state.upstreamProviders.map((p) => p.id));
-    const allCheckedGateway =
-      state.upstreamProviders.length > 0 &&
-      state.upstreamProviders.every((p) => p.shouldCheckGatewayModels);
-    this.checkAllGateway = allCheckedGateway;
     this.fetchProviders();
   }
 
@@ -211,14 +212,31 @@ class ProxyProvidersStep implements Component {
         client.providerConfigInfos(),
         client.providers(),
       ]);
-      this.providers = mapProxyProviders(
+      const { entries, autoMatchUnavailable } = buildProxyRows(
         this.knownModels,
-        providerInfos,
         gatewayProviders,
+        providerInfos,
         this.state.upstreamProviders,
+        providerInfos.size === 0,
       );
+      this.editor = new ProxyUpstreamProvidersEditor({
+        theme: this.settingsTheme,
+        // Bind on the step: `tui.requestRender` is a plain (unbound) method,
+        // so passing it by reference loses `this` and crashes inside the TUI
+        // when the editor calls it. The settings submenu path already hands
+        // us a bound `submenuCtx.requestRender`; onboarding passes the TUI
+        // directly, so wrap it here.
+        requestRender: () => this.tui.requestRender(),
+        onDone: () => this.advance(),
+        gatewayProviders,
+        entries,
+        autoMatchUnavailable,
+        persist: (next) => {
+          this.state.upstreamProviders = next;
+        },
+        context: "onboarding",
+      });
       this.loading = false;
-      this.saveState();
       this.tui.requestRender();
     } catch {
       this.error = "Failed to fetch providers from gateway";
@@ -227,15 +245,9 @@ class ProxyProvidersStep implements Component {
     }
   }
 
-  private buildItems(): ChecklistItem[] {
-    return this.providers.map((provider) => ({
-      id: provider.id,
-      label: provider.name ?? provider.id,
-      checked: this.checked.has(provider.id),
-    }));
+  invalidate() {
+    this.editor?.invalidate();
   }
-
-  invalidate() {}
 
   render(width: number): string[] {
     if (this.loading) {
@@ -250,72 +262,26 @@ class ProxyProvidersStep implements Component {
       return [`  ${this.error}`, ""];
     }
 
-    if (this.providers.length === 0) {
-      return [
-        "  No local providers match the Aperture gateway provider base URLs.",
-        "",
-        "  You can add proxy providers later in /aperture:settings.",
-      ];
-    }
-
-    if (!this.checklist) {
-      this.checklist = new FilterableChecklist(
-        this.settingsTheme,
-        this.buildItems(),
-        (id) => this.toggleProvider(id),
-        () => this.toggleGatewayCheck(),
-      );
-    } else {
-      this.checklist.updateItems(this.buildItems());
-    }
-
-    const gwLabel = this.checkAllGateway ? "on" : "off";
-    this.checklist.setExtraHint(
-      `gateway model check: ${gwLabel} — warns if local provider models are missing from Aperture`,
-    );
-
+    if (!this.editor) return [];
     return [
-      "  Select providers to route through Aperture:",
+      "  Select providers to route through Aperture (incl. manual mapping):",
       "",
-      ...this.checklist.render(width),
+      ...this.editor.render(width),
     ];
   }
 
-  private toggleProvider(id: string): void {
-    if (this.checked.has(id)) {
-      this.checked.delete(id);
-    } else {
-      this.checked.add(id);
-    }
-    this.saveState();
-  }
-
-  private toggleGatewayCheck(): void {
-    this.checkAllGateway = !this.checkAllGateway;
-    this.saveState();
+  /** Advance to the next onboarding step (Enter in list mode, or q). */
+  private advance(): void {
+    this.wizCtx.markComplete();
+    this.wizCtx.goNext();
   }
 
   handleInput(data: string): void {
-    if (this.loading) return;
-    if (matchesKey(data, Key.enter)) {
-      this.wizCtx.markComplete();
-      this.wizCtx.goNext();
-      return;
-    }
-    if (this.checklist) {
-      this.checklist.handleInput(data);
-      if (data === " ") this.wizCtx.markComplete();
-    }
-  }
-
-  private saveState(): void {
-    this.state.upstreamProviders = this.providers
-      .map((provider) => provider.id)
-      .filter((id) => this.checked.has(id))
-      .map((id) => ({
-        id,
-        shouldCheckGatewayModels: this.checkAllGateway,
-      }));
+    if (this.loading || !this.editor) return;
+    // The wizard intercepts Esc (cancel) before the step, so the editor uses
+    // Enter to continue (list mode) / back out of the target picker. All
+    // other keys (type-to-filter, arrows, Space, Ctrl+G) are delegated.
+    this.editor.handleInput(data);
   }
 }
 
@@ -402,6 +368,9 @@ export function createOnboardingWizard(
     upstreamProviders:
       currentConfig?.proxy?.upstreamProviders?.map((p) => ({
         id: p.id,
+        ...(p.apertureProviderId
+          ? { apertureProviderId: p.apertureProviderId }
+          : {}),
         shouldCheckGatewayModels: p.shouldCheckGatewayModels ?? false,
       })) ?? [],
     dedicatedProviders:
@@ -697,7 +666,11 @@ export function buildOnboardedConfig(
   baseUrl: string,
   proxyEnabled: boolean,
   dedicatedEnabled: boolean,
-  upstreamProviders: { id: string; shouldCheckGatewayModels: boolean }[],
+  upstreamProviders: {
+    id: string;
+    apertureProviderId?: string;
+    shouldCheckGatewayModels: boolean;
+  }[],
   dedicatedProviders: DedicatedProviderConfig[],
 ): ApertureConfig {
   return {
@@ -710,6 +683,9 @@ export function buildOnboardedConfig(
       enabled: proxyEnabled,
       upstreamProviders: upstreamProviders.map((p) => ({
         id: p.id,
+        ...(p.apertureProviderId
+          ? { apertureProviderId: p.apertureProviderId }
+          : {}),
         shouldCheckGatewayModels: p.shouldCheckGatewayModels,
       })),
     },

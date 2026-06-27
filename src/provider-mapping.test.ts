@@ -128,4 +128,125 @@ describe("mapProxyProviders", () => {
 
     expect(result[0].shouldCheckGatewayModels).toBe(false);
   });
+
+  // --- merge / manual mapping (non-admin escape hatch) ---
+
+  test("manual mapping survives when auto-match cannot find it (non-admin, mismatched id)", () => {
+    // Non-admin: providerInfos is empty (403 on /aperture/config). The Pi
+    // provider id does not match any gateway provider id, so auto-match would
+    // drop it. A persisted manual mapping (apertureProviderId set) must be
+    // preserved so it is not clobbered on the next submenu reopen.
+    const localModels = [localModel("openrouter", "https://openrouter.ai/api")];
+    const gatewayProviders = [gatewayProvider("anthropic")];
+
+    const result = mapProxyProviders(localModels, new Map(), gatewayProviders, [
+      { id: "openrouter", apertureProviderId: "anthropic" },
+    ]);
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({
+      id: "openrouter",
+      apertureProviderId: "anthropic",
+      matchedAutomatically: false,
+      existsLocally: true,
+    });
+    // name resolved from the gateway provider the mapping points at
+    expect(result[0].name).toBe("anthropic");
+  });
+
+  test("persisted apertureProviderId overrides the auto match", () => {
+    // `foo` would auto-match gateway id `foo`, but the persisted config maps it
+    // to `bar`. The override is honored rather than silently dropped.
+    const localModels = [localModel("foo", "https://example.com")];
+    const gatewayProviders = [gatewayProvider("foo"), gatewayProvider("bar")];
+
+    const result = mapProxyProviders(localModels, new Map(), gatewayProviders, [
+      { id: "foo", apertureProviderId: "bar" },
+    ]);
+
+    expect(result[0]).toMatchObject({
+      id: "foo",
+      apertureProviderId: "bar",
+      matchedAutomatically: true,
+    });
+    expect(result[0].name).toBe("bar");
+  });
+
+  test("stale manual mapping (local Pi provider gone) is kept and flagged", () => {
+    // No local model for `deleted`; the mapping must not be silently dropped.
+    const localModels: Model<Api>[] = [];
+    const gatewayProviders = [gatewayProvider("anthropic")];
+
+    const result = mapProxyProviders(localModels, new Map(), gatewayProviders, [
+      { id: "deleted", apertureProviderId: "anthropic" },
+    ]);
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({
+      id: "deleted",
+      apertureProviderId: "anthropic",
+      matchedAutomatically: false,
+      existsLocally: false,
+    });
+    expect(result[0].baseUrls).toEqual([]);
+  });
+
+  test("dedupes persisted entries by Pi provider id (last wins)", () => {
+    const localModels = [localModel("openrouter", "https://openrouter.ai/api")];
+    const gatewayProviders = [gatewayProvider("anthropic")];
+
+    const result = mapProxyProviders(localModels, new Map(), gatewayProviders, [
+      {
+        id: "openrouter",
+        apertureProviderId: "openai",
+        shouldCheckGatewayModels: false,
+      },
+      {
+        id: "openrouter",
+        apertureProviderId: "anthropic",
+        shouldCheckGatewayModels: true,
+      },
+    ]);
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({
+      id: "openrouter",
+      apertureProviderId: "anthropic",
+      shouldCheckGatewayModels: true,
+      matchedAutomatically: false,
+    });
+  });
+
+  test("auto-match by base URL assigns the specific matching gateway provider id", () => {
+    // Local provider `openrouter` matches the `openai-compatible` config entry
+    // by base URL (admin). The mapping must point at `openai-compatible`, not
+    // the local `openrouter` id, and stay auto-matched.
+    const localModels = [localModel("openrouter", "https://openrouter.ai/api")];
+    const providerInfos = new Map<string, ApertureProviderConfigInfo>([
+      [
+        "openai-compatible",
+        {
+          id: "openai-compatible",
+          name: "OpenAI Compatible",
+          baseUrl: "https://openrouter.ai/api/",
+        },
+      ],
+    ]);
+    const gatewayProviders = [gatewayProvider("openai-compatible")];
+
+    const result = mapProxyProviders(
+      localModels,
+      providerInfos,
+      gatewayProviders,
+      [],
+    );
+
+    expect(result[0]).toMatchObject({
+      id: "openrouter",
+      apertureProviderId: "openai-compatible",
+      matchedAutomatically: true,
+    });
+    // Gateway provider name takes precedence over the config-info name.
+    expect(result[0].name).toBe("openai-compatible");
+  });
 });

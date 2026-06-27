@@ -31,6 +31,7 @@ export class FilterableChecklist implements Component {
   private readonly searchInput = new Input();
   private selectedIndex = 0;
   private extraHint = "";
+  private customHint = "";
   private items: ChecklistItem[];
   private filteredItems: ChecklistItem[];
 
@@ -38,8 +39,12 @@ export class FilterableChecklist implements Component {
     private readonly settingsTheme: SettingsTheme,
     items: ChecklistItem[],
     private readonly onToggle: (id: string) => void,
-    /** Optional Ctrl+G handler (e.g. proxy gateway check toggle). */
-    private readonly onCtrlG?: () => void,
+    /**
+     * Optional Ctrl+G handler (e.g. proxy gateway check toggle). Receives the
+     * id of the highlighted item so per-row actions can target it; ignore the
+     * arg for whole-list toggles.
+     */
+    private readonly onCtrlG?: (id: string) => void,
     /**
      * Optional close handler invoked on Esc. When omitted, Esc falls through
      * to the search input (see Input.handleInput), which matches the original
@@ -58,6 +63,16 @@ export class FilterableChecklist implements Component {
 
   setExtraHint(hint: string): void {
     this.extraHint = hint;
+  }
+
+  /**
+   * Replaces the default hint line (navigate / toggle / Ctrl+G / Esc) with a
+   * fully custom hint. This is useful when the checklist is used for richer
+   * interactions than plain toggling. Call with an empty string to restore the
+   * default hint line.
+   */
+  setHint(hint: string): void {
+    this.customHint = hint;
   }
 
   invalidate() {}
@@ -125,16 +140,24 @@ export class FilterableChecklist implements Component {
     }
 
     lines.push("");
-    const hints = ["↑↓: navigate", "Space: toggle"];
-    if (this.onCtrlG) hints.push("Ctrl+G: gateway check");
-    if (this.onClose) hints.push("Esc: back");
-    lines.push(this.settingsTheme.hint(`  ${hints.join(" · ")}`));
-    if (this.extraHint) {
+    if (this.customHint) {
       lines.push(
-        ...wrapTextWithAnsi(this.extraHint, Math.max(1, width - 4)).map(
+        ...wrapTextWithAnsi(this.customHint, Math.max(1, width - 4)).map(
           (line) => this.settingsTheme.hint(`  ${line}`),
         ),
       );
+    } else {
+      const hints = ["↑↓: navigate", "Space: toggle"];
+      if (this.onCtrlG) hints.push("Ctrl+G: gateway check");
+      if (this.onClose) hints.push("Esc: back");
+      lines.push(this.settingsTheme.hint(`  ${hints.join(" · ")}`));
+      if (this.extraHint) {
+        lines.push(
+          ...wrapTextWithAnsi(this.extraHint, Math.max(1, width - 4)).map(
+            (line) => this.settingsTheme.hint(`  ${line}`),
+          ),
+        );
+      }
     }
 
     return lines;
@@ -149,7 +172,8 @@ export class FilterableChecklist implements Component {
     }
 
     if (this.onCtrlG && matchesKey(data, Key.ctrl("g"))) {
-      this.onCtrlG();
+      const item = this.filteredItems[this.selectedIndex];
+      this.onCtrlG(item?.id ?? "");
       return;
     }
 
