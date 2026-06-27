@@ -1,5 +1,30 @@
 # @aliou/pi-ts-aperture
 
+## 0.7.0
+
+### Minor Changes
+
+- 6d03cf5: Add connectors extension and restructure shared config.
+
+  - Connectors: new extension that discovers MCP tools from Aperture's `/v1/mcp` endpoint and registers them with Pi. Splits tools into pinned (first-class Pi tools) and proxied (reached through discovery meta-tools).
+  - Connectors config: `connectors.enabled` master switch (default `false`), `connectors.pinnedTools` stored as `{ connectorId; toolName }` objects, and `connectors.discoveryTools` toggle (default `true`) for the list / search / describe / call meta-tools.
+  - Resource proxy tools (`connector_resource_search` / `connector_resource_describe` / `connector_resource_serve`) for browsing gateway resources.
+  - Connector UI redesign with `@aliou/pi-utils-ui` components and Markdown rendering.
+  - Settings: new Connectors tab with pinned-tools submenu driven by `FilterableChecklist`, reading live gateway tool state.
+  - Config: extract shared config, types, and sync bus to `src/shared/`; add JSON Schema generation and `schema.json`; parse Aperture provider config as hujson so commented gateway configs work in settings.
+  - API: Typebox schemas with response validation, live integration tests, and API-verified connector IDs.
+  - Feature request/register event dispatching between aperture and connectors extensions.
+  - Settings: cancel in-flight Aperture fetches when the user presses Esc on an async-loading submenu (`AsyncEditor`), instead of letting them run to the 5s timeout in the background. The abort signal is threaded through `ApertureClient`, `createMcpSession`, and `listTools`, and late resolves/rejects on a dismissed submenu are ignored so a slow gateway can no longer leave the settings panel unresponsive or silently mutate the draft.
+
+### Patch Changes
+
+- 8bb0984: Tolerate the admin-only `/aperture/config` endpoint so non-admin Aperture grants can use the extension.
+
+  - `ApertureClient._fetch` now throws an `ApertureHttpError` that carries the HTTP status, so callers can tolerate specific responses.
+  - `providerConfigInfos()` (and `providerBaseUrls()`) return an empty map on HTTP 403 instead of throwing. `/aperture/config` requires `role:admin` and is the only endpoint a non-admin grant cannot access; everything else (`/api/providers`, `/api/connectors`, `/v1/mcp`, model calls) returns 200 for non-admin grants.
+  - Proxy provider matching already falls back to IDs via `/api/providers` when provider config info is empty, so onboarding and the proxy settings submenu keep working for non-admin users. Admin users keep the richer base-URL matching. Dedicated mode and connectors never read `/aperture/config` and are unaffected.
+  - Other non-403 errors still propagate.
+
 ## 0.6.3
 
 ### Patch Changes
