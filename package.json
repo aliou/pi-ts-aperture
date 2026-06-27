@@ -34,6 +34,7 @@
   },
   "dependencies": {
     "@aliou/pi-utils-settings": "^0.18.0",
+    "@aliou/pi-utils-ui": "^0.5.0",
     "@jaxxstorm/hujsonkit": "^0.4.0"
   },
   "peerDependencies": {
@@ -68,7 +69,6 @@
   },
   "devDependencies": {
     "@aliou/biome-plugins": "^0.8.1",
-    "@aliou/pi-utils-ui": "^0.5.0",
     "@biomejs/biome": "^2.4.15",
     "@changesets/cli": "^2.27.11",
     "@earendil-works/pi-coding-agent": "0.74.0",

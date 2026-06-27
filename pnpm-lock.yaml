@@ -15,6 +15,9 @@ importers:
       '@aliou/pi-utils-settings':
         specifier: ^0.18.0
         version: 0.18.0(@earendil-works/pi-coding-agent@0.74.0(ws@8.19.0)(zod@3.25.76))(@earendil-works/pi-tui@0.74.0)
+      '@aliou/pi-utils-ui':
+        specifier: ^0.5.0
+        version: 0.5.0(@earendil-works/pi-coding-agent@0.74.0(ws@8.19.0)(zod@3.25.76))(@earendil-works/pi-tui@0.74.0)
       '@earendil-works/pi-ai':
         specifier: 0.74.0
         version: 0.74.0(ws@8.19.0)(zod@3.25.76)
@@ -28,9 +31,6 @@ importers:
       '@aliou/biome-plugins':
         specifier: ^0.8.1
         version: 0.8.1(@biomejs/biome@2.4.15)
-      '@aliou/pi-utils-ui':
-        specifier: ^0.5.0
-        version: 0.5.0(@earendil-works/pi-coding-agent@0.74.0(ws@8.19.0)(zod@3.25.76))(@earendil-works/pi-tui@0.74.0)
       '@biomejs/biome':
         specifier: ^2.4.15
         version: 2.4.15
