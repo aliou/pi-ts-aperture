@@ -26,9 +26,6 @@ import {
 } from "../../src/shared/events";
 import {
   createConnectorListTool,
-  createConnectorResourceDescribeTool,
-  createConnectorResourceSearchTool,
-  createConnectorResourceServeTool,
   createConnectorToolCallTool,
   createConnectorToolDescribeTool,
   createConnectorToolSearchTool,
@@ -150,11 +147,6 @@ export default async function apertureConnectors(
       pi.registerTool(
         createConnectorToolCallTool(proxiedTools, () => mcpSession),
       );
-
-      // Resource proxy tools (search / describe / serve).
-      pi.registerTool(createConnectorResourceSearchTool(() => mcpSession));
-      pi.registerTool(createConnectorResourceDescribeTool(() => mcpSession));
-      pi.registerTool(createConnectorResourceServeTool(() => mcpSession));
     }
   });
 }
