@@ -30,7 +30,8 @@
       "./extensions/aperture/index.ts",
       "./extensions/connectors/index.ts"
     ],
-    "video": "https://assets.aliou.me/github/aliou/pi-ts-aperture/demo.mp4"
+    "video": "https://assets.aliou.me/github/aliou/pi-ts-aperture/demo.mp4",
+    "image": "https://assets.aliou.me/github/aliou/pi-ts-aperture/banner.png"
   },
   "dependencies": {
     "@aliou/pi-utils-settings": "^0.18.0",
