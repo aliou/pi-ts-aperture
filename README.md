@@ -2,9 +2,15 @@
 
 # pi-ts-aperture
 
-Route Pi LLM providers through [Tailscale Aperture](https://tailscale.com/docs/features/aperture), a managed AI gateway on your tailnet.
+Route Pi LLM providers and connector tools through [Tailscale Aperture](https://tailscale.com/docs/features/aperture), a managed AI gateway on your tailnet.
 
-Aperture handles API key injection and request routing server-side. This extension integrates Pi with Aperture using two independent capabilities: **dedicated** (a standalone `aperture` provider) and **proxy** (reroute existing Pi providers). Dedicated is enabled by default, and you can enable proxy at the same time.
+Aperture handles API key injection and request routing server-side. This extension integrates Pi with Aperture through three independent capabilities:
+
+- **Dedicated** (default): a standalone `aperture` provider whose models come from the gateway.
+- **Proxy**: reroute existing Pi providers (anthropic, openai, openai-codex, ...) through Aperture.
+- **Connectors**: expose MCP tools from the gateway to Pi as discovery meta-tools or pinned first-class tools.
+
+Each capability is independent. Enable dedicated, proxy, connectors, or any combination.
 
 ## Install
 
@@ -20,7 +26,7 @@ After installing, run the onboarding wizard:
 /aperture:onboarding
 ```
 
-[![Onboarding walkthrough](https://assets.aliou.me/pi-extensions/demos/aperture/v0.6.0/onboarding-both-modes.gif)](https://assets.aliou.me/pi-extensions/demos/aperture/v0.6.0/onboarding-both-modes.mp4)
+[![Onboarding walkthrough](https://assets.aliou.me/pi-extensions/demos/aperture/v0.8.0/onboarding.gif)](https://assets.aliou.me/pi-extensions/demos/aperture/v0.8.0/onboarding.mp4)
 
 The wizard walks you through:
 
@@ -41,6 +47,8 @@ You can change everything later with:
 
 ### Dedicated provider (default)
 
+[![Dedicated provider walkthrough](https://assets.aliou.me/pi-extensions/demos/aperture/v0.8.0/dedicated-provider.gif)](https://assets.aliou.me/pi-extensions/demos/aperture/v0.8.0/dedicated-provider.mp4)
+
 Registers a standalone `aperture` provider whose model list comes from the Aperture gateway. You can include all gateway providers or filter to specific gateway providers during onboarding or in settings.
 
 Dedicated model IDs are the model IDs reported by Aperture. They are not prefixed with the upstream provider ID. The extension keeps an internal route map so each model uses the Pi API that matches its Aperture provider compatibility.
@@ -59,18 +67,35 @@ User-defined model entries in `models.json` take precedence over gateway default
 
 ### Proxy existing providers
 
+[![Proxy providers walkthrough](https://assets.aliou.me/pi-extensions/demos/aperture/v0.8.0/proxy-providers.gif)](https://assets.aliou.me/pi-extensions/demos/aperture/v0.8.0/proxy-providers.mp4)
+
 Reroutes existing Pi providers (anthropic, openai, openai-codex, etc.) through Aperture. Each provider keeps its own model definitions and settings. Only the base URL, API key, and headers are overridden.
 
 Proxy provider selection maps Aperture providers to local Pi registry providers by base URL. It supports child path matching, so an Aperture provider under `https://chatgpt.com/backend-api/codex` can match Pi's local `https://chatgpt.com/backend-api` provider. If base URLs are unavailable, matching also falls back to provider IDs.
 
 Proxy mode is useful when you want Pi's native per-provider model configuration but want requests to go through Aperture for server-side credentials and routing.
 
+## Connectors
+
+Aperture can expose MCP connectors (GitHub, your own internal tools, ...) at `/v1/mcp`. When `connectors.enabled` is on, this extension discovers gateway tools and registers them with Pi in one of two ways:
+
+- **Discovery meta-tools** (default): four prefixed tools let the model list, search, describe, and call connector tools on demand. Individual tool schemas stay out of the system prompt.
+  - `aperture_connector_list`
+  - `aperture_connector_tool_search`
+  - `aperture_connector_tool_describe`
+  - `aperture_connector_tool_call`
+- **Pinned tools**: an allow-list of gateway tools (`connectors.pinnedTools`) that register as first-class Pi tools, surfaced directly to the model. Pin a small set you use every session; each pin adds its full schema to the system prompt.
+
+[![Connectors walkthrough](https://assets.aliou.me/pi-extensions/demos/aperture/v0.8.0/connectors.gif)](https://assets.aliou.me/pi-extensions/demos/aperture/v0.8.0/connectors.mp4)
+
+Enable connectors in `/aperture:settings`. Saved pin changes take effect on the next Pi restart (Pi cannot unregister tools at runtime).
+
 ## Commands
 
 | Command | Description |
 |---|---|
 | `/aperture:onboarding` | Onboarding wizard. Only available while onboarding is enabled. |
-| `/aperture:settings` | Settings UI to update connection, capabilities, proxy providers, dedicated provider filters, onboarding status, and the onboarding extension toggle. |
+| `/aperture:settings` | Settings UI to update connection, capabilities, proxy providers, dedicated provider filters, pinned connector tools, onboarding status, and the onboarding extension toggle. |
 
 ## How it works
 
@@ -131,15 +156,23 @@ Configuration is saved globally to `~/.pi/agent/extensions/aperture.json`.
       { "id": "openai", "name": "OpenAI", "enabled": true },
       { "id": "google", "name": "Google", "enabled": false }
     ]
+  },
+  "connectors": {
+    "enabled": false,
+    "discoveryTools": true,
+    "pinnedTools": [
+      { "connectorId": "github", "toolName": "github_list_repos" }
+    ]
   }
 }
 ```
 
 Notes:
 
-- There is no `mode` setting. Use `proxy.enabled` and `dedicated.enabled` independently.
+- There is no `mode` setting. Use `proxy.enabled`, `dedicated.enabled`, and `connectors.enabled` independently.
 - An empty `dedicated.providers` list means all Aperture gateway providers are included.
 - Model metadata belongs in `~/.pi/agent/models.json`, not in the extension config.
+- Pinned connector tools use the raw gateway tool name (e.g. `github_list_repos`); `connectorId` is stored for traceability. Pinned tools that no longer exist on the gateway are silently skipped.
 
 ## Requirements
 
