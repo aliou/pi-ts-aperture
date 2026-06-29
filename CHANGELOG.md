@@ -1,5 +1,42 @@
 # @aliou/pi-ts-aperture
 
+## 0.8.0
+
+### Minor Changes
+
+- 61e66dc: Filter disabled gateway providers out of proxy and dedicated flows.
+
+  `/api/providers` lists every provider regardless of its `disabled` flag, so
+  disabled providers and their models leaked into the proxy settings/onboarding
+  checklist, the dedicated provider list, the dedicated model registration,
+  and the proxy gateway-model check.
+
+  `ApertureClient.providers()` now also fetches `/v1/models` (which only lists
+  models for enabled providers) and:
+
+  - drops any provider whose models are all absent from `/v1/models`, and
+  - intersects each surviving provider's `models` with `/v1/models`, so only
+    callable models are exposed.
+
+  Because every consumer (proxy settings, proxy onboarding, dedicated settings,
+  dedicated onboarding, dedicated runtime, `checkMissingModels`, `health`)
+  goes through `providers()`, all of them now exclude disabled providers
+  without further changes. If `/v1/models` is unreachable, `providers()` falls
+  back to the unfiltered `/api/providers` result so a transient models-endpoint
+  failure never blocks the rest of the client.
+
+- 9f0f70e: Rename connector discovery meta-tools with an `aperture_` prefix and remove the resource proxy tools.
+
+  - The four discovery meta-tools are now `aperture_connector_list`,
+    `aperture_connector_tool_search`, `aperture_connector_tool_describe`,
+    and `aperture_connector_tool_call`. The prefix avoids collisions with
+    other extensions and signals the Aperture provenance.
+  - Removed `connector_resource_search`, `connector_resource_describe`, and
+    `connector_resource_serve`. Pi does not support MCP resources well enough
+    yet, so the resource browsing flow is gone until that lands. The MCP
+    session still exposes the resource methods; only the Pi tool wrappers
+    were removed.
+
 ## 0.7.0
 
 ### Minor Changes
