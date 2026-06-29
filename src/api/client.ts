@@ -1,10 +1,7 @@
-import { parse as parseHujson, toJsonValue } from "@jaxxstorm/hujsonkit";
 import type { TSchema } from "typebox";
 import { Value } from "typebox/value";
 import {
   type ApertureProvider,
-  type ApertureProviderConfigInfo,
-  ApertureProviderConfigInfoSchema,
   ApertureProviderSchema,
   type ConnectorInfo,
   ConnectorInfoSchema,
@@ -31,10 +28,33 @@ function parseProvider(
   });
 }
 
+function parseProvidersBody(body: unknown): ApertureProvider[] {
+  if (Array.isArray(body)) {
+    return body
+      .map((provider) => parseProvider(provider))
+      .filter((p): p is ApertureProvider => p !== null);
+  }
+  if (!body || typeof body !== "object") return [];
+
+  const providers = (body as { providers?: unknown }).providers;
+  if (Array.isArray(providers)) {
+    return providers
+      .map((provider) => parseProvider(provider))
+      .filter((p): p is ApertureProvider => p !== null);
+  }
+  if (providers && typeof providers === "object") {
+    return Object.entries(providers as Record<string, unknown>).flatMap(
+      ([id, provider]) => {
+        const parsed = parseProvider(provider, id);
+        return parsed ? [parsed] : [];
+      },
+    );
+  }
+  return [];
+}
+
 /**
- * HTTP error raised by {@link ApertureClient._fetch}. Carries the status
- * code so callers can tolerate specific responses — for example the 403 that
- * the admin-only `/aperture/config` endpoint returns to non-admin grants.
+ * HTTP error raised by {@link ApertureClient._fetch} on non-OK responses.
  */
 export class ApertureHttpError extends Error {
   readonly status: number;
@@ -82,91 +102,49 @@ export class ApertureClient {
     return res.json() as T;
   }
 
-  async providers(signal?: AbortSignal): Promise<ApertureProvider[]> {
-    const body = await this._fetch<{ providers?: unknown } | unknown[]>(
-      "/api/providers",
-      {
-        signal,
-      },
-    );
-    if (Array.isArray(body)) {
-      return body
-        .map((provider) => parseProvider(provider))
-        .filter((p): p is ApertureProvider => p !== null);
-    }
-
-    const providers = body.providers;
-    if (Array.isArray(providers)) {
-      return providers
-        .map((provider) => parseProvider(provider))
-        .filter((p): p is ApertureProvider => p !== null);
-    }
-    if (providers && typeof providers === "object") {
-      return Object.entries(providers).flatMap(([id, provider]) => {
-        const parsed = parseProvider(provider, id);
-        return parsed ? [parsed] : [];
-      });
-    }
-
-    return [];
-  }
-
-  async providerConfigInfos(
-    signal?: AbortSignal,
-  ): Promise<Map<string, ApertureProviderConfigInfo>> {
-    // `/aperture/config` is admin-only on the Aperture gateway (requires
-    // role:admin). Non-admin grants get HTTP 403 and have no access to the
-    // upstream provider base URLs. We tolerate that and return an empty
-    // map so the rest of the client keeps working: proxy provider matching
-    // falls back to IDs via `/api/providers`, which non-admin grants can
-    // access (and dedicated mode never reads this endpoint). Any other
-    // failure still propagates.
-    let body: { config?: unknown };
+  /**
+   * Set of model ids exposed by `/v1/models`.
+   *
+   * Disabled providers' models do not appear in `/v1/models`, so this is the
+   * source of truth for which gateway providers are usable. Failures (network,
+   * 404, ...) resolve to an empty set, which leaves the `/api/providers`
+   * result unfiltered as a safe fallback.
+   */
+  private async enabledModelIds(signal?: AbortSignal): Promise<Set<string>> {
     try {
-      body = await this._fetch<{ config?: unknown }>("/aperture/config", {
+      const body = await this._fetch<{ data?: unknown[] }>("/v1/models", {
         signal,
       });
-    } catch (error) {
-      if (error instanceof ApertureHttpError && error.status === 403) {
-        return new Map();
+      if (!Array.isArray(body.data)) return new Set();
+      const ids = new Set<string>();
+      for (const entry of body.data) {
+        if (!entry || typeof entry !== "object") continue;
+        const id = (entry as Record<string, unknown>).id;
+        if (typeof id === "string") ids.add(id);
       }
-      throw error;
+      return ids;
+    } catch {
+      return new Set();
     }
-    let config = body.config;
-    if (typeof config === "string") {
-      try {
-        config = toJsonValue(parseHujson(config));
-      } catch {
-        return new Map();
-      }
-    }
-    if (!config || typeof config !== "object") return new Map();
-
-    const providers = (config as { providers?: unknown }).providers;
-    if (!providers || typeof providers !== "object") return new Map();
-
-    const result = new Map<string, ApertureProviderConfigInfo>();
-    for (const [id, provider] of Object.entries(providers)) {
-      if (!provider || typeof provider !== "object") continue;
-      const record = provider as Record<string, unknown>;
-      const baseUrl =
-        (typeof record.baseurl === "string" ? record.baseurl : undefined) ??
-        (typeof record.baseUrl === "string" ? record.baseUrl : undefined) ??
-        (typeof record.base_url === "string" ? record.base_url : undefined);
-      if (!baseUrl) continue;
-
-      const parsed = validate<ApertureProviderConfigInfo>(
-        ApertureProviderConfigInfoSchema,
-        { ...record, id, baseUrl },
-      );
-      if (parsed) result.set(id, parsed);
-    }
-    return result;
   }
 
-  async providerBaseUrls(signal?: AbortSignal): Promise<Map<string, string>> {
-    const infos = await this.providerConfigInfos(signal);
-    return new Map([...infos].map(([id, info]) => [id, info.baseUrl]));
+  async providers(signal?: AbortSignal): Promise<ApertureProvider[]> {
+    const [body, enabledModelIds] = await Promise.all([
+      this._fetch<{ providers?: unknown } | unknown[]>("/api/providers", {
+        signal,
+      }),
+      this.enabledModelIds(signal),
+    ]);
+
+    const parsed = parseProvidersBody(body);
+    if (enabledModelIds.size === 0) return parsed;
+
+    return parsed
+      .map((provider) => ({
+        ...provider,
+        models: provider.models.filter((id) => enabledModelIds.has(id)),
+      }))
+      .filter((provider) => provider.models.length > 0);
   }
 
   async connectors(signal?: AbortSignal): Promise<ConnectorInfo[]> {

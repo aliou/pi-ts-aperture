@@ -1,6 +1,6 @@
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { describe, expect, test } from "vitest";
-import type { ApertureProvider, ApertureProviderConfigInfo } from "./api/types";
+import type { ApertureProvider } from "./api/types";
 import { mapProxyProviders } from "./provider-mapping";
 
 function localModel(
@@ -33,10 +33,10 @@ function gatewayProvider(id: string): ApertureProvider {
 }
 
 describe("mapProxyProviders", () => {
-  test("matches local providers by gateway ID when config info is empty (non-admin grant)", () => {
-    // Non-admin grants get 403 on /aperture/config, so providerConfigInfos()
-    // returns an empty map. proxy matching must still work via IDs, which
-    // come from /api/providers (accessible to non-admin grants).
+  test("matches local providers by gateway ID from /api/providers", () => {
+    // /api/providers reflects the grant-scoped enabled providers, so proxy
+    // matching is done exclusively by provider id. No base-URL matching is
+    // performed.
     const localModels = [
       localModel("anthropic", "https://api.anthropic.com"),
       localModel("openai", "https://api.openai.com"),
@@ -47,15 +47,10 @@ describe("mapProxyProviders", () => {
       gatewayProvider("openai"),
     ];
 
-    const result = mapProxyProviders(
-      localModels,
-      new Map(),
-      gatewayProviders,
-      [],
-    );
+    const result = mapProxyProviders(localModels, gatewayProviders, []);
 
     expect(result.map((p) => p.id)).toEqual(["anthropic", "openai"]);
-    // name resolved from gateway providers when config info is absent
+    // name resolved from gateway providers
     expect(result[0]).toMatchObject({ id: "anthropic", name: "anthropic" });
     // gateway model check defaults to on
     expect(result[0].shouldCheckGatewayModels).toBe(true);
@@ -65,56 +60,21 @@ describe("mapProxyProviders", () => {
     const localModels = [localModel("unmatched", "https://example.com")];
     const gatewayProviders = [gatewayProvider("anthropic")];
 
-    const result = mapProxyProviders(
-      localModels,
-      new Map(),
-      gatewayProviders,
-      [],
-    );
+    const result = mapProxyProviders(localModels, gatewayProviders, []);
 
     expect(result).toEqual([]);
   });
 
-  test("matches local providers by base URL when config info is populated (admin)", () => {
+  test("ignores local providers not present on the gateway", () => {
     const localModels = [
       localModel("anthropic", "https://api.anthropic.com/v1"),
-      localModel("openrouter", "https://openrouter.ai/api"),
       localModel("excluded", "https://nowhere.example.com"),
     ];
-    const providerInfos = new Map<string, ApertureProviderConfigInfo>([
-      [
-        "anthropic",
-        {
-          id: "anthropic",
-          name: "Anthropic",
-          baseUrl: "https://api.anthropic.com",
-        },
-      ],
-      [
-        "openrouter",
-        {
-          id: "openrouter",
-          name: "OpenRouter",
-          baseUrl: "https://openrouter.ai/api/",
-        },
-      ],
-    ]);
     const gatewayProviders = [gatewayProvider("anthropic")];
 
-    const result = mapProxyProviders(
-      localModels,
-      providerInfos,
-      gatewayProviders,
-      [],
-    );
+    const result = mapProxyProviders(localModels, gatewayProviders, []);
 
-    // Already sorted by id by collectLocalProviders.
-    expect(result.map((p) => p.id)).toEqual(["anthropic", "openrouter"]);
-    // Gateway provider name takes precedence over the config name when both exist.
-    expect(result.find((p) => p.id === "anthropic")?.name).toBe("anthropic");
-    // Config name used for the URL-matched provider that is not a gateway provider.
-    expect(result.find((p) => p.id === "openrouter")?.name).toBe("OpenRouter");
-    // No URL or ID match -> filtered out.
+    expect(result.map((p) => p.id)).toEqual(["anthropic"]);
     expect(result.some((p) => p.id === "excluded")).toBe(false);
   });
 
@@ -122,7 +82,7 @@ describe("mapProxyProviders", () => {
     const localModels = [localModel("anthropic", "https://api.anthropic.com")];
     const gatewayProviders = [gatewayProvider("anthropic")];
 
-    const result = mapProxyProviders(localModels, new Map(), gatewayProviders, [
+    const result = mapProxyProviders(localModels, gatewayProviders, [
       { id: "anthropic", shouldCheckGatewayModels: false },
     ]);
 

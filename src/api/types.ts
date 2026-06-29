@@ -30,19 +30,6 @@ export const ApertureProviderSchema = Type.Object(
 
 export type ApertureProvider = Static<typeof ApertureProviderSchema>;
 
-export const ApertureProviderConfigInfoSchema = Type.Object(
-  {
-    id: Type.String(),
-    name: Type.Optional(Type.String()),
-    baseUrl: Type.String(),
-  },
-  { additionalProperties: true },
-);
-
-export type ApertureProviderConfigInfo = Static<
-  typeof ApertureProviderConfigInfoSchema
->;
-
 export const ConnectorInfoSchema = Type.Object(
   {
     id: Type.String(),

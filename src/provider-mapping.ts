@@ -1,77 +1,45 @@
 import type { Api, Model } from "@earendil-works/pi-ai";
-import type { ApertureProvider, ApertureProviderConfigInfo } from "./api/types";
+import type { ApertureProvider } from "./api/types";
 import type { DedicatedProviderConfig } from "./shared/config/loader";
 
-function normalizeProviderBaseUrl(url: string): string[] {
-  const normalized = url.replace(/\/+$/, "");
-  return [normalized, normalized.replace(/\/v1\/?$/, "")];
-}
-
-function isSameOrChildUrl(parent: string, candidate: string): boolean {
-  return candidate === parent || candidate.startsWith(`${parent}/`);
-}
-
-function hasMatchingBaseUrl(
-  baseUrls: string[],
-  apertureBaseUrls: Set<string>,
-): boolean {
-  const apertureUrls = [...apertureBaseUrls];
-  return baseUrls.some((baseUrl) =>
-    normalizeProviderBaseUrl(baseUrl).some((localUrl) =>
-      apertureUrls.some((apertureUrl) =>
-        isSameOrChildUrl(localUrl, apertureUrl),
-      ),
-    ),
-  );
-}
-
-function collectLocalProviders(models: readonly Model<Api>[]) {
-  return Array.from(
-    models.reduce((providers, model) => {
-      if (model.provider === "aperture") return providers;
-      const baseUrls = providers.get(model.provider) ?? new Set<string>();
-      if (model.baseUrl) baseUrls.add(model.baseUrl);
-      providers.set(model.provider, baseUrls);
-      return providers;
-    }, new Map<string, Set<string>>()),
-  )
-    .map(([id, baseUrls]) => ({ id, baseUrls: [...baseUrls] }))
-    .sort((a, b) => a.id.localeCompare(b.id));
-}
-
+/**
+ * Match local Pi providers against Aperture gateway providers.
+ *
+ * The `/api/providers` endpoint already filters providers by grant scope
+ * (enabled/disabled, role grants), so we match exclusively by provider id
+ * against what the gateway exposes. No base-URL matching is performed; the
+ * admin-only `/aperture/config` endpoint and its base URLs are no longer
+ * consulted here.
+ */
 export function mapProxyProviders(
   localModels: readonly Model<Api>[],
-  providerInfos: Map<string, ApertureProviderConfigInfo>,
   gatewayProviders: ApertureProvider[],
   existingProviders: { id: string; shouldCheckGatewayModels?: boolean }[],
 ) {
   const names = new Map(
     gatewayProviders.map((provider) => [provider.id, provider.name]),
   );
-  const apertureBaseUrls = new Set(
-    [...providerInfos.values()].flatMap((provider) =>
-      normalizeProviderBaseUrl(provider.baseUrl),
-    ),
+  const gatewayProviderIds = new Set(
+    gatewayProviders.map((provider) => provider.id),
   );
   const existing = new Map(
     existingProviders.map((provider) => [provider.id, provider]),
   );
-  const gatewayProviderIds = new Set([
-    ...providerInfos.keys(),
-    ...gatewayProviders.map((provider) => provider.id),
-  ]);
 
-  return collectLocalProviders(localModels)
-    .filter(
-      (provider) =>
-        hasMatchingBaseUrl(provider.baseUrls, apertureBaseUrls) ||
-        gatewayProviderIds.has(provider.id),
-    )
-    .map((provider) => ({
-      ...provider,
-      name: names.get(provider.id) ?? providerInfos.get(provider.id)?.name,
+  return Array.from(
+    localModels.reduce((providers, model) => {
+      if (model.provider === "aperture") return providers;
+      if (!gatewayProviderIds.has(model.provider)) return providers;
+      providers.add(model.provider);
+      return providers;
+    }, new Set<string>()),
+  )
+    .sort((a, b) => a.localeCompare(b))
+    .map((id) => ({
+      id,
+      name: names.get(id),
       shouldCheckGatewayModels:
-        existing.get(provider.id)?.shouldCheckGatewayModels ?? true,
+        existing.get(id)?.shouldCheckGatewayModels ?? true,
     }));
 }
 

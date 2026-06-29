@@ -101,10 +101,11 @@ Enable connectors in `/aperture:settings`. Saved pin changes take effect on the 
 
 ### Aperture API usage
 
-The extension reads provider data from Aperture using:
-
-- `GET /api/providers` for gateway providers and models.
-- `GET /aperture/config` for provider compatibility, names, and base URLs.
+The extension reads providers from `GET /api/providers` and cross-references
+`GET /v1/models`. Disabled providers' models do not appear in `/v1/models`,
+so any provider whose models are all absent from it is dropped (and each
+provider's model list is intersected with `/v1/models`), leaving only
+providers that are enabled and callable for the current grant.
 
 ### Request routing
 

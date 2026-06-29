@@ -6,22 +6,65 @@ describe("ApertureClient", () => {
     vi.unstubAllGlobals();
   });
 
-  test("parses /api/providers array response", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        providers: [
+  // helpers ---------------------------------------------------------------
+  // providers() cross-references /v1/models, so every test that calls it
+  // must stub both endpoints. `route` returns a fetch Response mock based on
+  // the URL being requested.
+  function mockFetch(route: (url: string) => unknown) {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string) => {
+        const payload = route(url);
+        if (payload instanceof Error) return Promise.reject(payload);
+        if (payload && typeof payload === "object" && "ok" in payload) {
+          return Promise.resolve(payload);
+        }
+        return Promise.resolve({ ok: true, json: async () => payload });
+      }),
+    );
+  }
+
+  function models(...ids: string[]) {
+    return { data: ids.map((id) => ({ id, object: "model" })) };
+  }
+
+  function providersArray(...providers: Record<string, unknown>[]) {
+    return { providers };
+  }
+
+  function notOk(status: number, statusText: string) {
+    return { ok: false, status, statusText, json: async () => ({}) };
+  }
+
+  // ----------------------------------------------------------------------
+  // /api/providers array response
+  // /v1/models exposes only `anthropic`'s model, so `unmatched` (disabled)
+  // is dropped and `anthropic` survives with only its callable model.
+  test("providers() filters out providers whose models are absent from /v1/models", async () => {
+    mockFetch((url) => {
+      if (url.endsWith("/api/providers")) {
+        return providersArray(
           {
             id: "anthropic",
             name: "Anthropic",
             description: "Claude models",
-            models: ["claude-3-5-sonnet"],
+            models: ["claude-3-5-sonnet", "claude-internal"],
             compatibility: { anthropic_messages: true },
           },
-        ],
-      }),
+          {
+            id: "unmatched",
+            name: "Unmatched",
+            description: "",
+            models: ["unmatched-model"],
+            compatibility: { openai_chat: true },
+          },
+        );
+      }
+      if (url.endsWith("/v1/models")) {
+        return models("claude-3-5-sonnet");
+      }
+      return notOk(404, "Not Found");
     });
-    vi.stubGlobal("fetch", fetchMock);
 
     await expect(
       new ApertureClient("http://gateway.test/").providers(),
@@ -30,22 +73,18 @@ describe("ApertureClient", () => {
         id: "anthropic",
         name: "Anthropic",
         description: "Claude models",
+        // claude-internal is not in /v1/models -> intersected out
         models: ["claude-3-5-sonnet"],
         compatibility: { anthropic_messages: true },
       },
     ]);
-    expect(fetchMock).toHaveBeenCalledWith(
-      "http://gateway.test/api/providers",
-      expect.objectContaining({ method: "GET" }),
-    );
   });
 
-  test("parses /api/providers object response", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue({
-        ok: true,
-        json: async () => ({
+  // /api/providers object response; only openrouter is enabled.
+  test("providers() parses object response and keeps only enabled providers", async () => {
+    mockFetch((url) => {
+      if (url.endsWith("/api/providers")) {
+        return {
           providers: {
             openrouter: {
               name: "OpenRouter",
@@ -53,10 +92,20 @@ describe("ApertureClient", () => {
               models: ["openai/gpt-5"],
               compatibility: { openai_chat: true },
             },
+            disabled: {
+              name: "Disabled",
+              description: "",
+              models: ["disabled-model"],
+              compatibility: { openai_chat: true },
+            },
           },
-        }),
-      }),
-    );
+        };
+      }
+      if (url.endsWith("/v1/models")) {
+        return models("openai/gpt-5");
+      }
+      return notOk(404, "Not Found");
+    });
 
     await expect(
       new ApertureClient("http://gateway.test").providers(),
@@ -71,156 +120,48 @@ describe("ApertureClient", () => {
     ]);
   });
 
-  test("parses provider base URLs from /aperture/config", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          config: JSON.stringify({
-            providers: {
-              anthropic: {
-                baseurl: "https://api.anthropic.com",
-                name: "Anthropic",
-              },
-              openrouter: {
-                baseurl: "https://openrouter.ai/api/",
-                name: "OpenRouter",
-              },
-            },
-          }),
-        }),
-      }),
-    );
-
-    await expect(
-      new ApertureClient("http://gateway.test").providerBaseUrls(),
-    ).resolves.toEqual(
-      new Map([
-        ["anthropic", "https://api.anthropic.com"],
-        ["openrouter", "https://openrouter.ai/api/"],
-      ]),
-    );
-  });
-
-  test("parses provider base URLs from commented /aperture/config", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          config: `
-            // Welcome to Aperture.
-            {
-              "providers": {
-                "anthropic": { "baseurl": "https://api.anthropic.com" },
-              },
-            }
-          `,
-        }),
-      }),
-    );
-
-    await expect(
-      new ApertureClient("http://gateway.test").providerBaseUrls(),
-    ).resolves.toEqual(new Map([["anthropic", "https://api.anthropic.com"]]));
-  });
-
-  // /aperture/config is admin-only on the gateway: a non-admin grant
-  // (role:user) gets 403 while still being able to call /api/providers and
-  // /v1/mcp. The client must not break proxy/dedicated flows for those users.
-
-  test("providerConfigInfos() returns empty map on 403", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue({
-        ok: false,
-        status: 403,
-        statusText: "Forbidden",
-      }),
-    );
-
-    await expect(
-      new ApertureClient("http://gateway.test").providerConfigInfos(),
-    ).resolves.toEqual(new Map());
-  });
-
-  test("providerBaseUrls() returns empty map on 403", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue({
-        ok: false,
-        status: 403,
-        statusText: "Forbidden",
-      }),
-    );
-
-    await expect(
-      new ApertureClient("http://gateway.test").providerBaseUrls(),
-    ).resolves.toEqual(new Map());
-  });
-
-  test("providerConfigInfos() rethrows non-403 errors", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue({
-        ok: false,
-        status: 500,
-        statusText: "Internal Server Error",
-      }),
-    );
-
-    await expect(
-      new ApertureClient("http://gateway.test").providerConfigInfos(),
-    ).rejects.toBeInstanceOf(ApertureHttpError);
-  });
-
-  test("proxy provider fetch path resolves when /aperture/config is 403 but /api/providers is 200", async () => {
-    // Mirrors how onboarding/settings fetch proxy providers:
-    //   Promise.all([providerConfigInfos(), providers()])
-    // A non-admin grant gets 403 on /aperture/config yet 200 on /api/providers,
-    // so the combined fetch must not reject.
-    vi.stubGlobal(
-      "fetch",
-      vi.fn((url: string) => {
-        if (url.endsWith("/aperture/config")) {
-          return Promise.resolve({
-            ok: false,
-            status: 403,
-            statusText: "Forbidden",
-          });
-        }
-        return Promise.resolve({
-          ok: true,
-          json: async () => ({
-            providers: [
-              {
-                id: "anthropic",
-                name: "Anthropic",
-                description: "Claude models",
-                models: ["claude-3-5-sonnet"],
-                compatibility: { anthropic_messages: true },
-              },
-            ],
-          }),
-        });
-      }),
-    );
-
-    const client = new ApertureClient("http://gateway.test");
-    await expect(
-      Promise.all([client.providerConfigInfos(), client.providers()]),
-    ).resolves.toEqual([
-      new Map(),
-      [
-        {
+  // /v1/models failed or is unreachable -> providers() falls back to the
+  // unfiltered /api/providers result.
+  test("providers() falls back to unfiltered list when /v1/models is unreachable", async () => {
+    mockFetch((url) => {
+      if (url.endsWith("/api/providers")) {
+        return providersArray({
           id: "anthropic",
           name: "Anthropic",
-          description: "Claude models",
+          description: "",
           models: ["claude-3-5-sonnet"],
           compatibility: { anthropic_messages: true },
-        },
-      ],
+        });
+      }
+      if (url.endsWith("/v1/models")) {
+        return notOk(500, "Internal Server Error");
+      }
+      return notOk(404, "Not Found");
+    });
+
+    await expect(
+      new ApertureClient("http://gateway.test").providers(),
+    ).resolves.toEqual([
+      {
+        id: "anthropic",
+        name: "Anthropic",
+        description: "",
+        models: ["claude-3-5-sonnet"],
+        compatibility: { anthropic_messages: true },
+      },
     ]);
+  });
+
+  test("providers() rejects with ApertureHttpError when /api/providers fails", async () => {
+    mockFetch((url) => {
+      if (url.endsWith("/api/providers"))
+        return notOk(500, "Internal Server Error");
+      if (url.endsWith("/v1/models")) return models();
+      return notOk(404, "Not Found");
+    });
+
+    await expect(
+      new ApertureClient("http://gateway.test").providers(),
+    ).rejects.toBeInstanceOf(ApertureHttpError);
   });
 });

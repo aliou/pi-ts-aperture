@@ -67,15 +67,12 @@ export function buildProxyTab(
                   loadingDescription: "Fetching gateway providers",
                   loader: async (signal) => {
                     const client = new ApertureClient(baseUrl);
-                    const [providerInfos, gatewayProviders] = await Promise.all(
-                      [
-                        client.providerConfigInfos(signal),
-                        client.providers(signal),
-                      ],
-                    );
+                    // /api/providers reflects grant-scoped enabled/disabled
+                    // providers, so we match local Pi providers exclusively
+                    // against it. No /aperture/config fetch is needed here.
+                    const gatewayProviders = await client.providers(signal);
                     const providers = mapProxyProviders(
                       getKnownModels(),
-                      providerInfos,
                       gatewayProviders,
                       upstreamProviders,
                     );
@@ -158,7 +155,7 @@ export function buildProxyTab(
                           ? `${enabled.size}/${providers.length} enabled`
                           : "none",
                       emptyStateText:
-                        "No local providers match the Aperture gateway provider base URLs.",
+                        "No local providers match the Aperture gateway providers.",
                     });
                   },
                 }),

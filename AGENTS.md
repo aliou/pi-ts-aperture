@@ -71,7 +71,7 @@ Pi-agnostic Aperture API and mapping code lives under `src/`. Extension glue (Pi
 
 ### `src/`
 
-- `api/client.ts` - Pi-agnostic Aperture API client for `/api/providers` and `/aperture/config`.
+- `api/client.ts` - Pi-agnostic Aperture API client for `/api/providers` and `/v1/models` (connectors via `/api/connectors`). `providers()` cross-references `/v1/models` so disabled providers — whose models never appear there — are filtered out, leaving only enabled, callable providers.
 - `api/types.ts` - Aperture API response types.
 - `provider-mapping.ts` - Maps Aperture providers to local Pi registry models for proxy and dedicated selection.
 - `url.ts` - URL normalization helpers.
@@ -142,7 +142,7 @@ There is no current `mode` setting. Legacy `mode` configs are migrated to capabi
 
 - Only overrides `baseUrl`, `apiKey`, and headers on existing providers. Model definitions are never touched.
 - Skips providers with no local models because there is nothing to reroute.
-- Provider selection maps Aperture providers to local Pi registry providers by base URL, including child path matching. If base URLs are unavailable, it falls back to provider IDs.
+- Provider selection maps Aperture providers to local Pi registry providers by id, exclusively from `/api/providers` cross-referenced with `/v1/models`, so only enabled providers (those whose models appear in `/v1/models`) are offered.
 - `openai-codex-responses` proxy registration uses the Aperture root URL because Pi's Codex adapter appends `/codex/responses` itself.
 - Optional per-provider gateway model verification (`shouldCheckGatewayModels`) warns if configured local models are missing from the Aperture gateway.
 - Removed proxy providers trigger unregistration.
@@ -154,7 +154,7 @@ There is no current `mode` setting. Legacy `mode` configs are migrated to capabi
 - Tracks model routing internally as `modelId -> api`.
 - Can filter gateway models by enabled `dedicated.providers`; an empty provider filter means all gateway providers are included. A non-empty list with all `enabled: false` means no dedicated models are registered.
 - Builds safe defaults for every gateway model: 128k context, 8k output, text-only, no reasoning.
-- Fetches provider compatibility from `/aperture/config` and maps it to Pi APIs: OpenAI chat/completions, Anthropic messages, OpenAI responses, Gemini generate content, Google Vertex, or Bedrock converse.
+- Fetches provider compatibility from `/api/providers` (each gateway provider reports its `compatibility` map) and maps it to Pi APIs: OpenAI chat/completions, Anthropic messages, OpenAI responses, Gemini generate content, Google Vertex, or Bedrock converse.
 - Uses a stale-while-revalidate on-disk cache for gateway models and per-model upstream API routes, stored at `getAgentDir()/cache/aperture-dedicated-models.json` (shape: `{ version, gatewayUrl, models, routes }`). The provider is registered from the cache synchronously in the extension factory body so Pi can validate scoped models during startup, then `session_start`/`onSync` revalidates from the live gateway, writes the cache back, and re-registers with fresh models. The cache is ignored when its `gatewayUrl` no longer matches the configured gateway, until revalidation rewrites it. First run with no cache still resolves nothing until the first revalidation.
 
 ### Connectors

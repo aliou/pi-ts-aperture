@@ -1,11 +1,7 @@
 import { Value } from "typebox/value";
 import { describe, expect, test } from "vitest";
 import { ApertureClient } from "./client";
-import {
-  ApertureProviderConfigInfoSchema,
-  ApertureProviderSchema,
-  ConnectorInfoSchema,
-} from "./types";
+import { ApertureProviderSchema, ConnectorInfoSchema } from "./types";
 
 const DEFAULT_URL = "http://ai";
 const url = process.env.APERTURE_TEST_URL || DEFAULT_URL;
@@ -35,13 +31,21 @@ describe.skipIf(!accessible)("ApertureClient integration", () => {
     }
   });
 
-  test("providerConfigInfos() returns valid config infos", async () => {
-    const infos = await client.providerConfigInfos();
+  test("providers() drops disabled providers (not present in /v1/models)", async () => {
+    // Cross-check: every model returned by providers() must appear in
+    // /v1/models, which only lists enabled providers' models.
+    const [providers, models] = await Promise.all([
+      client.providers(),
+      fetch(`${url}/v1/models`).then(
+        (res) => res.json() as Promise<{ data: { id: string }[] }>,
+      ),
+    ]);
+    const enabled = new Set(models.data.map((m) => m.id));
 
-    expect(infos.size).toBeGreaterThan(0);
-    for (const [id, info] of infos) {
-      expect(info.id).toBe(id);
-      expect(Value.Check(ApertureProviderConfigInfoSchema, info)).toBe(true);
+    for (const provider of providers) {
+      for (const id of provider.models) {
+        expect(enabled.has(id)).toBe(true);
+      }
     }
   });
 
