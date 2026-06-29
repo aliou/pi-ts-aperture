@@ -2,6 +2,7 @@ import { getApiProvider } from "@earendil-works/pi-ai";
 import { ApertureClient } from "../../../src/api/client";
 import type { ApertureProvider } from "../../../src/api/types";
 import { configLoader } from "../../../src/shared/config/loader";
+import type { ResolvedConfig } from "../../../src/shared/config/types";
 import type {
   Api,
   AssistantMessageEventStream,
@@ -160,5 +161,32 @@ export class ApertureRuntime {
     nextProviders: string[],
   ): string[] {
     return prevProviders.filter((p) => !nextProviders.includes(p));
+  }
+
+  /**
+   * Resolves the proxy provider sync diff for the current config.
+   *
+   * `next` is the up-to-date list of proxy provider ids to track, and
+   * `unregister` is the subset of previously-registered providers that are no
+   * longer proxied and should be unregistered.
+   *
+   * When proxy is disabled, returns an empty `unregister` list and keeps
+   * `next` equal to `lastProxyProviders`. Providers stay registered even if
+   * the config still lists upstream provider ids, so toggling proxy off does
+   * not tear down providers that were set up by a previous proxy-enabled
+   * session (and does not surface spurious "unregistered" notifications).
+   */
+  resolveProxyProviderSync(
+    config: ResolvedConfig,
+    lastProxyProviders: string[],
+  ): { next: string[]; unregister: string[] } {
+    if (!config.proxy.enabled) {
+      return { next: lastProxyProviders, unregister: [] };
+    }
+    const next = config.proxy.upstreamProviders.map((p) => p.id);
+    return {
+      next,
+      unregister: this.getProvidersToUnregister(lastProxyProviders, next),
+    };
   }
 }

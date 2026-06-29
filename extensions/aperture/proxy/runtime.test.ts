@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { configLoader } from "../../../src/shared/config/loader";
+import type { ResolvedConfig } from "../../../src/shared/config/types";
 import type { Api, Model } from "../../../src/shared/types";
 import { ApertureRuntime, shouldUseGatewayRootForProxy } from "./runtime";
 
@@ -29,6 +30,7 @@ function proxyConfig(
     onboarding: { enabled: false },
     proxy: { enabled: true, upstreamProviders },
     dedicated: { enabled: false, providers: [] },
+    connectors: { enabled: false, pinnedTools: [], discoveryTools: true },
   };
 }
 
@@ -183,5 +185,64 @@ describe("ApertureRuntime.checkMissingModels", () => {
     ]);
 
     expect(notify).not.toHaveBeenCalled();
+  });
+});
+
+describe("ApertureRuntime.resolveProxyProviderSync", () => {
+  const runtime = new ApertureRuntime();
+
+  function config(
+    enabled: boolean,
+    upstreamProviders: string[],
+  ): ResolvedConfig {
+    return {
+      baseUrl: "http://gateway.test",
+      onboardingDone: true,
+      onboarding: { enabled: false },
+      proxy: {
+        enabled,
+        upstreamProviders: upstreamProviders.map((id) => ({
+          id,
+          shouldCheckGatewayModels: false,
+        })),
+      },
+      dedicated: { enabled: false, providers: [] },
+      connectors: { enabled: false, pinnedTools: [], discoveryTools: true },
+    };
+  }
+
+  test("unregisters providers removed from the proxy list when enabled", () => {
+    const result = runtime.resolveProxyProviderSync(
+      config(true, ["openai", "openrouter"]),
+      ["openai", "anthropic"],
+    );
+
+    expect(result.next).toEqual(["openai", "openrouter"]);
+    expect(result.unregister).toEqual(["anthropic"]);
+  });
+
+  test("unregisters nothing when the provider list is unchanged", () => {
+    const result = runtime.resolveProxyProviderSync(
+      config(true, ["openai", "openrouter"]),
+      ["openai", "openrouter"],
+    );
+
+    expect(result.next).toEqual(["openai", "openrouter"]);
+    expect(result.unregister).toEqual([]);
+  });
+
+  test("does not unregister providers when proxy is disabled, even if they remain configured", () => {
+    // Regression: previously, disabling proxy while providers were still
+    // listed caused every previously-proxied provider to be unregistered and
+    // surfaced a spurious "unregistered" notification. Providers must stay
+    // registered when proxy is toggled off.
+    const result = runtime.resolveProxyProviderSync(
+      config(false, ["openai", "openrouter"]),
+      ["openai", "openrouter"],
+    );
+
+    expect(result.unregister).toEqual([]);
+    // `next` keeps the previous list so a future re-enable can diff correctly.
+    expect(result.next).toEqual(["openai", "openrouter"]);
   });
 });

@@ -54,13 +54,9 @@ export default async function (pi: ExtensionAPI): Promise<void> {
     emitConfigSync();
     const config = configLoader.getConfig();
 
-    const nextProxyProviders = config.proxy.enabled
-      ? config.proxy.upstreamProviders.map((p) => p.id)
-      : [];
-    for (const provider of proxyRuntime.getProvidersToUnregister(
-      lastProxyProviders,
-      nextProxyProviders,
-    )) {
+    const { next: nextProxyProviders, unregister } =
+      proxyRuntime.resolveProxyProviderSync(config, lastProxyProviders);
+    for (const provider of unregister) {
       pi.unregisterProvider(provider);
       ctx.ui.notify(`[aperture] unregistered ${provider}.`, "info");
     }
