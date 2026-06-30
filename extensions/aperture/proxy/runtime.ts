@@ -22,6 +22,10 @@ const APERTURE_PROVENANCE_HEADERS = {
 const MAX_MISSING_MODELS_PER_PROVIDER = 5;
 
 const ROOT_BASE_URL_APIS = new Set<Api>([
+  // Pi's Anthropic adapter uses Anthropic's SDK, which appends /v1/messages
+  // itself. Registering /v1 would produce /v1/v1/messages, which Aperture
+  // does not expose.
+  "anthropic-messages",
   // Pi's Codex adapter appends /codex/responses itself. Registering /v1
   // would produce /v1/codex/responses, which Aperture does not expose.
   "openai-codex-responses",

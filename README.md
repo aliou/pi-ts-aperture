@@ -120,7 +120,7 @@ Requests sent through Aperture include provenance headers:
 For each configured upstream provider, the extension calls `registerProvider` with:
 
 - `baseUrl` set to your Aperture URL + `/v1` for most Pi APIs.
-- `baseUrl` set to the Aperture root for APIs where Pi appends its own path, such as `openai-codex-responses`.
+- `baseUrl` set to the Aperture root for APIs where Pi appends its own path, such as `anthropic-messages` and `openai-codex-responses`.
 - `apiKey` set to `"-"` because Aperture injects upstream credentials server-side. OAuth credentials still take precedence when Pi has them.
 
 Optional gateway model verification can warn when configured Pi models are missing from the Aperture gateway.

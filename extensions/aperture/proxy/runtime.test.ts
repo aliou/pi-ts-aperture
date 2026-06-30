@@ -53,6 +53,7 @@ describe("ApertureRuntime.sync", () => {
   beforeEach(() => {
     getConfig.mockReturnValue(
       proxyConfig([
+        { id: "anthropic", shouldCheckGatewayModels: false },
         { id: "openai", shouldCheckGatewayModels: false },
         { id: "openai-codex", shouldCheckGatewayModels: false },
       ]),
@@ -69,22 +70,28 @@ describe("ApertureRuntime.sync", () => {
       /function resolveCodexUrl[\s\S]*if \(normalized\.endsWith\("\/codex\/responses"\)\)[\s\S]*return normalized;[\s\S]*if \(normalized\.endsWith\("\/codex"\)\)[\s\S]*return `\$\{normalized\}\/responses`;[\s\S]*return `\$\{normalized\}\/codex\/responses`;/,
     );
     expect(shouldUseGatewayRootForProxy("openai-codex-responses")).toBe(true);
+    expect(shouldUseGatewayRootForProxy("anthropic-messages")).toBe(true);
     expect(shouldUseGatewayRootForProxy("openai-responses")).toBe(false);
   });
 
-  test("uses gateway root for Codex because Pi appends /codex/responses", async () => {
+  test("uses gateway root for Anthropic and Codex because Pi appends API paths", async () => {
     const registerProvider = vi.fn();
     const runtime = new ApertureRuntime();
 
     await runtime.sync({
       registerProvider,
       getModels: () => [
+        model("anthropic", "claude-sonnet-4-6", "anthropic-messages"),
         model("openai", "gpt-5.5", "openai-responses"),
         model("openai-codex", "gpt-5.5", "openai-codex-responses"),
       ],
       getSessionId: vi.fn(() => "session-id"),
     });
 
+    expect(registerProvider).toHaveBeenCalledWith(
+      "anthropic",
+      expect.objectContaining({ baseUrl: "http://gateway.test" }),
+    );
     expect(registerProvider).toHaveBeenCalledWith(
       "openai",
       expect.objectContaining({ baseUrl: "http://gateway.test/v1" }),

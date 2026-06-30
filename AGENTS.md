@@ -143,7 +143,7 @@ There is no current `mode` setting. Legacy `mode` configs are migrated to capabi
 - Only overrides `baseUrl`, `apiKey`, and headers on existing providers. Model definitions are never touched.
 - Skips providers with no local models because there is nothing to reroute.
 - Provider selection maps Aperture providers to local Pi registry providers by id, exclusively from `/api/providers` cross-referenced with `/v1/models`, so only enabled providers (those whose models appear in `/v1/models`) are offered.
-- `openai-codex-responses` proxy registration uses the Aperture root URL because Pi's Codex adapter appends `/codex/responses` itself.
+- `anthropic-messages` and `openai-codex-responses` proxy registration use the Aperture root URL because Pi's Anthropic SDK and Codex adapter append their own API paths.
 - Optional per-provider gateway model verification (`shouldCheckGatewayModels`) warns if configured local models are missing from the Aperture gateway.
 - Removed proxy providers trigger unregistration.
 
