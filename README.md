@@ -4,13 +4,11 @@
 
 Route Pi LLM providers and connector tools through [Tailscale Aperture](https://tailscale.com/docs/features/aperture), a managed AI gateway on your tailnet.
 
-Aperture handles API key injection and request routing server-side. This extension integrates Pi with Aperture through three independent capabilities:
+Aperture handles API key injection and request routing server-side, so Pi never needs upstream provider credentials. This extension offers three capabilities:
 
 - **Dedicated** (default): a standalone `aperture` provider whose models come from the gateway.
 - **Proxy**: reroute existing Pi providers (anthropic, openai, openai-codex, ...) through Aperture.
 - **Connectors**: expose MCP tools from the gateway to Pi as discovery meta-tools or pinned first-class tools.
-
-Each capability is independent. Enable dedicated, proxy, connectors, or any combination.
 
 ## Install
 
@@ -28,20 +26,7 @@ After installing, run the onboarding wizard:
 
 [![Onboarding walkthrough](https://assets.aliou.me/pi-extensions/demos/aperture/v0.8.0/onboarding.gif)](https://assets.aliou.me/pi-extensions/demos/aperture/v0.8.0/onboarding.mp4)
 
-The wizard walks you through:
-
-1. Aperture base URL, with a `/v1/models` health check (e.g. `ai.your-tailnet.ts.net`).
-2. Capability selection: dedicated, proxy, or both.
-3. Provider selection:
-   - Dedicated: choose which Aperture gateway providers to include.
-   - Proxy: choose matching local Pi providers to route through Aperture, with optional gateway model verification.
-4. Recap, save, and reload Pi so the selected capabilities are registered cleanly.
-
-You can change everything later with:
-
-```
-/aperture:settings
-```
+The wizard asks for your Aperture URL (with a health check), lets you pick capabilities and providers, then saves and reloads Pi. You can change everything later with `/aperture:settings`.
 
 ## Capabilities
 
@@ -49,101 +34,43 @@ You can change everything later with:
 
 [![Dedicated provider walkthrough](https://assets.aliou.me/pi-extensions/demos/aperture/v0.8.0/dedicated-provider.gif)](https://assets.aliou.me/pi-extensions/demos/aperture/v0.8.0/dedicated-provider.mp4)
 
-Registers a standalone `aperture` provider whose model list comes from the Aperture gateway. You can include all gateway providers or filter to specific gateway providers during onboarding or in settings.
+Registers a standalone `aperture` provider listing the models your gateway exposes. You can include all gateway providers or filter to specific ones. Model IDs match what Aperture reports, and each model is routed through the Pi API that matches its Aperture provider compatibility.
 
-Dedicated model IDs are the model IDs reported by Aperture. They are not prefixed with the upstream provider ID. The extension keeps an internal route map so each model uses the Pi API that matches its Aperture provider compatibility.
-
-Because Aperture does not expose every Pi model capability yet, models use safe defaults on first load: 128k context, 8k max output, text input, and no reasoning. Gateway pricing is mapped to Pi costs when Aperture returns pricing data.
-
-#### Sync model capabilities
-
-In dedicated mode, the onboarding extension can stay enabled until model metadata is synced and validated. It exposes:
-
-- `sync-aperture-models` skill: looks up real capabilities such as context window, max tokens, reasoning, and input modalities, then updates `~/.pi/agent/models.json`.
-- `aperture_validate_models_json` tool: validates Pi's `models.json` schema and checks that Aperture models include capability fields.
-- `aperture_complete_onboarding` tool: marks onboarding complete and disables the temporary onboarding tools and skill after validation passes.
-
-User-defined model entries in `models.json` take precedence over gateway defaults and persist across restarts. The extension still owns routing details and cost data from Aperture gateway pricing.
+Because Aperture does not expose every Pi model capability, models get safe defaults: 128k context, 8k max output, text input, no reasoning. Gateway pricing is mapped to Pi costs when available. To customize capabilities for a model, add it to `~/.pi/agent/models.json` under the `aperture` provider.
 
 ### Proxy existing providers
 
 [![Proxy providers walkthrough](https://assets.aliou.me/pi-extensions/demos/aperture/v0.8.0/proxy-providers.gif)](https://assets.aliou.me/pi-extensions/demos/aperture/v0.8.0/proxy-providers.mp4)
 
-Reroutes existing Pi providers (anthropic, openai, openai-codex, etc.) through Aperture. Each provider keeps its own model definitions and settings. Only the base URL, API key, and headers are overridden.
+Reroutes existing Pi providers through Aperture. Each provider keeps its own model definitions and settings; only the base URL, API key, and headers are overridden. Use this when you want Pi's native per-provider model configuration but want requests to go through Aperture for server-side credentials.
 
-Proxy provider selection maps Aperture providers to local Pi registry providers by base URL. It supports child path matching, so an Aperture provider under `https://chatgpt.com/backend-api/codex` can match Pi's local `https://chatgpt.com/backend-api` provider. If base URLs are unavailable, matching also falls back to provider IDs.
+Provider selection matches your local Pi providers against the providers enabled on the gateway. Optional per-provider verification warns when configured local models are missing from the gateway.
 
-Proxy mode is useful when you want Pi's native per-provider model configuration but want requests to go through Aperture for server-side credentials and routing.
-
-## Connectors
-
-Aperture can expose MCP connectors (GitHub, your own internal tools, ...) at `/v1/mcp`. When `connectors.enabled` is on, this extension discovers gateway tools and registers them with Pi in one of two ways:
-
-- **Discovery meta-tools** (default): four prefixed tools let the model list, search, describe, and call connector tools on demand. Individual tool schemas stay out of the system prompt.
-  - `aperture_connector_list`
-  - `aperture_connector_tool_search`
-  - `aperture_connector_tool_describe`
-  - `aperture_connector_tool_call`
-- **Pinned tools**: an allow-list of gateway tools (`connectors.pinnedTools`) that register as first-class Pi tools, surfaced directly to the model. Pin a small set you use every session; each pin adds its full schema to the system prompt.
+### Connectors
 
 [![Connectors walkthrough](https://assets.aliou.me/pi-extensions/demos/aperture/v0.8.0/connectors.gif)](https://assets.aliou.me/pi-extensions/demos/aperture/v0.8.0/connectors.mp4)
 
-Enable connectors in `/aperture:settings`. Saved pin changes take effect on the next Pi restart (Pi cannot unregister tools at runtime).
+Aperture can expose MCP connectors (GitHub, your own internal tools, ...) at `/v1/mcp`. When enabled, this extension surfaces gateway tools to Pi in one of two ways:
+
+- **Discovery meta-tools** (default): `aperture_connector_list`, `aperture_connector_tool_search`, `aperture_connector_tool_describe`, and `aperture_connector_tool_call` let the model find and call connector tools on demand, keeping individual tool schemas out of the system prompt.
+- **Pinned tools**: an allow-list of gateway tools that register as first-class Pi tools. Pin a small set you use every session; each pin adds its full schema to the system prompt.
+
+Enable connectors in `/aperture:settings`. Pin changes take effect on the next Pi restart (Pi cannot unregister tools at runtime).
 
 ## Commands
 
 | Command | Description |
 |---|---|
 | `/aperture:onboarding` | Onboarding wizard. Only available while onboarding is enabled. |
-| `/aperture:settings` | Settings UI to update connection, capabilities, proxy providers, dedicated provider filters, pinned connector tools, onboarding status, and the onboarding extension toggle. |
-
-## How it works
-
-### Aperture API usage
-
-The extension reads providers from `GET /api/providers` and cross-references
-`GET /v1/models`. Disabled providers' models do not appear in `/v1/models`,
-so any provider whose models are all absent from it is dropped (and each
-provider's model list is intersected with `/v1/models`), leaving only
-providers that are enabled and callable for the current grant.
-
-### Request routing
-
-Requests sent through Aperture include provenance headers:
-
-- `Referer: https://pi.dev`
-- `X-Title: npm:@aliou/pi-ts-aperture`
-- `x-session-id` for grouping requests in the Aperture dashboard
-
-### Proxy routing
-
-For each configured upstream provider, the extension calls `registerProvider` with:
-
-- `baseUrl` set to your Aperture URL + `/v1` for most Pi APIs.
-- `baseUrl` set to the Aperture root for APIs where Pi appends its own path, such as `anthropic-messages` and `openai-codex-responses`.
-- `apiKey` set to `"-"` because Aperture injects upstream credentials server-side. OAuth credentials still take precedence when Pi has them.
-
-Optional gateway model verification can warn when configured Pi models are missing from the Aperture gateway.
-
-### Dedicated routing
-
-Dedicated mode fetches models from Aperture, maps provider compatibility to Pi APIs, merges gateway defaults with user-defined `providers.aperture.models` from `~/.pi/agent/models.json`, and registers an `aperture` provider.
-
-Compatibility controls the Pi API and base URL used for each upstream provider at runtime. For example, OpenAI-compatible providers use `/v1`, Anthropic-compatible providers use the gateway root, Gemini-compatible providers use `/v1beta`, and Vertex-compatible providers use `/v1`.
-
-User-defined models from `models.json` take precedence over gateway defaults, so custom capabilities such as reasoning, context window, max output, and input modalities are preserved across restarts. If a user model does not define cost, the extension keeps the cost derived from Aperture gateway pricing.
+| `/aperture:settings` | Edit connection, capabilities, providers, and pinned connector tools. |
 
 ## Configuration
 
-Configuration is saved globally to `~/.pi/agent/extensions/aperture.json`.
+Configuration is saved globally to `~/.pi/agent/extensions/aperture.json`. The settings UI covers everything, but you can also edit the file directly:
 
 ```json
 {
   "baseUrl": "http://ai.your-tailnet.ts.net",
-  "onboardingDone": true,
-  "onboarding": {
-    "enabled": false
-  },
   "proxy": {
     "enabled": true,
     "upstreamProviders": [
@@ -154,7 +81,6 @@ Configuration is saved globally to `~/.pi/agent/extensions/aperture.json`.
     "enabled": true,
     "providers": [
       { "id": "anthropic", "name": "Anthropic", "enabled": true },
-      { "id": "openai", "name": "OpenAI", "enabled": true },
       { "id": "google", "name": "Google", "enabled": false }
     ]
   },
@@ -170,13 +96,13 @@ Configuration is saved globally to `~/.pi/agent/extensions/aperture.json`.
 
 Notes:
 
-- There is no `mode` setting. Use `proxy.enabled`, `dedicated.enabled`, and `connectors.enabled` independently.
-- An empty `dedicated.providers` list means all Aperture gateway providers are included.
+- An empty `dedicated.providers` list means all gateway providers are included.
 - Model metadata belongs in `~/.pi/agent/models.json`, not in the extension config.
-- Pinned connector tools use the raw gateway tool name (e.g. `github_list_repos`); `connectorId` is stored for traceability. Pinned tools that no longer exist on the gateway are silently skipped.
+- Requests include provenance headers (`Referer`, `X-Title`) and `x-session-id` for grouping requests in the Aperture dashboard.
+- No API keys are stored: Aperture injects upstream credentials server-side. Pi OAuth credentials still take precedence when available.
 
 ## Requirements
 
 - A Tailscale tailnet with Aperture configured.
-- The device running Pi must be on the tailnet, or otherwise able to reach your Aperture endpoint.
+- The device running Pi must be able to reach your Aperture endpoint.
 - Use the URL/scheme that matches your deployment (`http://` or `https://`).
