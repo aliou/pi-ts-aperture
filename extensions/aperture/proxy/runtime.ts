@@ -114,11 +114,22 @@ export class ApertureRuntime {
     const gatewayUrl = resolveGatewayUrl(config);
     if (!gatewayUrl && !providers) return;
 
-    let gatewayProviders = providers;
-    if (!gatewayProviders) {
-      gatewayProviders = await new ApertureClient(
-        gatewayUrl as string,
-      ).providers();
+    let gatewayProviders: ApertureProvider[];
+    try {
+      if (providers) {
+        gatewayProviders = providers;
+      } else {
+        gatewayProviders = await new ApertureClient(
+          gatewayUrl as string,
+        ).providers();
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      deps.notify(
+        `[aperture] gateway model check skipped: ${message}`,
+        "warning",
+      );
+      return;
     }
     if (gatewayProviders.length === 0) return;
 

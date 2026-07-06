@@ -75,12 +75,25 @@ export default async function (pi: ExtensionAPI): Promise<void> {
         if (updated && nextProxyProviders.includes(active.provider)) {
           void pi.setModel(updated);
         }
+      })
+      .catch((error: unknown) => {
+        ctx.ui.notify(
+          `[aperture] proxy sync failed: ${error instanceof Error ? error.message : String(error)}`,
+          "warning",
+        );
       });
 
-    void proxyRuntime.checkMissingModels({
-      getModels: () => ctx.modelRegistry.getAll(),
-      notify: (msg, type) => ctx.ui.notify(msg, type),
-    });
+    void proxyRuntime
+      .checkMissingModels({
+        getModels: () => ctx.modelRegistry.getAll(),
+        notify: (msg, type) => ctx.ui.notify(msg, type),
+      })
+      .catch((error: unknown) => {
+        ctx.ui.notify(
+          `[aperture] gateway model check failed: ${error instanceof Error ? error.message : String(error)}`,
+          "warning",
+        );
+      });
 
     void dedicatedRuntime.sync(pi).catch((error: unknown) => {
       ctx.ui.notify(

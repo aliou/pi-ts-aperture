@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { configLoader } from "../../../src/shared/config/loader";
 import type { ResolvedConfig } from "../../../src/shared/config/types";
 import type { Api, Model } from "../../../src/shared/types";
@@ -12,6 +12,10 @@ vi.mock("../../../src/shared/config/loader", () => ({
 }));
 
 const getConfig = vi.mocked(configLoader.getConfig);
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 function model(provider: string, id: string, api?: Api): Model<Api> {
   return { provider, id, api } as Model<Api>;
@@ -192,6 +196,27 @@ describe("ApertureRuntime.checkMissingModels", () => {
     ]);
 
     expect(notify).not.toHaveBeenCalled();
+  });
+
+  test("warns and skips when gateway provider fetch fails", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => Promise.reject(new TypeError("fetch failed"))),
+    );
+    const notify = vi.fn();
+    const runtime = new ApertureRuntime();
+
+    await expect(
+      runtime.checkMissingModels({
+        getModels: () => [model("synthetic", "foo")],
+        notify,
+      }),
+    ).resolves.toBeUndefined();
+
+    expect(notify).toHaveBeenCalledWith(
+      "[aperture] gateway model check skipped: fetch failed",
+      "warning",
+    );
   });
 });
 
