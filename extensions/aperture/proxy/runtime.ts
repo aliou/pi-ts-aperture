@@ -114,8 +114,12 @@ export class ApertureRuntime {
     const gatewayUrl = resolveGatewayUrl(config);
     if (!gatewayUrl && !providers) return;
 
-    const gatewayProviders =
-      providers ?? (await new ApertureClient(gatewayUrl as string).providers());
+    let gatewayProviders = providers;
+    if (!gatewayProviders) {
+      gatewayProviders = await new ApertureClient(
+        gatewayUrl as string,
+      ).providers();
+    }
     if (gatewayProviders.length === 0) return;
 
     const modelIdsByProvider = new Map(

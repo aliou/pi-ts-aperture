@@ -137,10 +137,8 @@ export class DedicatedRuntime {
     const baseUrl = resolveProviderBaseUrl(config);
     if (!gatewayUrl || !baseUrl) return;
 
-    const providers = filterProviders(
-      await new ApertureClient(gatewayUrl).providers(),
-      config,
-    );
+    const gatewayProviders = await new ApertureClient(gatewayUrl).providers();
+    const providers = filterProviders(gatewayProviders, config);
     const built = buildModels(providers, gatewayUrl, baseUrl);
 
     registerFromBuilt(pi, baseUrl, built);

@@ -1,10 +1,16 @@
 {
-  "$schema": "https://biomejs.dev/schemas/2.4.15/schema.json",
+  "$schema": "https://biomejs.dev/schemas/2.5.2/schema.json",
   "plugins": [
     "./node_modules/@aliou/biome-plugins/plugins/no-inline-imports.grit",
     "./node_modules/@aliou/biome-plugins/plugins/no-js-import-extension.grit",
     "./node_modules/@aliou/biome-plugins/plugins/no-ts-import-extension.grit",
-    "./node_modules/@aliou/biome-plugins/plugins/no-emojis.grit"
+    "./node_modules/@aliou/biome-plugins/plugins/no-emojis.grit",
+    "./node_modules/@aliou/biome-plugins/plugins/no-inner-types.grit",
+    "./node_modules/@aliou/biome-plugins/plugins/pi-no-node-exec.grit",
+    "./node_modules/@aliou/biome-plugins/plugins/no-buried-await.grit",
+    "./node_modules/@aliou/biome-plugins/plugins/no-empty-catch.grit",
+    "./node_modules/@aliou/biome-plugins/plugins/no-homedir.grit",
+    "./node_modules/@aliou/biome-plugins/plugins/no-is-record.grit"
   ],
   "vcs": {
     "enabled": true,
@@ -25,7 +31,7 @@
   "linter": {
     "enabled": true,
     "rules": {
-      "recommended": true
+      "preset": "recommended"
     }
   },
   "formatter": {

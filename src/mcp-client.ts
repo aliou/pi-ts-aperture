@@ -155,7 +155,7 @@ export async function createMcpSession(
   const abort = signal ?? AbortSignal.timeout(INIT_TIMEOUT_MS);
 
   // Step 1: Initialize
-  const initResponse = (await postJsonRpc(
+  const rawInitResponse = await postJsonRpc(
     url,
     {
       jsonrpc: "2.0",
@@ -169,7 +169,10 @@ export async function createMcpSession(
     },
     undefined,
     abort,
-  )) as JsonRpcResponse & { __sessionId?: string };
+  );
+  const initResponse = rawInitResponse as JsonRpcResponse & {
+    __sessionId?: string;
+  };
 
   const sessionId = initResponse.__sessionId;
   if (!sessionId) {
@@ -198,8 +201,9 @@ export async function createMcpSession(
       }),
       signal: AbortSignal.timeout(5_000),
     });
-  } catch {
+  } catch (error) {
     // Notification is best-effort
+    void error;
   }
 
   return {

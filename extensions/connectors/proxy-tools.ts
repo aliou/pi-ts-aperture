@@ -128,8 +128,9 @@ async function executeConnectorCall(
       tempPath = join(tmpdir(), `pi-aperture-connector-${tempId}.json`);
       await writeFile(tempPath, fullText, "utf-8");
       details.fullOutputPath = tempPath;
-    } catch {
+    } catch (error) {
       // temp file unavailable, proceed without it
+      void error;
     }
 
     details.truncation = truncation;
@@ -766,8 +767,9 @@ function renderConnectorCallResult(
     const parsed = JSON.parse(rawResult);
     displayText = JSON.stringify(parsed, null, 2);
     isJson = true;
-  } catch {
+  } catch (error) {
     // not JSON, keep raw
+    void error;
   }
 
   const lines: string[] = [];

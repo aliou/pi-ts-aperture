@@ -114,8 +114,9 @@ export async function writeCachedDedicatedModels(
       )}\n`,
       "utf8",
     );
-  } catch {
+  } catch (error) {
     // Cache writes are best-effort. A missing cache only falls back to the
     // first-run path (next session revalidates and writes again).
+    void error;
   }
 }
