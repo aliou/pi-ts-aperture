@@ -54,11 +54,13 @@ function buildModels(
     const api = getApiForCompatibility(provider.compatibility);
     for (const modelId of provider.models) {
       routeByModelId.set(modelId, { api });
+      const modelInfo = provider.modelInfoById?.[modelId];
       models.push({
         ...buildDefaultModelConfig({
           id: modelId,
           providerId: provider.id,
           provider: { id: provider.id, name: provider.name },
+          pricing: modelInfo?.pricing,
         }),
         api: APERTURE_API,
         baseUrl: getBaseUrlForApi(api, gatewayUrl, baseUrl),

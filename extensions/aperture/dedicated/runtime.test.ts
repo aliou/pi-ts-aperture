@@ -77,6 +77,17 @@ function gatewayProvider(id: string, models: string[]): ApertureProvider {
   };
 }
 
+function gatewayProviderWithPricing(
+  id: string,
+  modelId: string,
+  pricing: Record<string, string>,
+): ApertureProvider {
+  return {
+    ...gatewayProvider(id, [modelId]),
+    modelInfoById: { [modelId]: { id: modelId, pricing } },
+  };
+}
+
 function captureRegistered(
   registerProvider: ReturnType<typeof vi.fn>,
 ): { models: ProviderModelConfig[]; streamSimple?: unknown } | null {
@@ -248,5 +259,36 @@ describe("DedicatedRuntime.syncConfig", () => {
 
     expect(providersMock).not.toHaveBeenCalled();
     expect(registerProvider).not.toHaveBeenCalled();
+  });
+
+  // Gateway providers carry pricing from /v1/models via modelInfoById; that
+  // pricing should be converted to per-million-token costs on the registered
+  // model configs and persisted to the cache.
+  test("attaches pricing from modelInfoById to model cost and cache", async () => {
+    providersMock.mockResolvedValue([
+      gatewayProviderWithPricing("synthetic", "syn:large:text", {
+        input: "0.00000093",
+        input_cache_read: "0.00000018",
+        input_cache_write: "0.00000300",
+        input_cache_write_1h: "0.00000600",
+        output: "0.00000300",
+        web_search: "0.01000000",
+      }),
+    ]);
+    const registerProvider = vi.fn();
+    await new DedicatedRuntime().sync({ registerProvider });
+
+    const { models } = captureRegistered(registerProvider) ?? { models: [] };
+    expect(models).toHaveLength(1);
+    expect(models[0].cost?.input).toBeCloseTo(0.93, 10);
+    expect(models[0].cost?.output).toBe(3);
+    expect(models[0].cost?.cacheRead).toBeCloseTo(0.18, 10);
+    expect(models[0].cost?.cacheWrite).toBe(3);
+    expect(writeCachedDedicatedModels).toHaveBeenCalledOnce();
+    const [, cachedModels] = writeCachedDedicatedModels.mock.calls[0];
+    expect(cachedModels[0].cost?.input).toBeCloseTo(0.93, 10);
+    expect(cachedModels[0].cost?.output).toBe(3);
+    expect(cachedModels[0].cost?.cacheRead).toBeCloseTo(0.18, 10);
+    expect(cachedModels[0].cost?.cacheWrite).toBe(3);
   });
 });

@@ -28,6 +28,10 @@ describe("ApertureClient", () => {
     return { data: ids.map((id) => ({ id, object: "model" })) };
   }
 
+  function modelWithPricing(id: string, pricing: Record<string, string>) {
+    return { id, object: "model", pricing };
+  }
+
   function providersArray(...providers: Record<string, unknown>[]) {
     return { providers };
   }
@@ -76,6 +80,7 @@ describe("ApertureClient", () => {
         // claude-internal is not in /v1/models -> intersected out
         models: ["claude-3-5-sonnet"],
         compatibility: { anthropic_messages: true },
+        modelInfoById: { "claude-3-5-sonnet": { id: "claude-3-5-sonnet" } },
       },
     ]);
   });
@@ -116,6 +121,7 @@ describe("ApertureClient", () => {
         description: "",
         models: ["openai/gpt-5"],
         compatibility: { openai_chat: true },
+        modelInfoById: { "openai/gpt-5": { id: "openai/gpt-5" } },
       },
     ]);
   });
@@ -163,5 +169,41 @@ describe("ApertureClient", () => {
     await expect(
       new ApertureClient("http://gateway.test").providers(),
     ).rejects.toBeInstanceOf(ApertureHttpError);
+  });
+
+  // /v1/models entries carry a `pricing` object; providers() should retain it
+  // on `modelInfoById` so dedicated mode can build cost-aware model configs.
+  test("providers() retains /v1/models pricing on modelInfoById", async () => {
+    const pricing = {
+      input: "0.00000100",
+      input_cache_read: "0.00000010",
+      input_cache_write: "0.00000125",
+      input_cache_write_1h: "0.00000200",
+      output: "0.00000500",
+      web_search: "0.01000000",
+    };
+    mockFetch((url) => {
+      if (url.endsWith("/api/providers")) {
+        return providersArray({
+          id: "synthetic",
+          name: "Synthetic",
+          description: "",
+          models: ["syn:large:text"],
+          compatibility: { openai_chat: true },
+        });
+      }
+      if (url.endsWith("/v1/models")) {
+        return { data: [modelWithPricing("syn:large:text", pricing)] };
+      }
+      return notOk(404, "Not Found");
+    });
+
+    const providers = await new ApertureClient(
+      "http://gateway.test",
+    ).providers();
+    expect(providers[0].modelInfoById?.["syn:large:text"]).toEqual({
+      id: "syn:large:text",
+      pricing,
+    });
   });
 });
