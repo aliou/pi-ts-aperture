@@ -1,6 +1,7 @@
 import type { TSchema } from "typebox";
 import { Value } from "typebox/value";
 import {
+  type ApertureModelInfo,
   type ApertureProvider,
   ApertureProviderSchema,
   type ConnectorInfo,
@@ -103,47 +104,63 @@ export class ApertureClient {
   }
 
   /**
-   * Set of model ids exposed by `/v1/models`.
+   * Models exposed by `/v1/models`, keyed by id.
    *
    * Disabled providers' models do not appear in `/v1/models`, so this is the
-   * source of truth for which gateway providers are usable. Failures (network,
-   * 404, ...) resolve to an empty set, which leaves the `/api/providers`
-   * result unfiltered as a safe fallback.
+   * source of truth for which gateway providers are usable. The full entry
+   * (including `pricing`) is retained so dedicated mode can attach costs to
+   * model configs without re-fetching the gateway. Failures (network, 404, ...)
+   * resolve to an empty map, which leaves the `/api/providers` result
+   * unfiltered as a safe fallback.
    */
-  private async enabledModelIds(signal?: AbortSignal): Promise<Set<string>> {
+  private async enabledModelsById(
+    signal?: AbortSignal,
+  ): Promise<Map<string, ApertureModelInfo>> {
     try {
       const body = await this._fetch<{ data?: unknown[] }>("/v1/models", {
         signal,
       });
-      if (!Array.isArray(body.data)) return new Set();
-      const ids = new Set<string>();
+      if (!Array.isArray(body.data)) return new Map();
+      const byId = new Map<string, ApertureModelInfo>();
       for (const entry of body.data) {
         if (!entry || typeof entry !== "object") continue;
-        const id = (entry as Record<string, unknown>).id;
-        if (typeof id === "string") ids.add(id);
+        const record = entry as Record<string, unknown>;
+        const id = record.id;
+        if (typeof id !== "string") continue;
+        byId.set(id, {
+          id,
+          pricing: record.pricing as ApertureModelInfo["pricing"] | undefined,
+        });
       }
-      return ids;
+      return byId;
     } catch {
-      return new Set();
+      return new Map();
     }
   }
 
   async providers(signal?: AbortSignal): Promise<ApertureProvider[]> {
-    const [body, enabledModelIds] = await Promise.all([
+    const [body, enabledModelsById] = await Promise.all([
       this._fetch<{ providers?: unknown } | unknown[]>("/api/providers", {
         signal,
       }),
-      this.enabledModelIds(signal),
+      this.enabledModelsById(signal),
     ]);
 
     const parsed = parseProvidersBody(body);
-    if (enabledModelIds.size === 0) return parsed;
+    if (enabledModelsById.size === 0) return parsed;
 
     return parsed
-      .map((provider) => ({
-        ...provider,
-        models: provider.models.filter((id) => enabledModelIds.has(id)),
-      }))
+      .map((provider) => {
+        const models = provider.models.filter((id) =>
+          enabledModelsById.has(id),
+        );
+        const modelInfoById: Record<string, ApertureModelInfo> = {};
+        for (const id of models) {
+          const info = enabledModelsById.get(id);
+          if (info) modelInfoById[id] = info;
+        }
+        return { ...provider, models, modelInfoById };
+      })
       .filter((provider) => provider.models.length > 0);
   }
 

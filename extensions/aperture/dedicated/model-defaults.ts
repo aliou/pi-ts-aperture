@@ -1,4 +1,5 @@
 import type { ProviderModelConfig } from "@earendil-works/pi-coding-agent";
+import type { ApertureModelPricing } from "../../../src/api/types";
 
 export interface ApertureModelDefaultsInput {
   id: string;
@@ -7,12 +8,7 @@ export interface ApertureModelDefaultsInput {
     id: string;
     name?: string;
   };
-  pricing?: {
-    input?: string;
-    input_cache_read?: string;
-    input_cache_write?: string;
-    output?: string;
-  };
+  pricing?: ApertureModelPricing;
 }
 
 const TOKENS_PER_MILLION = 1_000_000;
