@@ -116,9 +116,16 @@ export class ApertureRuntime {
 
     let gatewayProviders = providers;
     if (!gatewayProviders) {
-      gatewayProviders = await new ApertureClient(
-        gatewayUrl as string,
-      ).providers();
+      // Gateway availability is transient. This is a best-effort, warning-only
+      // check, so a network failure or gateway timeout must never propagate
+      // (the caller fires-and-forgets this promise) and crash Pi.
+      try {
+        gatewayProviders = await new ApertureClient(
+          gatewayUrl as string,
+        ).providers();
+      } catch {
+        return;
+      }
     }
     if (gatewayProviders.length === 0) return;
 

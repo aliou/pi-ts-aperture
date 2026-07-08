@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { beforeEach, describe, expect, test, vi } from "vitest";
+import { ApertureClient } from "../../../src/api/client";
 import { configLoader } from "../../../src/shared/config/loader";
 import type { ResolvedConfig } from "../../../src/shared/config/types";
 import type { Api, Model } from "../../../src/shared/types";
@@ -9,6 +10,10 @@ vi.mock("../../../src/shared/config/loader", () => ({
   configLoader: {
     getConfig: vi.fn(),
   },
+}));
+
+vi.mock("../../../src/api/client", () => ({
+  ApertureClient: vi.fn(),
 }));
 
 const getConfig = vi.mocked(configLoader.getConfig);
@@ -190,6 +195,38 @@ describe("ApertureRuntime.checkMissingModels", () => {
       model("synthetic", "foo"),
       model("openrouter", "missing-openrouter"),
     ]);
+
+    expect(notify).not.toHaveBeenCalled();
+  });
+});
+
+// Regression: when the gateway is transiently unavailable, providers() rejects
+// (e.g. a 5s abort timeout). checkMissingModels is fire-and-forget in the sync
+// handler, so an unhandled rejection would crash Pi via uncaughtException. This
+// is a warning-only check and must silently swallow gateway failures.
+describe("ApertureRuntime.checkMissingModels gateway failures", () => {
+  test("swallows gateway provider fetch errors", async () => {
+    getConfig.mockReturnValue(
+      proxyConfig([{ id: "synthetic", shouldCheckGatewayModels: true }]),
+    );
+    const err = new Error("The operation was aborted due to timeout");
+    err.name = "TimeoutError";
+    vi.mocked(ApertureClient).mockImplementation(function (this: {
+      providers: ReturnType<typeof vi.fn>;
+    }) {
+      this.providers = vi.fn().mockRejectedValue(err);
+      return this;
+    } as unknown as typeof ApertureClient);
+
+    const notify = vi.fn();
+    const runtime = new ApertureRuntime();
+
+    await expect(
+      runtime.checkMissingModels({
+        getModels: () => [model("synthetic", "missing-model")],
+        notify,
+      }),
+    ).resolves.toBeUndefined();
 
     expect(notify).not.toHaveBeenCalled();
   });
