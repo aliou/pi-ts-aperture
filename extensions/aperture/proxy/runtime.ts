@@ -1,23 +1,14 @@
-import { getApiProvider } from "@earendil-works/pi-ai";
 import { ApertureClient } from "../../../src/api/client";
 import type { ApertureProvider } from "../../../src/api/types";
 import { configLoader } from "../../../src/shared/config/loader";
 import type { ResolvedConfig } from "../../../src/shared/config/types";
 import type {
   Api,
-  AssistantMessageEventStream,
   CheckDeps,
-  Context,
   Model,
-  SimpleStreamOptions,
   SyncDeps,
 } from "../../../src/shared/types";
 import { resolveGatewayUrl, resolveProviderBaseUrl } from "../../../src/url";
-
-const APERTURE_PROVENANCE_HEADERS = {
-  Referer: "https://pi.dev",
-  "X-Title": "npm:@aliou/pi-ts-aperture",
-};
 
 const MAX_MISSING_MODELS_PER_PROVIDER = 5;
 
@@ -33,18 +24,6 @@ const ROOT_BASE_URL_APIS = new Set<Api>([
 
 export function shouldUseGatewayRootForProxy(api: Api): boolean {
   return ROOT_BASE_URL_APIS.has(api);
-}
-
-function resolveProviderHeaders(
-  models: Model<Api>[],
-  sessionId: string,
-): Record<string, string> {
-  const modelHeaders = models.find((m) => m.headers)?.headers ?? {};
-  return {
-    ...APERTURE_PROVENANCE_HEADERS,
-    ...modelHeaders,
-    "x-session-id": sessionId,
-  };
 }
 
 export class ApertureRuntime {
@@ -68,33 +47,20 @@ export class ApertureRuntime {
       if (providerModels.length === 0) continue;
 
       const api = providerModels[0].api ?? "openai-completions";
-      const builtIn = getApiProvider(api);
 
       const providerBaseUrl = shouldUseGatewayRootForProxy(api)
         ? resolveGatewayUrl(config)
         : baseUrl;
       if (!providerBaseUrl) continue;
 
+      // Provenance headers (Referer, X-Title) and x-session-id are injected
+      // per-request via the `before_provider_headers` hook registered in the
+      // extension entry point, so provider registration only needs the
+      // gateway URL and API path here.
       deps.registerProvider(providerName, {
         baseUrl: providerBaseUrl,
         apiKey: "-",
-        headers: resolveProviderHeaders(providerModels, deps.getSessionId()),
         api,
-        streamSimple: builtIn
-          ? (
-              model: Model<Api>,
-              context: Context,
-              options?: SimpleStreamOptions,
-            ): AssistantMessageEventStream => {
-              return builtIn.streamSimple(model, context, {
-                ...options,
-                headers: {
-                  ...options?.headers,
-                  "x-session-id": options?.sessionId ?? "",
-                },
-              });
-            }
-          : undefined,
       });
     }
   }

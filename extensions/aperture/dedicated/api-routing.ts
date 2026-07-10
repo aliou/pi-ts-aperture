@@ -1,5 +1,5 @@
 import type { Api, Model } from "@earendil-works/pi-ai";
-import { getApiProvider } from "@earendil-works/pi-ai";
+import { getApiProvider } from "@earendil-works/pi-ai/compat";
 import type { ProviderCompatibility } from "../../../src/api/types";
 import type {
   AssistantMessageEventStream,
@@ -55,12 +55,6 @@ export function buildStreamSimple(routeByModelId: Map<string, ModelRoute>) {
       throw new Error(`Unsupported Aperture provider API: ${api}`);
     }
 
-    return provider.streamSimple({ ...model, api }, context, {
-      ...options,
-      headers: {
-        ...options?.headers,
-        "x-session-id": options?.sessionId ?? "",
-      },
-    });
+    return provider.streamSimple({ ...model, api }, context, options);
   };
 }

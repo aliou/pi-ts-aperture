@@ -25,11 +25,6 @@ import {
 const PROVIDER_NAME = "aperture";
 const APERTURE_API = "aperture";
 
-const HEADERS = {
-  Referer: "https://pi.dev",
-  "X-Title": "npm:@aliou/pi-ts-aperture",
-};
-
 interface BuiltModels {
   models: ProviderModelConfig[];
   routeByModelId: Map<string, { api: Api }>;
@@ -84,7 +79,6 @@ function registerFromBuilt(
     baseUrl,
     apiKey: "-",
     api: APERTURE_API,
-    headers: HEADERS,
     models: built.models,
     streamSimple: buildStreamSimple(built.routeByModelId),
   });

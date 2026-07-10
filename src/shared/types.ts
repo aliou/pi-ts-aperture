@@ -27,7 +27,6 @@ export interface SyncDeps {
     config: {
       baseUrl: string;
       apiKey: string;
-      headers: Record<string, string>;
       api: string;
       streamSimple?: (
         model: Model<Api>,
@@ -37,7 +36,6 @@ export interface SyncDeps {
     },
   ) => void;
   getModels: () => Model<Api>[];
-  getSessionId: () => string;
 }
 
 /**
@@ -46,12 +44,4 @@ export interface SyncDeps {
 export interface CheckDeps {
   getModels: () => Model<Api>[];
   notify: (msg: string, type: "warning" | "info") => void;
-}
-
-/**
- * Headers for provider registration.
- */
-export interface ProviderHeaders {
-  Referer: string;
-  "X-Title": string;
 }

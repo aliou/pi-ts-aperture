@@ -67,7 +67,7 @@ describe("ApertureRuntime.sync", () => {
 
   test("tracks Pi Codex path behavior that requires gateway root", async () => {
     const codexProviderUrl = await import.meta.resolve(
-      "@earendil-works/pi-ai/openai-codex-responses",
+      "@earendil-works/pi-ai/api/openai-codex-responses",
     );
     const source = readFileSync(new URL(codexProviderUrl), "utf8");
 
@@ -90,7 +90,6 @@ describe("ApertureRuntime.sync", () => {
         model("openai", "gpt-5.5", "openai-responses"),
         model("openai-codex", "gpt-5.5", "openai-codex-responses"),
       ],
-      getSessionId: vi.fn(() => "session-id"),
     });
 
     expect(registerProvider).toHaveBeenCalledWith(
