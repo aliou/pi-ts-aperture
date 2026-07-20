@@ -6,9 +6,12 @@ import { configLoader } from "../../src/shared/config/loader";
 import {
   APERTURE_FEATURE_REGISTER_EVENT,
   APERTURE_FEATURE_REQUEST_EVENT,
+  APERTURE_PROXY_MODEL_SELECTED_EVENT,
   createFeatureRequestPayload,
+  createProxyModelSelectedPayload,
 } from "../../src/shared/events";
 import { emitConfigSync } from "../../src/shared/sync-bus";
+import { resolveProviderBaseUrl } from "../../src/url";
 import { DedicatedRuntime } from "./dedicated/runtime";
 import { registerOnboarding } from "./onboarding";
 import { ApertureRuntime } from "./proxy/runtime";
@@ -59,6 +62,26 @@ export default async function (pi: ExtensionAPI): Promise<void> {
     knownModels = ctx.modelRegistry.getAll();
   };
 
+  const emitProxyModelSelected = (
+    model: { provider: string; id: string },
+    selectionSource: "set" | "cycle" | "restore" | "session_start",
+  ): void => {
+    const config = configLoader.getConfig();
+    const isProxied =
+      model.provider !== "aperture" &&
+      config.proxy.enabled &&
+      resolveProviderBaseUrl(config) !== null &&
+      config.proxy.upstreamProviders.some(
+        (provider) => provider.id === model.provider,
+      );
+    if (!isProxied) return;
+
+    pi.events.emit(
+      APERTURE_PROXY_MODEL_SELECTED_EVENT,
+      createProxyModelSelectedPayload(model, selectionSource),
+    );
+  };
+
   const onSync = (ctx: ExtensionContext): void => {
     updateKnownModels(ctx);
     emitConfigSync();
@@ -106,6 +129,11 @@ export default async function (pi: ExtensionAPI): Promise<void> {
       createFeatureRequestPayload(),
     );
     onSync(ctx);
+    if (ctx.model) emitProxyModelSelected(ctx.model, "session_start");
+  });
+
+  pi.on("model_select", (event) => {
+    emitProxyModelSelected(event.model, event.source);
   });
 
   registerApertureSettings(pi, onSync, () => knownModels);

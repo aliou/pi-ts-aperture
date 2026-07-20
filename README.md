@@ -46,6 +46,8 @@ Reroutes existing Pi providers through Aperture. Each provider keeps its own mod
 
 Provider selection matches your local Pi providers against the providers enabled on the gateway. Optional per-provider verification warns when configured local models are missing from the gateway.
 
+When a selected model belongs to a proxied provider, the extension emits `aperture:proxy:model-selected` on Pi's event bus. The payload includes `model`, `selectionSource`, and `timestamp`. Dedicated `aperture` provider selections do not emit this event.
+
 ### Connectors
 
 [![Connectors walkthrough](https://assets.aliou.me/pi-extensions/demos/aperture/v0.8.0/connectors.gif)](https://assets.aliou.me/pi-extensions/demos/aperture/v0.8.0/connectors.mp4)

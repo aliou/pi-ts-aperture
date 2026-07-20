@@ -141,6 +141,7 @@ There is no current `mode` setting. Legacy `mode` configs are migrated to capabi
 ### Proxy mode
 
 - Only overrides `baseUrl`, `apiKey`, and headers on existing providers. Model definitions are never touched.
+- Emits `aperture:proxy:model-selected` on session start and when a model from a configured proxy provider is selected. Dedicated `aperture` provider selections do not emit it.
 - Skips providers with no local models because there is nothing to reroute.
 - Provider selection maps Aperture providers to local Pi registry providers by id, exclusively from `/api/providers` cross-referenced with `/v1/models`, so only enabled providers (those whose models appear in `/v1/models`) are offered.
 - `anthropic-messages` and `openai-codex-responses` proxy registration use the Aperture root URL because Pi's Anthropic SDK and Codex adapter append their own API paths.
