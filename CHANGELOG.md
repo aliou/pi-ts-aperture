@@ -1,5 +1,11 @@
 # @aliou/pi-ts-aperture
 
+## 0.9.2
+
+### Patch Changes
+
+- ba0ad6f: Stop sending the `X-Title` provider header so it does not override other provider configuration.
+
 ## 0.9.1
 
 ### Patch Changes
