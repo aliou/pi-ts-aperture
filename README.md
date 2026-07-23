@@ -98,7 +98,7 @@ Notes:
 
 - An empty `dedicated.providers` list means all gateway providers are included.
 - Model metadata belongs in `~/.pi/agent/models.json`, not in the extension config.
-- Requests include provenance headers (`Referer`, `X-Title`) and `x-session-id` (the live Pi session id, injected per-request via the `before_provider_headers` hook) for grouping requests in the Aperture dashboard.
+- Requests include `Referer` and `x-session-id` (the live Pi session id, injected per-request via the `before_provider_headers` hook) for grouping requests in the Aperture dashboard.
 - No API keys are stored: Aperture injects upstream credentials server-side. Pi OAuth credentials still take precedence when available.
 
 ## Requirements

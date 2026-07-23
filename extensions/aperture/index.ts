@@ -20,13 +20,12 @@ export default async function (pi: ExtensionAPI): Promise<void> {
   const proxyRuntime = new ApertureRuntime();
   const dedicatedRuntime = new DedicatedRuntime();
 
-  // Inject provenance headers and the live session id on every provider
+  // Inject a provenance header and the live session id on every provider
   // request. `x-session-id` must reflect the current session (it changes on
   // /fork, /new, /resume), so it cannot be baked into provider registration.
   // The hook fires per request, after Pi assembles the outgoing headers.
   pi.on("before_provider_headers", (event, ctx) => {
     event.headers.Referer = "https://pi.dev";
-    event.headers["X-Title"] = "npm:@aliou/pi-ts-aperture";
     event.headers["x-session-id"] = ctx.sessionManager.getSessionId();
   });
 

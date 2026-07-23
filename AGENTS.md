@@ -172,7 +172,7 @@ There is no current `mode` setting. Legacy `mode` configs are migrated to capabi
 ### Requests and credentials
 
 - `apiKey` is set to `"-"` because Aperture injects the upstream provider key server-side. Pi OAuth credentials still take precedence when available.
-- Provenance headers (`Referer: https://pi.dev`, `X-Title: npm:@aliou/pi-ts-aperture`) and `x-session-id` (the live Pi session id) are injected on every provider request via the `before_provider_headers` hook, so `x-session-id` stays current across `/fork`, `/new`, and `/resume`. Headers are no longer baked into provider registration or a `streamSimple` wrapper.
+- `Referer: https://pi.dev` and `x-session-id` (the live Pi session id) are injected on every provider request via the `before_provider_headers` hook, so `x-session-id` stays current across `/fork`, `/new`, and `/resume`. Headers are no longer baked into provider registration or a `streamSimple` wrapper.
 - The extension does not send `x-upstream-provider-id`.
 - URLs are normalized on input: scheme is added when missing, paths such as `/v1` are stripped to the origin, and provider registration appends the API-specific path as needed.
 

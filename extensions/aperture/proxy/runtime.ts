@@ -53,10 +53,10 @@ export class ApertureRuntime {
         : baseUrl;
       if (!providerBaseUrl) continue;
 
-      // Provenance headers (Referer, X-Title) and x-session-id are injected
-      // per-request via the `before_provider_headers` hook registered in the
-      // extension entry point, so provider registration only needs the
-      // gateway URL and API path here.
+      // Referer and x-session-id are injected per-request via the
+      // `before_provider_headers` hook registered in the extension entry
+      // point, so provider registration only needs the gateway URL and API
+      // path here.
       deps.registerProvider(providerName, {
         baseUrl: providerBaseUrl,
         apiKey: "-",
