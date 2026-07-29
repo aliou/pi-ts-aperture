@@ -1,4 +1,4 @@
-import type { Api } from "@earendil-works/pi-ai";
+import type { Api, Model } from "@earendil-works/pi-ai";
 import type { ProviderModelConfig } from "@earendil-works/pi-coding-agent";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import type { ApertureProvider } from "../../../src/api/types";
@@ -75,6 +75,15 @@ function gatewayProvider(id: string, models: string[]): ApertureProvider {
     models,
     compatibility: { openai_chat: true },
   };
+}
+
+function nativeModel(
+  provider: string,
+  id: string,
+  baseUrl: string,
+  api: Api = "openai-completions",
+): Model<Api> {
+  return { provider, id, api, baseUrl } as Model<Api>;
 }
 
 function gatewayProviderWithPricing(
@@ -290,5 +299,140 @@ describe("DedicatedRuntime.syncConfig", () => {
     expect(cachedModels[0].cost?.output).toBe(3);
     expect(cachedModels[0].cost?.cacheRead).toBeCloseTo(0.18, 10);
     expect(cachedModels[0].cost?.cacheWrite).toBe(3);
+  });
+});
+
+describe("DedicatedRuntime upstream base URL inference", () => {
+  beforeEach(() => {
+    getConfig.mockReturnValue(dedicatedConfig());
+    // biome-ignore lint/complexity/useArrowFunction: must be constructible (new ApertureClient)
+    clientMock.mockImplementation(function () {
+      return { providers: providersMock };
+    });
+    loadCachedDedicatedModels.mockReset();
+    writeCachedDedicatedModels.mockReset();
+    providersMock.mockReset();
+  });
+
+  // Z.ai's coding endpoint is /api/coding/paas/v4 (no terminal /v1). A
+  // standard /v1/chat/completions client would produce /v4/v1/chat/completions,
+  // so the model must register against the gateway root.
+  test("routes Z.ai to gateway root via native registry lookup", async () => {
+    providersMock.mockResolvedValue([
+      gatewayProvider("zai", ["glm-5.2", "glm-4.7"]),
+    ]);
+    const registerProvider = vi.fn();
+    const runtime = new DedicatedRuntime();
+
+    await runtime.sync(
+      { registerProvider },
+      {
+        getModels: () => [
+          nativeModel("zai", "glm-5.2", "https://api.z.ai/api/coding/paas/v4"),
+          nativeModel("zai", "glm-4.7", "https://api.z.ai/api/coding/paas/v4"),
+        ],
+      },
+    );
+
+    const { models } = captureRegistered(registerProvider) ?? { models: [] };
+    expect(models.map((m) => m.baseUrl)).toEqual([GATEWAY, GATEWAY]);
+  });
+
+  test("routes OpenAI to gateway /v1 via native registry lookup", async () => {
+    providersMock.mockResolvedValue([gatewayProvider("openai", ["gpt-5"])]);
+    const registerProvider = vi.fn();
+    await new DedicatedRuntime().sync(
+      { registerProvider },
+      {
+        getModels: () => [
+          nativeModel("openai", "gpt-5", "https://api.openai.com/v1"),
+        ],
+      },
+    );
+
+    const { models } = captureRegistered(registerProvider) ?? { models: [] };
+    expect(models.map((m) => m.baseUrl)).toEqual([`${GATEWAY}/v1`]);
+  });
+
+  // Root-baseurl providers (Mistral, DeepSeek) must keep gateway /v1: Aperture
+  // appends /v1/chat/completions to the root and they serve it. Only non-/v1
+  // version segments (Z.ai /v4) need the root.
+  test("routes root-baseurl providers (Mistral) to gateway /v1", async () => {
+    providersMock.mockResolvedValue([
+      gatewayProvider("mistral", ["mistral-small-latest"]),
+    ]);
+    const registerProvider = vi.fn();
+    await new DedicatedRuntime().sync(
+      { registerProvider },
+      {
+        getModels: () => [
+          nativeModel(
+            "mistral",
+            "mistral-small-latest",
+            "https://api.mistral.ai",
+          ),
+        ],
+      },
+    );
+
+    const { models } = captureRegistered(registerProvider) ?? { models: [] };
+    expect(models.map((m) => m.baseUrl)).toEqual([`${GATEWAY}/v1`]);
+  });
+
+  test("falls back to gateway /v1 when no native registry match exists", async () => {
+    providersMock.mockResolvedValue([
+      gatewayProvider("custom-provider", ["some-model"]),
+    ]);
+    const registerProvider = vi.fn();
+    await new DedicatedRuntime().sync(
+      { registerProvider },
+      { getModels: () => [] },
+    );
+
+    const { models } = captureRegistered(registerProvider) ?? { models: [] };
+    expect(models.map((m) => m.baseUrl)).toEqual([`${GATEWAY}/v1`]);
+  });
+
+  // Model ids are upstream-standardized, so a model-id match still resolves
+  // the upstream base URL when the gateway provider id does not match a
+  // native Pi provider.
+  test("falls back to model-id match when provider id differs", async () => {
+    providersMock.mockResolvedValue([
+      gatewayProvider("my-zai-alias", ["glm-5.2"]),
+    ]);
+    const registerProvider = vi.fn();
+    await new DedicatedRuntime().sync(
+      { registerProvider },
+      {
+        getModels: () => [
+          nativeModel("zai", "glm-5.2", "https://api.z.ai/api/coding/paas/v4"),
+        ],
+      },
+    );
+
+    const { models } = captureRegistered(registerProvider) ?? { models: [] };
+    expect(models.map((m) => m.baseUrl)).toEqual([GATEWAY]);
+  });
+
+  // After dedicated registration the registry also contains `aperture`
+  // provider models with gateway base URLs. Those must not pollute the lookup
+  // (they would flip the inference back to /v1 on re-sync).
+  test("ignores registry models already rewritten to the gateway", async () => {
+    providersMock.mockResolvedValue([gatewayProvider("zai", ["glm-5.2"])]);
+    const registerProvider = vi.fn();
+    await new DedicatedRuntime().sync(
+      { registerProvider },
+      {
+        getModels: () => [
+          nativeModel("zai", "glm-5.2", "https://api.z.ai/api/coding/paas/v4"),
+          // Already-rewritten dedicated model from a prior sync.
+          nativeModel("aperture", "glm-5.2", GATEWAY),
+          nativeModel("aperture", "glm-5.2", `${GATEWAY}/v1`),
+        ],
+      },
+    );
+
+    const { models } = captureRegistered(registerProvider) ?? { models: [] };
+    expect(models.map((m) => m.baseUrl)).toEqual([GATEWAY]);
   });
 });
