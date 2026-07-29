@@ -1,6 +1,7 @@
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { getApiProvider } from "@earendil-works/pi-ai/compat";
 import type { ProviderCompatibility } from "../../../src/api/types";
+import { shouldUseGatewayRoot } from "../../../src/base-url-routing";
 import type {
   AssistantMessageEventStream,
   Context,
@@ -29,6 +30,7 @@ export function getBaseUrlForApi(
   api: Api,
   gatewayUrl: string,
   baseUrl: string,
+  upstreamBaseUrl?: string,
 ): string {
   switch (api) {
     case "anthropic-messages":
@@ -38,7 +40,12 @@ export function getBaseUrlForApi(
     case "google-vertex":
       return `${gatewayUrl}/v1`;
     default:
-      return baseUrl;
+      // openai-completions / openai-responses: infer from the upstream base
+      // URL (when known) whether the gateway root or gateway/v1 is correct.
+      // Providers whose upstream does not end in /v1 (e.g. Z.ai
+      // /api/coding/paas/v4) need the root; others keep gateway/v1. Missing
+      // upstream URLs keep /v1 to stay safe.
+      return shouldUseGatewayRoot(api, upstreamBaseUrl) ? gatewayUrl : baseUrl;
   }
 }
 

@@ -90,12 +90,14 @@ export default async function (pi: ExtensionAPI): Promise<void> {
       notify: (msg, type) => ctx.ui.notify(msg, type),
     });
 
-    void dedicatedRuntime.sync(pi).catch((error: unknown) => {
-      ctx.ui.notify(
-        `[aperture] dedicated sync failed: ${error instanceof Error ? error.message : String(error)}`,
-        "warning",
-      );
-    });
+    void dedicatedRuntime
+      .sync(pi, { getModels: () => ctx.modelRegistry.getAll() })
+      .catch((error: unknown) => {
+        ctx.ui.notify(
+          `[aperture] dedicated sync failed: ${error instanceof Error ? error.message : String(error)}`,
+          "warning",
+        );
+      });
   };
 
   pi.on("session_start", (_event, ctx) => {
