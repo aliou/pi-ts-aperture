@@ -11,6 +11,10 @@ import type {
 } from "../../../src/shared/types";
 import { resolveGatewayUrl, resolveProviderBaseUrl } from "../../../src/url";
 
+// Re-exported under the historical name so the proxy runtime test suite can
+// exercise the shared inference logic without importing from src/ directly.
+export { shouldUseGatewayRoot as shouldUseGatewayRootForProxy } from "../../../src/base-url-routing";
+
 const MAX_MISSING_MODELS_PER_PROVIDER = 5;
 
 export class ApertureRuntime {
