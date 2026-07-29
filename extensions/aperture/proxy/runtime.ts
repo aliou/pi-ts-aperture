@@ -1,5 +1,6 @@
 import { ApertureClient } from "../../../src/api/client";
 import type { ApertureProvider } from "../../../src/api/types";
+import { shouldUseGatewayRoot } from "../../../src/base-url-routing";
 import { configLoader } from "../../../src/shared/config/loader";
 import type { ResolvedConfig } from "../../../src/shared/config/types";
 import type {
@@ -11,54 +12,6 @@ import type {
 import { resolveGatewayUrl, resolveProviderBaseUrl } from "../../../src/url";
 
 const MAX_MISSING_MODELS_PER_PROVIDER = 5;
-
-const ROOT_BASE_URL_APIS = new Set<Api>([
-  // Pi's Anthropic adapter uses Anthropic's SDK, which appends /v1/messages
-  // itself. Registering /v1 would produce /v1/v1/messages, which Aperture
-  // does not expose.
-  "anthropic-messages",
-  // Pi's Codex adapter appends /codex/responses itself. Registering /v1
-  // would produce /v1/codex/responses, which Aperture does not expose.
-  "openai-codex-responses",
-]);
-
-// Pi passes `model.baseUrl` straight to the OpenAI SDK for these APIs, which
-// then appends /chat/completions or /responses. The terminal /v1 segment of
-// the upstream provider base URL is therefore part of its API shape: OpenAI
-// (/v1) and Groq (/openai/v1) need gateway /v1, while Z.ai
-// (/api/coding/paas/v4) needs the gateway root.
-const OPENAI_SDK_APIS = new Set<Api>([
-  "openai-completions",
-  "openai-responses",
-]);
-
-/**
- * `true` when `baseUrl`'s pathname ends in `/v1`, `false` when it does not,
- * `undefined` when the URL is missing or cannot be parsed (caller falls back
- * to a conservative default).
- */
-function hasTerminalV1Path(baseUrl: string | undefined): boolean | undefined {
-  if (!baseUrl) return undefined;
-  try {
-    const path = new URL(baseUrl).pathname.replace(/\/+$/u, "");
-    return path.endsWith("/v1");
-  } catch {
-    return undefined;
-  }
-}
-
-export function shouldUseGatewayRootForProxy(
-  api: Api,
-  upstreamBaseUrl?: string,
-): boolean {
-  if (ROOT_BASE_URL_APIS.has(api)) return true;
-  // Non-OpenAI-SDK APIs (Gemini, Bedrock, ...) build request paths their own
-  // way; keep the conservative gateway /v1 behavior.
-  if (!OPENAI_SDK_APIS.has(api)) return false;
-  // Use the gateway root only when we know the upstream does not end in /v1.
-  // Missing or unparseable URLs keep /v1 to stay safe.
-  return hasTerminalV1Path(upstreamBaseUrl) === false;
-}
 
 export class ApertureRuntime {
   // Upstream provider base URLs captured on first registration. A settings
@@ -104,7 +57,7 @@ export class ApertureRuntime {
         this.upstreamBaseUrls.set(providerName, upstreamBaseUrl);
       }
 
-      const providerBaseUrl = shouldUseGatewayRootForProxy(api, upstreamBaseUrl)
+      const providerBaseUrl = shouldUseGatewayRoot(api, upstreamBaseUrl)
         ? gatewayRoot
         : baseUrl;
 
