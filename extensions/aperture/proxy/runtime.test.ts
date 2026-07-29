@@ -119,14 +119,26 @@ describe("ApertureRuntime.sync", () => {
 
 describe("shouldUseGatewayRootForProxy OpenAI SDK path inference", () => {
   test.each([
+    // /v1 baseurls keep gateway /v1 (OpenAI, Groq, OpenRouter, etc.).
     ["openai", "https://api.openai.com/v1", true, false],
     ["groq", "https://api.groq.com/openai/v1", true, false],
-    ["zai", "https://api.z.ai/api/coding/paas/v4", true, true],
-    ["deepseek", "https://api.deepseek.com", true, true],
-    ["fireworks", "https://api.fireworks.ai/inference", true, true],
-    ["v1beta", "https://example.test/v1beta", true, true],
-    ["path-after-v1", "https://example.test/v1/proxy", true, true],
+    ["openrouter", "https://openrouter.ai/api/v1", true, false],
     ["trailing-slash", "https://example.test/v1/", true, false],
+    // Root baseurls (Mistral, DeepSeek, Fireworks) keep gateway /v1: Aperture
+    // appends /v1/chat/completions to the root and the upstream serves it.
+    ["mistral", "https://api.mistral.ai", true, false],
+    ["deepseek", "https://api.deepseek.com", true, false],
+    ["fireworks", "https://api.fireworks.ai/inference", true, false],
+    // Non-/v1 version segments need the gateway root: Aperture would otherwise
+    // double the version (/v4/v1/chat/completions).
+    ["zai", "https://api.z.ai/api/coding/paas/v4", true, true],
+    ["zai-v4beta", "https://api.z.ai/api/coding/paas/v4beta", true, true],
+    ["v2", "https://example.test/v2", true, true],
+    ["v10", "https://example.test/v10", true, true],
+    // Non-version path segments are not treated as versions.
+    ["non-version", "https://example.test/inference", true, false],
+    ["vision", "https://example.test/vision", true, false],
+    // openai-responses follows the same rule.
     ["responses-openai", "https://api.openai.com/v1", false, false],
     ["responses-zai", "https://api.z.ai/api/coding/paas/v4", false, true],
   ])("%s completions baseUrl %s", (_name, baseUrl, isCompletions, expectedRoot) => {
