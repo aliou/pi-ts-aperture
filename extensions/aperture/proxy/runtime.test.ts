@@ -18,8 +18,13 @@ vi.mock("../../../src/api/client", () => ({
 
 const getConfig = vi.mocked(configLoader.getConfig);
 
-function model(provider: string, id: string, api?: Api): Model<Api> {
-  return { provider, id, api } as Model<Api>;
+function model(
+  provider: string,
+  id: string,
+  api?: Api,
+  baseUrl?: string,
+): Model<Api> {
+  return { provider, id, api, baseUrl } as Model<Api>;
 }
 
 function provider(id: string, models: string[]) {
@@ -87,7 +92,12 @@ describe("ApertureRuntime.sync", () => {
       registerProvider,
       getModels: () => [
         model("anthropic", "claude-sonnet-4-6", "anthropic-messages"),
-        model("openai", "gpt-5.5", "openai-responses"),
+        model(
+          "openai",
+          "gpt-5.5",
+          "openai-responses",
+          "https://api.openai.com/v1",
+        ),
         model("openai-codex", "gpt-5.5", "openai-codex-responses"),
       ],
     });
@@ -104,6 +114,153 @@ describe("ApertureRuntime.sync", () => {
       "openai-codex",
       expect.objectContaining({ baseUrl: "http://gateway.test" }),
     );
+  });
+});
+
+describe("shouldUseGatewayRootForProxy OpenAI SDK path inference", () => {
+  test.each([
+    ["openai", "https://api.openai.com/v1", true, false],
+    ["groq", "https://api.groq.com/openai/v1", true, false],
+    ["zai", "https://api.z.ai/api/coding/paas/v4", true, true],
+    ["deepseek", "https://api.deepseek.com", true, true],
+    ["fireworks", "https://api.fireworks.ai/inference", true, true],
+    ["v1beta", "https://example.test/v1beta", true, true],
+    ["path-after-v1", "https://example.test/v1/proxy", true, true],
+    ["trailing-slash", "https://example.test/v1/", true, false],
+    ["responses-openai", "https://api.openai.com/v1", false, false],
+    ["responses-zai", "https://api.z.ai/api/coding/paas/v4", false, true],
+  ])("%s completions baseUrl %s", (_name, baseUrl, isCompletions, expectedRoot) => {
+    const api: Api = isCompletions ? "openai-completions" : "openai-responses";
+    expect(shouldUseGatewayRootForProxy(api, baseUrl)).toBe(expectedRoot);
+  });
+
+  test("missing upstream base URL keeps /v1 for OpenAI SDK APIs", () => {
+    expect(shouldUseGatewayRootForProxy("openai-completions")).toBe(false);
+    expect(shouldUseGatewayRootForProxy("openai-responses")).toBe(false);
+  });
+
+  test("unparseable base URL keeps /v1 for OpenAI SDK APIs", () => {
+    expect(
+      shouldUseGatewayRootForProxy("openai-completions", "not a url"),
+    ).toBe(false);
+  });
+
+  test("non-OpenAI-SDK APIs keep /v1 regardless of base URL", () => {
+    expect(
+      shouldUseGatewayRootForProxy(
+        "google-generative-ai",
+        "https://example.test/v4",
+      ),
+    ).toBe(false);
+  });
+
+  test("Anthropic and Codex always use root regardless of base URL", () => {
+    expect(
+      shouldUseGatewayRootForProxy(
+        "anthropic-messages",
+        "https://example.test/v1",
+      ),
+    ).toBe(true);
+    expect(
+      shouldUseGatewayRootForProxy(
+        "openai-codex-responses",
+        "https://example.test/v1",
+      ),
+    ).toBe(true);
+  });
+});
+
+describe("ApertureRuntime.sync OpenAI SDK inference", () => {
+  beforeEach(() => {
+    getConfig.mockReturnValue(
+      proxyConfig([
+        { id: "zai", shouldCheckGatewayModels: false },
+        { id: "openai", shouldCheckGatewayModels: false },
+        { id: "groq", shouldCheckGatewayModels: false },
+      ]),
+    );
+  });
+
+  test("routes Z.ai to gateway root and OpenAI/Groq to gateway /v1", async () => {
+    const registerProvider = vi.fn();
+    const runtime = new ApertureRuntime();
+
+    await runtime.sync({
+      registerProvider,
+      getModels: () => [
+        model(
+          "zai",
+          "glm-4.5-air",
+          "openai-completions",
+          "https://api.z.ai/api/coding/paas/v4",
+        ),
+        model(
+          "openai",
+          "gpt-5.5",
+          "openai-responses",
+          "https://api.openai.com/v1",
+        ),
+        model(
+          "groq",
+          "llama-4",
+          "openai-completions",
+          "https://api.groq.com/openai/v1",
+        ),
+      ],
+    });
+
+    expect(registerProvider).toHaveBeenCalledWith(
+      "zai",
+      expect.objectContaining({ baseUrl: "http://gateway.test" }),
+    );
+    expect(registerProvider).toHaveBeenCalledWith(
+      "openai",
+      expect.objectContaining({ baseUrl: "http://gateway.test/v1" }),
+    );
+    expect(registerProvider).toHaveBeenCalledWith(
+      "groq",
+      expect.objectContaining({ baseUrl: "http://gateway.test/v1" }),
+    );
+  });
+
+  test("keeps the inferred upstream base URL stable across re-syncs", async () => {
+    const registerProvider = vi.fn();
+    const runtime = new ApertureRuntime();
+
+    const upstreamModels = () => [
+      model(
+        "zai",
+        "glm-4.5-air",
+        "openai-completions",
+        "https://api.z.ai/api/coding/paas/v4",
+      ),
+    ];
+
+    await runtime.sync({
+      registerProvider,
+      getModels: upstreamModels,
+    });
+
+    // Second sync: model list is already rewritten to the gateway (as Pi
+    // would surface after a settings reload). The cached upstream URL must
+    // keep Z.ai on gateway root instead of flipping back to /v1.
+    const rewrittenModels = () => [
+      model("zai", "glm-4.5-air", "openai-completions", "http://gateway.test"),
+    ];
+    await runtime.sync({
+      registerProvider,
+      getModels: rewrittenModels,
+    });
+
+    const zaiCalls = registerProvider.mock.calls.filter(
+      ([name]) => name === "zai",
+    );
+    expect(zaiCalls).toHaveLength(2);
+    for (const [, config] of zaiCalls) {
+      expect(config).toEqual(
+        expect.objectContaining({ baseUrl: "http://gateway.test" }),
+      );
+    }
   });
 });
 

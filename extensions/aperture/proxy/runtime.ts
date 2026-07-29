@@ -22,18 +22,60 @@ const ROOT_BASE_URL_APIS = new Set<Api>([
   "openai-codex-responses",
 ]);
 
-export function shouldUseGatewayRootForProxy(api: Api): boolean {
-  return ROOT_BASE_URL_APIS.has(api);
+// Pi passes `model.baseUrl` straight to the OpenAI SDK for these APIs, which
+// then appends /chat/completions or /responses. The terminal /v1 segment of
+// the upstream provider base URL is therefore part of its API shape: OpenAI
+// (/v1) and Groq (/openai/v1) need gateway /v1, while Z.ai
+// (/api/coding/paas/v4) needs the gateway root.
+const OPENAI_SDK_APIS = new Set<Api>([
+  "openai-completions",
+  "openai-responses",
+]);
+
+/**
+ * `true` when `baseUrl`'s pathname ends in `/v1`, `false` when it does not,
+ * `undefined` when the URL is missing or cannot be parsed (caller falls back
+ * to a conservative default).
+ */
+function hasTerminalV1Path(baseUrl: string | undefined): boolean | undefined {
+  if (!baseUrl) return undefined;
+  try {
+    const path = new URL(baseUrl).pathname.replace(/\/+$/u, "");
+    return path.endsWith("/v1");
+  } catch {
+    return undefined;
+  }
+}
+
+export function shouldUseGatewayRootForProxy(
+  api: Api,
+  upstreamBaseUrl?: string,
+): boolean {
+  if (ROOT_BASE_URL_APIS.has(api)) return true;
+  // Non-OpenAI-SDK APIs (Gemini, Bedrock, ...) build request paths their own
+  // way; keep the conservative gateway /v1 behavior.
+  if (!OPENAI_SDK_APIS.has(api)) return false;
+  // Use the gateway root only when we know the upstream does not end in /v1.
+  // Missing or unparseable URLs keep /v1 to stay safe.
+  return hasTerminalV1Path(upstreamBaseUrl) === false;
 }
 
 export class ApertureRuntime {
+  // Upstream provider base URLs captured on first registration. A settings
+  // reload re-runs sync, but by then the model list is already rewritten to
+  // the Aperture gateway (providerModels[0].baseUrl is the gateway URL), so
+  // the upstream /v1 shape can no longer be read from the live models. The
+  // cache keeps the first inferred value stable across re-syncs.
+  private readonly upstreamBaseUrls = new Map<string, string>();
+
   async sync(deps: SyncDeps): Promise<void> {
     const config = configLoader.getConfig();
     if (!config.proxy.enabled) return;
     if (!config.baseUrl || config.proxy.upstreamProviders.length === 0) return;
 
+    const gatewayRoot = resolveGatewayUrl(config);
     const baseUrl = resolveProviderBaseUrl(config);
-    if (!baseUrl) return;
+    if (!gatewayRoot || !baseUrl) return;
 
     const allModels = deps.getModels();
     const providerIds = config.proxy.upstreamProviders
@@ -46,12 +88,25 @@ export class ApertureRuntime {
       );
       if (providerModels.length === 0) continue;
 
-      const api = providerModels[0].api ?? "openai-completions";
+      const sourceModel = providerModels[0];
+      const api = sourceModel.api ?? "openai-completions";
 
-      const providerBaseUrl = shouldUseGatewayRootForProxy(api)
-        ? resolveGatewayUrl(config)
+      // If the live model URL is already the gateway itself, the upstream
+      // shape was overwritten by a prior sync; reuse the cached upstream URL
+      // instead of re-deriving it from the gateway URL.
+      const liveBaseUrl = sourceModel.baseUrl;
+      const isAlreadyGateway =
+        liveBaseUrl === gatewayRoot || liveBaseUrl === baseUrl;
+      const upstreamBaseUrl = isAlreadyGateway
+        ? this.upstreamBaseUrls.get(providerName)
+        : liveBaseUrl;
+      if (!isAlreadyGateway && upstreamBaseUrl) {
+        this.upstreamBaseUrls.set(providerName, upstreamBaseUrl);
+      }
+
+      const providerBaseUrl = shouldUseGatewayRootForProxy(api, upstreamBaseUrl)
+        ? gatewayRoot
         : baseUrl;
-      if (!providerBaseUrl) continue;
 
       // Referer and x-session-id are injected per-request via the
       // `before_provider_headers` hook registered in the extension entry
