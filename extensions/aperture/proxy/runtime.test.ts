@@ -1,10 +1,11 @@
 import { readFileSync } from "node:fs";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { ApertureClient } from "../../../src/api/client";
+import { shouldUseGatewayRoot } from "../../../src/base-url-routing";
 import { configLoader } from "../../../src/shared/config/loader";
 import type { ResolvedConfig } from "../../../src/shared/config/types";
 import type { Api, Model } from "../../../src/shared/types";
-import { ApertureRuntime, shouldUseGatewayRootForProxy } from "./runtime";
+import { ApertureRuntime } from "./runtime";
 
 vi.mock("../../../src/shared/config/loader", () => ({
   configLoader: {
@@ -79,9 +80,9 @@ describe("ApertureRuntime.sync", () => {
     expect(source).toMatch(
       /function resolveCodexUrl[\s\S]*if \(normalized\.endsWith\("\/codex\/responses"\)\)[\s\S]*return normalized;[\s\S]*if \(normalized\.endsWith\("\/codex"\)\)[\s\S]*return `\$\{normalized\}\/responses`;[\s\S]*return `\$\{normalized\}\/codex\/responses`;/,
     );
-    expect(shouldUseGatewayRootForProxy("openai-codex-responses")).toBe(true);
-    expect(shouldUseGatewayRootForProxy("anthropic-messages")).toBe(true);
-    expect(shouldUseGatewayRootForProxy("openai-responses")).toBe(false);
+    expect(shouldUseGatewayRoot("openai-codex-responses")).toBe(true);
+    expect(shouldUseGatewayRoot("anthropic-messages")).toBe(true);
+    expect(shouldUseGatewayRoot("openai-responses")).toBe(false);
   });
 
   test("uses gateway root for Anthropic and Codex because Pi appends API paths", async () => {
@@ -117,55 +118,56 @@ describe("ApertureRuntime.sync", () => {
   });
 });
 
-describe("shouldUseGatewayRootForProxy OpenAI SDK path inference", () => {
+describe("shouldUseGatewayRoot OpenAI SDK path inference", () => {
   test.each([
+    // /v1 baseurls keep gateway /v1 (OpenAI, Groq, OpenRouter, etc.).
     ["openai", "https://api.openai.com/v1", true, false],
     ["groq", "https://api.groq.com/openai/v1", true, false],
-    ["zai", "https://api.z.ai/api/coding/paas/v4", true, true],
-    ["deepseek", "https://api.deepseek.com", true, true],
-    ["fireworks", "https://api.fireworks.ai/inference", true, true],
-    ["v1beta", "https://example.test/v1beta", true, true],
-    ["path-after-v1", "https://example.test/v1/proxy", true, true],
+    ["openrouter", "https://openrouter.ai/api/v1", true, false],
     ["trailing-slash", "https://example.test/v1/", true, false],
+    // Root baseurls (Mistral, DeepSeek, Fireworks) keep gateway /v1: Aperture
+    // appends /v1/chat/completions to the root and the upstream serves it.
+    ["mistral", "https://api.mistral.ai", true, false],
+    ["deepseek", "https://api.deepseek.com", true, false],
+    ["fireworks", "https://api.fireworks.ai/inference", true, false],
+    // Non-/v1 version segments need the gateway root: Aperture would otherwise
+    // double the version (/v4/v1/chat/completions).
+    ["zai", "https://api.z.ai/api/coding/paas/v4", true, true],
+    ["zai-v4beta", "https://api.z.ai/api/coding/paas/v4beta", true, true],
+    ["v2", "https://example.test/v2", true, true],
+    ["v10", "https://example.test/v10", true, true],
+    // Non-version path segments are not treated as versions.
+    ["non-version", "https://example.test/inference", true, false],
+    ["vision", "https://example.test/vision", true, false],
+    // openai-responses follows the same rule.
     ["responses-openai", "https://api.openai.com/v1", false, false],
     ["responses-zai", "https://api.z.ai/api/coding/paas/v4", false, true],
   ])("%s completions baseUrl %s", (_name, baseUrl, isCompletions, expectedRoot) => {
     const api: Api = isCompletions ? "openai-completions" : "openai-responses";
-    expect(shouldUseGatewayRootForProxy(api, baseUrl)).toBe(expectedRoot);
+    expect(shouldUseGatewayRoot(api, baseUrl)).toBe(expectedRoot);
   });
 
   test("missing upstream base URL keeps /v1 for OpenAI SDK APIs", () => {
-    expect(shouldUseGatewayRootForProxy("openai-completions")).toBe(false);
-    expect(shouldUseGatewayRootForProxy("openai-responses")).toBe(false);
+    expect(shouldUseGatewayRoot("openai-completions")).toBe(false);
+    expect(shouldUseGatewayRoot("openai-responses")).toBe(false);
   });
 
   test("unparseable base URL keeps /v1 for OpenAI SDK APIs", () => {
-    expect(
-      shouldUseGatewayRootForProxy("openai-completions", "not a url"),
-    ).toBe(false);
+    expect(shouldUseGatewayRoot("openai-completions", "not a url")).toBe(false);
   });
 
   test("non-OpenAI-SDK APIs keep /v1 regardless of base URL", () => {
     expect(
-      shouldUseGatewayRootForProxy(
-        "google-generative-ai",
-        "https://example.test/v4",
-      ),
+      shouldUseGatewayRoot("google-generative-ai", "https://example.test/v4"),
     ).toBe(false);
   });
 
   test("Anthropic and Codex always use root regardless of base URL", () => {
     expect(
-      shouldUseGatewayRootForProxy(
-        "anthropic-messages",
-        "https://example.test/v1",
-      ),
+      shouldUseGatewayRoot("anthropic-messages", "https://example.test/v1"),
     ).toBe(true);
     expect(
-      shouldUseGatewayRootForProxy(
-        "openai-codex-responses",
-        "https://example.test/v1",
-      ),
+      shouldUseGatewayRoot("openai-codex-responses", "https://example.test/v1"),
     ).toBe(true);
   });
 });

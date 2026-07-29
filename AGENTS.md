@@ -74,6 +74,7 @@ Pi-agnostic Aperture API and mapping code lives under `src/`. Extension glue (Pi
 - `api/client.ts` - Pi-agnostic Aperture API client for `/api/providers` and `/v1/models` (connectors via `/api/connectors`). `providers()` cross-references `/v1/models` so disabled providers — whose models never appear there — are filtered out, leaving only enabled, callable providers.
 - `api/types.ts` - Aperture API response types.
 - `provider-mapping.ts` - Maps Aperture providers to local Pi registry models for proxy and dedicated selection.
+- `base-url-routing.ts` - Shared gateway-root-vs-`gateway/v1` inference (`shouldUseGatewayRoot`) from the Pi API and the upstream provider base URL. Used by both proxy and dedicated modes.
 - `url.ts` - URL normalization helpers.
 - `mcp-client.ts` - MCP client for Aperture's `/v1/mcp` Streamable HTTP endpoint (2024-11-05 protocol).
 
@@ -143,7 +144,7 @@ There is no current `mode` setting. Legacy `mode` configs are migrated to capabi
 - Only overrides `baseUrl`, `apiKey`, and headers on existing providers. Model definitions are never touched.
 - Skips providers with no local models because there is nothing to reroute.
 - Provider selection maps Aperture providers to local Pi registry providers by id, exclusively from `/api/providers` cross-referenced with `/v1/models`, so only enabled providers (those whose models appear in `/v1/models`) are offered.
-- Proxy base URL is chosen per provider so Pi's SDK appends the same request path it would to the upstream. `anthropic-messages` and `openai-codex-responses` always use the Aperture root URL because Pi's Anthropic SDK and Codex adapter append their own API paths (`/v1/messages`, `/codex/responses`). For the OpenAI SDK APIs (`openai-completions` / `openai-responses`), the extension inspects the upstream model base URL captured at first registration: if its pathname ends in `/v1` (e.g. OpenAI `/v1`, Groq `/openai/v1`) it registers `gateway/v1`, otherwise (e.g. Z.ai `/api/coding/paas/v4`, DeepSeek root) it registers the gateway root. The upstream base URL is cached per provider so a settings reload (whose model list is already rewritten to the gateway) keeps the decision stable. Missing or unparseable URLs fall back to `gateway/v1`.
+- Proxy and dedicated modes share one gateway-base-URL rule, implemented in `src/base-url-routing.ts` (`shouldUseGatewayRoot`). `anthropic-messages` and `openai-codex-responses` always use the Aperture root URL because Pi's Anthropic SDK and Codex adapter append their own API paths (`/v1/messages`, `/codex/responses`). For the OpenAI SDK APIs (`openai-completions` / `openai-responses`), a model registers against the gateway root only when its upstream base URL ends in a version segment that is not `/v1` (e.g. Z.ai `/api/coding/paas/v4`), because Aperture would otherwise double the version (`/v4/v1/chat/completions`). Root baseurls (Mistral, DeepSeek) and `/v1` baseurls (OpenAI, Groq, OpenRouter) keep `gateway/v1`, which is Aperture's standard `/v1/chat/completions` endpoint. Missing or unparseable upstream URLs keep `gateway/v1`.
 - Optional per-provider gateway model verification (`shouldCheckGatewayModels`) warns if configured local models are missing from the Aperture gateway.
 - Removed proxy providers trigger unregistration.
 
