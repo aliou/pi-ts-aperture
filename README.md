@@ -36,7 +36,7 @@ The wizard asks for your Aperture URL (with a health check), lets you pick capab
 
 Registers a standalone `aperture` provider listing the models your gateway exposes. You can include all gateway providers or filter to specific ones. Model IDs match what Aperture reports, and each model is routed through the Pi API that matches its Aperture provider compatibility.
 
-Because Aperture does not expose every Pi model capability, models get safe defaults: 128k context, 8k max output, text input, no reasoning. Gateway pricing is mapped to Pi costs when available. To customize capabilities for a model, add it to `~/.pi/agent/models.json` under the `aperture` provider.
+Aperture only reports model ids and pricing, so capabilities (context window, vision input, reasoning, thinking levels) come from the first source that knows the model: `~/.pi/agent/models.json` (under the `aperture` provider), then Pi's model registry, then [models.dev](https://models.dev), then safe defaults. Costs come from the gateway. The resolved catalog is cached in Pi's models store, so models load instantly on startup, even offline.
 
 ### Proxy existing providers
 

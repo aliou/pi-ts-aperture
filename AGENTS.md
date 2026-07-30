@@ -49,10 +49,9 @@ Pi-agnostic Aperture API and mapping code lives under `src/`. Extension glue (Pi
 
 - `index.ts` - Single extension entry point. Loads config, syncs proxy and dedicated providers, registers onboarding and settings.
 - `proxy/runtime.ts` - `ApertureRuntime` for proxy provider registration/unregistration and gateway model verification.
-- `dedicated/runtime.ts` - `DedicatedRuntime` for registering the standalone `aperture` provider from Aperture gateway providers and models.
-- `dedicated/api-routing.ts` - Aperture compatibility-to-Pi API routing helpers for dedicated mode.
-- `dedicated/model-defaults.ts` - Safe default model config builder for Aperture provider models.
-- `dedicated/models-cache.ts` - Stale-while-revalidate disk cache (`getAgentDir()/cache/aperture-dedicated-models.json`) for dedicated models and per-model upstream API routes, used to register the provider instantly on startup.
+- `dedicated/runtime.ts` - `registerDedicatedProvider` / `reconcileDedicatedProvider` for the standalone `aperture` provider. Model discovery and caching go through Pi's `refreshModels` hook and per-provider models store.
+- `dedicated/api-routing.ts` - Aperture compatibility-to-Pi API routing helpers for dedicated mode. `buildStreamSimple` routes each request via the `upstreamApi` field stamped on the model.
+- `dedicated/model-defaults.ts` - Model config builder merging safe defaults, resolved metadata, and gateway pricing.
 - `onboarding/index.ts` - Registers temporary onboarding affordances while onboarding is enabled.
 - `onboarding/onboarding.ts` - Onboarding wizard. Steps: welcome, URL, capability selection, provider selection, recap.
 - `onboarding/setup-command.ts` - `/aperture:onboarding` command registration. Saves config and reloads Pi after completion.
@@ -75,6 +74,7 @@ Pi-agnostic Aperture API and mapping code lives under `src/`. Extension glue (Pi
 - `api/types.ts` - Aperture API response types.
 - `provider-mapping.ts` - Maps Aperture providers to local Pi registry models for proxy and dedicated selection.
 - `base-url-routing.ts` - Shared gateway-root-vs-`gateway/v1` inference (`shouldUseGatewayRoot`) from the Pi API and the upstream provider base URL. Used by both proxy and dedicated modes.
+- `model-metadata/` - Capability metadata resolver for dedicated models. `index.ts` orchestrates precedence (Pi registry wins over models.dev) and re-exports the public API; `pi-registry.ts` and `models-dev.ts` implement one source each (including the best-effort `fetchModelsDevCatalog` fetch); `types.ts` holds the shared `ModelMetadata` shape.
 - `url.ts` - URL normalization helpers.
 - `mcp-client.ts` - MCP client for Aperture's `/v1/mcp` Streamable HTTP endpoint (2024-11-05 protocol).
 
@@ -152,12 +152,12 @@ There is no current `mode` setting. Legacy `mode` configs are migrated to capabi
 
 - Registers the Pi provider with a custom `aperture` API and routes each request through the target Pi API selected from Aperture provider compatibility.
 - Model IDs are exposed exactly as Aperture reports them. They are not prefixed with `provider::`.
-- Tracks model routing internally as `modelId -> api`.
+- Tracks model routing by stamping `upstreamApi` on each model config; the field survives Pi's provider composition and persists through the models store.
 - Can filter gateway models by enabled `dedicated.providers`; an empty provider filter means all gateway providers are included. A non-empty list with all `enabled: false` means no dedicated models are registered.
-- Builds safe defaults for every gateway model: 128k context, 8k output, text-only, no reasoning.
+- Resolves capability metadata per model at refresh time (`src/model-metadata.ts`): Pi's native model registry first (context window, output limit, input modalities, reasoning, `thinkingLevelMap`, `compat`), then the models.dev catalog (`https://models.dev/api.json`, best-effort fetch) as a fallback, then safe defaults (128k context, 8k output, text-only, no reasoning). Matching prefers an exact provider-id + model-id match; a model-id-only fallback copies capabilities but never cost or `compat`. Gateway pricing from `/v1/models` wins field-by-field for costs; rates the gateway omits keep the registry/models.dev value. The dedicated provider's own registry entries are excluded from metadata matching (they carry defaults from a prior refresh). `~/.pi/agent/models.json` remains the user-side override.
 - Fetches provider compatibility from `/api/providers` (each gateway provider reports its `compatibility` map) and maps it to Pi APIs: OpenAI chat/completions, Anthropic messages, OpenAI responses, Gemini generate content, Google Vertex, or Bedrock converse.
-- Per-model base URL is inferred from the upstream provider's base URL, looked up from Pi's native model registry (cross-referenced by provider id, then model id). Both modes apply the shared `shouldUseGatewayRoot` rule: a model uses the gateway root only when its upstream base URL ends in a non-`/v1` version segment (e.g. Z.ai `/api/coding/paas/v4`); root baseurls (Mistral, DeepSeek) and `/v1` baseurls (OpenAI, Groq) keep `gateway/v1`. Anthropic, Gemini, and Vertex keep their fixed paths. Gateway providers with no native Pi registry match keep `gateway/v1`. Inference runs at sync time (registry available via `session_start`); the resolved per-model base URLs are baked into the on-disk cache so `registerCached` replays them before the first revalidation.
-- Uses a stale-while-revalidate on-disk cache for gateway models and per-model upstream API routes, stored at `getAgentDir()/cache/aperture-dedicated-models.json` (shape: `{ version, gatewayUrl, models, routes }`). The provider is registered from the cache synchronously in the extension factory body so Pi can validate scoped models during startup, then `session_start`/`onSync` revalidates from the live gateway, writes the cache back, and re-registers with fresh models. The cache is ignored when its `gatewayUrl` no longer matches the configured gateway, until revalidation rewrites it. First run with no cache still resolves nothing until the first revalidation.
+- Per-model base URL is inferred from the upstream provider's base URL, looked up from Pi's native model registry (cross-referenced by provider id, then model id). Both modes apply the shared `shouldUseGatewayRoot` rule: a model uses the gateway root only when its upstream base URL ends in a non-`/v1` version segment (e.g. Z.ai `/api/coding/paas/v4`); root baseurls (Mistral, DeepSeek) and `/v1` baseurls (OpenAI, Groq) keep `gateway/v1`. Anthropic, Gemini, and Vertex keep their fixed paths. Gateway providers with no native Pi registry match keep `gateway/v1`. Inference runs at refresh time (registry available via `session_start`); the resolved per-model base URLs persist through the models store, so cache-only restores replay them before the first revalidation.
+- Model discovery and caching use Pi's `refreshModels` hook (requires Pi >= 0.80.8). The provider is registered in the extension factory body with a `refreshModels` callback; Pi immediately fires a cache-only refresh that restores the previous catalog from its per-provider models store (`~/.pi/agent/models-store.json`), so scoped models validate during startup, including offline. `session_start`/`onSync` then calls `ctx.modelRegistry.refresh()` for the networked revalidation, which fetches `/api/providers`, rebuilds and enriches the models, and writes the store back. Each store entry records a catalog key (gateway origin + normalized dedicated provider filter); cache-only restores return nothing when the key no longer matches the current config. First run with no stored catalog resolves nothing until the first networked refresh.
 
 ### Connectors
 

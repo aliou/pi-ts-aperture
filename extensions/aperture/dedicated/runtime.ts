@@ -1,10 +1,21 @@
-import type { Api, Model } from "@earendil-works/pi-ai";
+import type {
+  Api,
+  Model,
+  ModelsStoreEntry,
+  ProviderModelsStore,
+  RefreshModelsContext,
+} from "@earendil-works/pi-ai";
 import type {
   ExtensionAPI,
   ProviderModelConfig,
 } from "@earendil-works/pi-coding-agent";
 import { ApertureClient } from "../../../src/api/client";
 import type { ApertureProvider } from "../../../src/api/types";
+import {
+  fetchModelsDevCatalog,
+  type ModelsDevCatalog,
+  resolveModelMetadata,
+} from "../../../src/model-metadata";
 import {
   configLoader,
   type ResolvedConfig,
@@ -16,27 +27,50 @@ import {
   getBaseUrlForApi,
 } from "./api-routing";
 import { buildDefaultModelConfig } from "./model-defaults";
-import {
-  type DedicatedModelsCache,
-  loadCachedDedicatedModels,
-  writeCachedDedicatedModels,
-} from "./models-cache";
 
 const PROVIDER_NAME = "aperture";
 const APERTURE_API = "aperture";
 
 /**
- * Optional dependencies for dedicated sync. `getModels` exposes Pi's native
- * model registry so upstream base URLs can be looked up per provider/model
- * and used to infer gateway root vs gateway/v1 (see `getBaseUrlForApi`).
+ * Supplier of Pi's native registry models, used for upstream base URL
+ * inference and capability metadata. It is a function because refreshes read
+ * the registry at call time: the extension factory registers the provider
+ * before any registry access exists (`session_start` provides it), and later
+ * refreshes must see a live view, not a snapshot.
  */
-export interface DedicatedSyncDeps {
-  getModels?: () => Model<Api>[];
-}
+export type GetRegistryModels = () => Model<Api>[];
 
-interface BuiltModels {
-  models: ProviderModelConfig[];
-  routeByModelId: Map<string, { api: Api }>;
+/** Model config with the upstream Pi API embedded for stream-time routing. */
+type DedicatedModelConfig = ProviderModelConfig & { upstreamApi: Api };
+
+/**
+ * Store entry with the catalog identity it was built for. Restores are only
+ * valid when the identity still matches the current config; a catalog for a
+ * different gateway or provider selection must not be replayed.
+ */
+type DedicatedStoreEntry = ModelsStoreEntry & { catalogKey?: string };
+
+/**
+ * Identity of the catalog a store entry was built from: gateway origin plus
+ * the normalized dedicated provider filter. Comparing keys on cache-only
+ * restore rejects catalogs for a different gateway (origin equality, not a
+ * string prefix, so `gateway.example.evil` never matches `gateway.example`)
+ * and catalogs built under a different provider selection.
+ */
+function buildCatalogKey(gatewayUrl: string, config: ResolvedConfig): string {
+  let origin: string;
+  try {
+    origin = new URL(gatewayUrl).origin;
+  } catch {
+    origin = gatewayUrl;
+  }
+  const enabled = config.dedicated.providers
+    .filter((p) => p.enabled)
+    .map((p) => p.id)
+    .sort();
+  const filter =
+    config.dedicated.providers.length === 0 ? "*" : enabled.join(",");
+  return `${origin} ${filter}`;
 }
 
 function filterProviders(
@@ -56,7 +90,8 @@ function buildModels(
   gatewayUrl: string,
   baseUrl: string,
   registryModels: Model<Api>[],
-): BuiltModels {
+  modelsDev: ModelsDevCatalog | null,
+): DedicatedModelConfig[] {
   // Look up native upstream base URLs from Pi's model registry. Prefer a
   // provider-id match (same naming as the gateway), then a model-id match
   // (model ids are upstream-standardized, so they survive provider renaming).
@@ -76,115 +111,155 @@ function buildModels(
     }
   }
 
-  const routeByModelId = new Map<string, { api: Api }>();
-  const models: ProviderModelConfig[] = [];
+  // Metadata matching excludes the dedicated provider's own registry entries:
+  // they carry the safe defaults from a previous sync and would shadow real
+  // metadata on re-sync. Proxy-rewritten providers keep their native model
+  // definitions, so they stay useful for metadata.
+  const metadataRegistry = registryModels.filter(
+    (m) => m.provider !== PROVIDER_NAME,
+  );
+
+  const models: DedicatedModelConfig[] = [];
 
   for (const provider of providers) {
     const api = getApiForCompatibility(provider.compatibility);
     const providerUpstream = upstreamByProvider.get(provider.id);
     for (const modelId of provider.models) {
-      routeByModelId.set(modelId, { api });
       const modelInfo = provider.modelInfoById?.[modelId];
       // Fall back to a model-id lookup when the provider id does not match a
       // native Pi provider (e.g. a custom Aperture provider name).
       const upstreamBaseUrl = providerUpstream ?? upstreamByModel.get(modelId);
+      const metadata = resolveModelMetadata(provider.id, modelId, {
+        registryModels: metadataRegistry,
+        modelsDev,
+      });
       models.push({
         ...buildDefaultModelConfig({
           id: modelId,
           providerId: provider.id,
           provider: { id: provider.id, name: provider.name },
           pricing: modelInfo?.pricing,
+          metadata,
         }),
         api: APERTURE_API,
         baseUrl: getBaseUrlForApi(api, gatewayUrl, baseUrl, upstreamBaseUrl),
+        upstreamApi: api,
       });
     }
   }
 
-  return { models, routeByModelId };
+  return models;
 }
 
-function registerFromBuilt(
+/**
+ * Cache-only restore from Pi's models store. Returns `[]` when the store is
+ * empty, predates the catalog key, or was written for a different catalog
+ * identity (gateway origin or dedicated provider selection changed).
+ */
+async function readStoredModels(
+  store: ProviderModelsStore,
+  catalogKey: string,
+): Promise<ProviderModelConfig[]> {
+  try {
+    const stored = await store.read();
+    const entry = stored as DedicatedStoreEntry | undefined;
+    if (!entry || !Array.isArray(entry.models)) return [];
+    if (entry.catalogKey !== catalogKey) return [];
+    return [...(entry.models as unknown as ProviderModelConfig[])];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Refresh the dedicated model list. Called by Pi with `allowNetwork: false`
+ * right after registration (cache-only restore, before scope validation) and
+ * with network access when `ctx.modelRegistry.refresh()` runs.
+ *
+ * Reads config live at call time so settings changes (gateway URL, provider
+ * filter) apply on the next refresh without re-registering.
+ */
+async function refreshDedicatedModels(
+  context: RefreshModelsContext,
+  getModels: GetRegistryModels,
+): Promise<ProviderModelConfig[]> {
+  const config = configLoader.getConfig();
+  if (!config.dedicated.enabled) return [];
+  const gatewayUrl = resolveGatewayUrl(config);
+  const baseUrl = resolveProviderBaseUrl(config);
+  if (!gatewayUrl || !baseUrl) return [];
+
+  const catalogKey = buildCatalogKey(gatewayUrl, config);
+
+  if (!context.allowNetwork) {
+    return readStoredModels(context.store, catalogKey);
+  }
+
+  const client = new ApertureClient(gatewayUrl);
+  const [gatewayProviders, modelsDev] = await Promise.all([
+    client.providers(context.signal),
+    fetchModelsDevCatalog({ signal: context.signal }),
+  ]);
+  const providers = filterProviders(gatewayProviders, config);
+  const models = buildModels(
+    providers,
+    gatewayUrl,
+    baseUrl,
+    getModels(),
+    modelsDev,
+  );
+
+  const entry: DedicatedStoreEntry = {
+    models: models as unknown as Model<Api>[],
+    checkedAt: Date.now(),
+    catalogKey,
+  };
+  await context.store.write(entry);
+  return models;
+}
+
+/**
+ * Register the dedicated `aperture` provider with a `refreshModels` hook.
+ *
+ * Pi immediately fires a cache-only refresh after registration, restoring the
+ * previous catalog from `models-store.json` so scoped models validate during
+ * startup. The networked revalidation happens when `session_start` calls
+ * `ctx.modelRegistry.refresh()`.
+ *
+ * No-ops when dedicated is disabled or the gateway URL is unset.
+ */
+export function registerDedicatedProvider(
   pi: Pick<ExtensionAPI, "registerProvider">,
-  baseUrl: string,
-  built: BuiltModels,
+  getModels: GetRegistryModels,
 ): void {
-  if (built.models.length === 0) return;
+  const config = configLoader.getConfig();
+  if (!config.dedicated.enabled) return;
+
+  const baseUrl = resolveProviderBaseUrl(config);
+  if (!baseUrl) return;
+
   pi.registerProvider(PROVIDER_NAME, {
     baseUrl,
     apiKey: "-",
     api: APERTURE_API,
-    models: built.models,
-    streamSimple: buildStreamSimple(built.routeByModelId),
+    streamSimple: buildStreamSimple(),
+    refreshModels: (context) => refreshDedicatedModels(context, getModels),
   });
 }
 
-export class DedicatedRuntime {
-  /**
-   * Register the aperture provider synchronously from the on-disk cache so Pi
-   * can validate scoped models during startup, before `session_start`
-   * revalidates from the live gateway.
-   *
-   * No-ops when dedicated is disabled, the gateway URL is unset, or there is
-   * no usable cache (first run, or cache for a different gateway URL). The
-   * subsequent revalidation in {@link syncConfig} writes a fresh cache.
-   */
-  registerCached(pi: Pick<ExtensionAPI, "registerProvider">): void {
-    const config = configLoader.getConfig();
-    if (!config.dedicated.enabled) return;
-
-    const gatewayUrl = resolveGatewayUrl(config);
-    const baseUrl = resolveProviderBaseUrl(config);
-    if (!gatewayUrl || !baseUrl) return;
-
-    const cache = loadCachedDedicatedModels(gatewayUrl);
-    if (!cache) return;
-
-    const routeByModelId = new Map<string, { api: Api }>();
-    for (const [modelId, api] of Object.entries(cache.routes)) {
-      routeByModelId.set(modelId, { api });
-    }
-
-    registerFromBuilt(pi, baseUrl, {
-      models: cache.models,
-      routeByModelId,
-    });
+/**
+ * Reconcile registration with the current config: registers (or re-registers,
+ * picking up a changed gateway base URL) when dedicated is enabled, and
+ * unregisters when it is disabled or the gateway URL is unset.
+ */
+export function reconcileDedicatedProvider(
+  pi: Pick<ExtensionAPI, "registerProvider" | "unregisterProvider">,
+  getModels: GetRegistryModels,
+): void {
+  const config = configLoader.getConfig();
+  if (!config.dedicated.enabled || !resolveProviderBaseUrl(config)) {
+    pi.unregisterProvider(PROVIDER_NAME);
+    return;
   }
-
-  async sync(
-    pi: Pick<ExtensionAPI, "registerProvider">,
-    deps?: DedicatedSyncDeps,
-  ): Promise<void> {
-    const config = configLoader.getConfig();
-    await this.syncConfig(pi, config, deps);
-  }
-
-  async syncConfig(
-    pi: Pick<ExtensionAPI, "registerProvider">,
-    config: ResolvedConfig,
-    deps?: DedicatedSyncDeps,
-  ): Promise<void> {
-    if (!config.dedicated.enabled) return;
-
-    const gatewayUrl = resolveGatewayUrl(config);
-    const baseUrl = resolveProviderBaseUrl(config);
-    if (!gatewayUrl || !baseUrl) return;
-
-    const gatewayProviders = await new ApertureClient(gatewayUrl).providers();
-    const providers = filterProviders(gatewayProviders, config);
-    const registryModels = deps?.getModels?.() ?? [];
-    const built = buildModels(providers, gatewayUrl, baseUrl, registryModels);
-
-    registerFromBuilt(pi, baseUrl, built);
-
-    if (built.models.length > 0) {
-      const routes = new Map<string, Api>();
-      for (const [modelId, route] of built.routeByModelId) {
-        routes.set(modelId, route.api);
-      }
-      await writeCachedDedicatedModels(gatewayUrl, built.models, routes);
-    }
-  }
+  registerDedicatedProvider(pi, getModels);
 }
-
-export type { DedicatedModelsCache };

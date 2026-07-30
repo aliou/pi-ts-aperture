@@ -1,29 +1,24 @@
-import type { Api, Model } from "@earendil-works/pi-ai";
+import type {
+  Api,
+  Model,
+  ModelsStoreEntry,
+  ProviderModelsStore,
+  RefreshModelsContext,
+} from "@earendil-works/pi-ai";
 import type { ProviderModelConfig } from "@earendil-works/pi-coding-agent";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import type { ApertureProvider } from "../../../src/api/types";
+import type { ModelsDevCatalog } from "../../../src/model-metadata";
 
 // vi.hoisted gives access to the mock fns inside hoisted vi.mock factories
 // (which run before top-level bindings are initialized).
 const mocks = vi.hoisted(() => ({
   getConfig: vi.fn(),
   client: vi.fn(),
-  loadCachedDedicatedModels:
-    vi.fn<
-      (gatewayUrl: string) => {
-        gatewayUrl: string;
-        models: ProviderModelConfig[];
-        routes: Record<string, Api>;
-      } | null
-    >(),
-  writeCachedDedicatedModels: vi.fn<
-    (
-      gatewayUrl: string,
-      models: ProviderModelConfig[],
-      routes: Map<string, Api>,
-    ) => Promise<void>
-  >(async () => {}),
   providers: vi.fn<(signal?: AbortSignal) => Promise<ApertureProvider[]>>(),
+  fetchModelsDevCatalog: vi.fn<() => Promise<ModelsDevCatalog | null>>(
+    async () => null,
+  ),
 }));
 
 // Mock the config loader so the runtime never touches real config.
@@ -33,28 +28,32 @@ vi.mock("../../../src/shared/config/loader", () => ({
   },
 }));
 
-// Mock the models cache so we can assert register/write interactions without
-// touching disk.
-vi.mock("./models-cache", () => ({
-  loadCachedDedicatedModels: mocks.loadCachedDedicatedModels,
-  writeCachedDedicatedModels: mocks.writeCachedDedicatedModels,
-}));
-
-// Mock the ApertureClient so sync never hits the network. The constructor
+// Mock the ApertureClient so refresh never hits the network. The constructor
 // implementation is re-applied in beforeEach because vitest's mockReset:true
 // wipes implementations between tests.
 vi.mock("../../../src/api/client", () => ({
   ApertureClient: mocks.client,
 }));
 
+// Mock the models.dev fetch; individual tests provide a catalog when needed.
+vi.mock("../../../src/model-metadata", async (importOriginal) => {
+  const original =
+    await importOriginal<typeof import("../../../src/model-metadata")>();
+  return {
+    ...original,
+    fetchModelsDevCatalog: mocks.fetchModelsDevCatalog,
+  };
+});
+
 const { configLoader } = await import("../../../src/shared/config/loader");
-const { DedicatedRuntime } = await import("./runtime");
+const { registerDedicatedProvider, reconcileDedicatedProvider } = await import(
+  "./runtime"
+);
 
 const getConfig = vi.mocked(configLoader.getConfig);
 const clientMock = vi.mocked(mocks.client);
-const loadCachedDedicatedModels = vi.mocked(mocks.loadCachedDedicatedModels);
-const writeCachedDedicatedModels = vi.mocked(mocks.writeCachedDedicatedModels);
 const providersMock = vi.mocked(mocks.providers);
+const fetchModelsDevCatalogMock = vi.mocked(mocks.fetchModelsDevCatalog);
 
 const GATEWAY = "http://gateway.test";
 
@@ -77,15 +76,6 @@ function gatewayProvider(id: string, models: string[]): ApertureProvider {
   };
 }
 
-function nativeModel(
-  provider: string,
-  id: string,
-  baseUrl: string,
-  api: Api = "openai-completions",
-): Model<Api> {
-  return { provider, id, api, baseUrl } as Model<Api>;
-}
-
 function gatewayProviderWithPricing(
   id: string,
   modelId: string,
@@ -97,151 +87,254 @@ function gatewayProviderWithPricing(
   };
 }
 
-function captureRegistered(
-  registerProvider: ReturnType<typeof vi.fn>,
-): { models: ProviderModelConfig[]; streamSimple?: unknown } | null {
-  if (registerProvider.mock.calls.length === 0) return null;
-  const last = registerProvider.mock.calls.at(-1) as
-    | [string, { models?: ProviderModelConfig[]; streamSimple?: unknown }]
-    | undefined;
-  if (!last) return null;
-  const [, config] = last;
-  return { models: config.models ?? [], streamSimple: config.streamSimple };
+function nativeModel(
+  provider: string,
+  id: string,
+  baseUrl: string,
+  overrides: Partial<Model<Api>> = {},
+): Model<Api> {
+  return {
+    provider,
+    id,
+    api: "openai-completions",
+    baseUrl,
+    name: id,
+    reasoning: false,
+    input: ["text"],
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    contextWindow: 0,
+    maxTokens: 0,
+    ...overrides,
+  } as Model<Api>;
 }
 
-describe("DedicatedRuntime.registerCached", () => {
-  beforeEach(() => {
-    getConfig.mockReturnValue(dedicatedConfig());
-    // biome-ignore lint/complexity/useArrowFunction: must be constructible (new ApertureClient)
-    clientMock.mockImplementation(function () {
-      return { providers: providersMock };
-    });
-    loadCachedDedicatedModels.mockReset();
-    writeCachedDedicatedModels.mockReset();
-    providersMock.mockReset();
+/** In-memory ProviderModelsStore for driving refreshModels. */
+function memoryStore(initial?: ModelsStoreEntry): ProviderModelsStore & {
+  entry: ModelsStoreEntry | undefined;
+} {
+  const store = {
+    entry: initial,
+    read: async () => store.entry,
+    write: async (entry: ModelsStoreEntry) => {
+      store.entry = entry;
+    },
+    delete: async () => {
+      store.entry = undefined;
+    },
+  };
+  return store;
+}
+
+interface RegisteredProvider {
+  baseUrl?: string;
+  apiKey?: string;
+  streamSimple?: unknown;
+  refreshModels?: (
+    context: RefreshModelsContext,
+  ) => Promise<ProviderModelConfig[]>;
+}
+
+/** Register the provider against a fake pi and return the captured config. */
+function register(
+  getModels: () => Model<Api>[] = () => [],
+): RegisteredProvider | null {
+  const registerProvider = vi.fn();
+  registerDedicatedProvider({ registerProvider }, getModels);
+  const call = registerProvider.mock.calls.at(-1) as
+    | [string, RegisteredProvider]
+    | undefined;
+  return call ? call[1] : null;
+}
+
+async function refresh(
+  provider: RegisteredProvider,
+  store: ProviderModelsStore,
+  allowNetwork: boolean,
+): Promise<ProviderModelConfig[]> {
+  if (!provider.refreshModels) throw new Error("no refreshModels registered");
+  return provider.refreshModels({ store, allowNetwork });
+}
+
+type DedicatedModel = ProviderModelConfig & { upstreamApi?: Api };
+
+beforeEach(() => {
+  getConfig.mockReturnValue(dedicatedConfig());
+  // biome-ignore lint/complexity/useArrowFunction: must be constructible (new ApertureClient)
+  clientMock.mockImplementation(function () {
+    return { providers: providersMock };
   });
+  providersMock.mockReset();
+  fetchModelsDevCatalogMock.mockReset();
+  fetchModelsDevCatalogMock.mockResolvedValue(null);
+});
 
-  test("registers from cache synchronously", () => {
-    const cachedModels: ProviderModelConfig[] = [
-      {
-        id: "gpt-x",
-        name: "gpt-x",
-        reasoning: false,
-        input: ["text"],
-        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-        contextWindow: 128_000,
-        maxTokens: 8_192,
-        api: "aperture",
-        baseUrl: `${GATEWAY}/v1`,
-      },
-    ];
-    loadCachedDedicatedModels.mockReturnValue({
-      gatewayUrl: GATEWAY,
-      models: cachedModels,
-      routes: { "gpt-x": "openai-completions" },
-    });
-    const registerProvider = vi.fn();
-    const runtime = new DedicatedRuntime();
+describe("registerDedicatedProvider", () => {
+  test("registers the provider with a refreshModels hook", () => {
+    const provider = register();
 
-    runtime.registerCached({ registerProvider });
-
-    expect(loadCachedDedicatedModels).toHaveBeenCalledWith(GATEWAY);
-    expect(registerProvider).toHaveBeenCalledWith(
-      "aperture",
-      expect.objectContaining({
-        baseUrl: `${GATEWAY}/v1`,
-        apiKey: "-",
-        models: cachedModels,
-      }),
-    );
-    const registered = captureRegistered(registerProvider);
-    expect(registered).not.toBeNull();
-    expect(registered?.streamSimple).toBeTypeOf("function");
+    expect(provider).not.toBeNull();
+    expect(provider?.baseUrl).toBe(`${GATEWAY}/v1`);
+    expect(provider?.apiKey).toBe("-");
+    expect(provider?.streamSimple).toBeTypeOf("function");
+    expect(provider?.refreshModels).toBeTypeOf("function");
   });
 
   test("no-ops when dedicated is disabled", () => {
     getConfig.mockReturnValue(dedicatedConfig(false));
-    const registerProvider = vi.fn();
-    new DedicatedRuntime().registerCached({ registerProvider });
-
-    expect(registerProvider).not.toHaveBeenCalled();
-    expect(loadCachedDedicatedModels).not.toHaveBeenCalled();
-  });
-
-  test("no-ops when there is no cache (first run)", () => {
-    loadCachedDedicatedModels.mockReturnValue(null);
-    const registerProvider = vi.fn();
-    new DedicatedRuntime().registerCached({ registerProvider });
-
-    expect(registerProvider).not.toHaveBeenCalled();
-  });
-
-  test("no-ops when cache is for a different gateway URL", () => {
-    loadCachedDedicatedModels.mockReturnValue(null);
-    const registerProvider = vi.fn();
-    new DedicatedRuntime().registerCached({ registerProvider });
-
-    expect(registerProvider).not.toHaveBeenCalled();
+    expect(register()).toBeNull();
   });
 
   test("no-ops when baseUrl is unset", () => {
-    getConfig.mockReturnValue({
-      ...dedicatedConfig(),
-      baseUrl: "",
-    });
-    const registerProvider = vi.fn();
-    new DedicatedRuntime().registerCached({ registerProvider });
-
-    expect(registerProvider).not.toHaveBeenCalled();
+    getConfig.mockReturnValue({ ...dedicatedConfig(), baseUrl: "" });
+    expect(register()).toBeNull();
   });
 });
 
-describe("DedicatedRuntime.syncConfig", () => {
-  beforeEach(() => {
-    getConfig.mockReturnValue(dedicatedConfig());
-    // biome-ignore lint/complexity/useArrowFunction: must be constructible (new ApertureClient)
-    clientMock.mockImplementation(function () {
-      return { providers: providersMock };
-    });
-    loadCachedDedicatedModels.mockReset();
-    writeCachedDedicatedModels.mockReset();
-    providersMock.mockReset();
+describe("reconcileDedicatedProvider", () => {
+  test("unregisters when dedicated is disabled", () => {
+    getConfig.mockReturnValue(dedicatedConfig(false));
+    const registerProvider = vi.fn();
+    const unregisterProvider = vi.fn();
+
+    reconcileDedicatedProvider(
+      { registerProvider, unregisterProvider },
+      () => [],
+    );
+
+    expect(unregisterProvider).toHaveBeenCalledWith("aperture");
+    expect(registerProvider).not.toHaveBeenCalled();
   });
 
-  test("fetches, registers, and writes the cache", async () => {
+  test("re-registers when enabled", () => {
+    const registerProvider = vi.fn();
+    const unregisterProvider = vi.fn();
+
+    reconcileDedicatedProvider(
+      { registerProvider, unregisterProvider },
+      () => [],
+    );
+
+    expect(registerProvider).toHaveBeenCalledWith(
+      "aperture",
+      expect.objectContaining({ baseUrl: `${GATEWAY}/v1` }),
+    );
+    expect(unregisterProvider).not.toHaveBeenCalled();
+  });
+});
+
+describe("refreshModels / cache-only restore", () => {
+  test("restores the catalog written by a networked refresh", async () => {
+    providersMock.mockResolvedValue([gatewayProvider("openai", ["gpt-x"])]);
+    const provider = register();
+    const store = memoryStore();
+
+    await refresh(provider as RegisteredProvider, store, true);
+    providersMock.mockClear();
+
+    const models = await refresh(provider as RegisteredProvider, store, false);
+
+    expect(models.map((m) => m.id)).toEqual(["gpt-x"]);
+    expect((models[0] as DedicatedModel).upstreamApi).toBe(
+      "openai-completions",
+    );
+    expect(providersMock).not.toHaveBeenCalled();
+  });
+
+  test("returns [] when the store is empty", async () => {
+    const provider = register();
+    const models = await refresh(
+      provider as RegisteredProvider,
+      memoryStore(),
+      false,
+    );
+    expect(models).toEqual([]);
+  });
+
+  test("returns [] when the configured gateway changed", async () => {
+    providersMock.mockResolvedValue([gatewayProvider("openai", ["gpt-x"])]);
+    const provider = register();
+    const store = memoryStore();
+    await refresh(provider as RegisteredProvider, store, true);
+
+    getConfig.mockReturnValue({
+      ...dedicatedConfig(),
+      baseUrl: "http://other-gateway.test",
+    });
+
+    const models = await refresh(provider as RegisteredProvider, store, false);
+    expect(models).toEqual([]);
+  });
+
+  test("rejects a same-prefix but different-origin gateway", async () => {
+    providersMock.mockResolvedValue([gatewayProvider("openai", ["gpt-x"])]);
+    // Catalog written for an evil lookalike origin that starts with the
+    // legitimate gateway URL string.
+    getConfig.mockReturnValue({
+      ...dedicatedConfig(),
+      baseUrl: `${GATEWAY}.evil`,
+    });
+    const provider = register();
+    const store = memoryStore();
+    await refresh(provider as RegisteredProvider, store, true);
+
+    // Back to the legitimate gateway: the stored catalog must not restore.
+    getConfig.mockReturnValue(dedicatedConfig());
+    const models = await refresh(provider as RegisteredProvider, store, false);
+    expect(models).toEqual([]);
+  });
+
+  test("returns [] when the dedicated provider filter changed", async () => {
+    providersMock.mockResolvedValue([
+      gatewayProvider("openai", ["gpt-x"]),
+      gatewayProvider("anthropic", ["claude-x"]),
+    ]);
+    const provider = register();
+    const store = memoryStore();
+    await refresh(provider as RegisteredProvider, store, true);
+
+    getConfig.mockReturnValue(
+      dedicatedConfig(true, [{ id: "anthropic", enabled: true }]),
+    );
+
+    const models = await refresh(provider as RegisteredProvider, store, false);
+    expect(models).toEqual([]);
+  });
+
+  test("returns [] for a legacy entry without a catalog key", async () => {
+    const provider = register();
+    const store = memoryStore({
+      models: [
+        { id: "gpt-x", baseUrl: `${GATEWAY}/v1` },
+      ] as unknown as Model<Api>[],
+      checkedAt: Date.now(),
+    });
+
+    const models = await refresh(provider as RegisteredProvider, store, false);
+    expect(models).toEqual([]);
+  });
+});
+
+describe("refreshModels / networked refresh", () => {
+  test("fetches, builds, writes the store, and returns models", async () => {
     providersMock.mockResolvedValue([
       gatewayProvider("openai", ["gpt-5", "gpt-4"]),
     ]);
-    const registerProvider = vi.fn();
-    const runtime = new DedicatedRuntime();
+    const provider = register();
+    const store = memoryStore();
 
-    await runtime.sync({ registerProvider });
+    const models = await refresh(provider as RegisteredProvider, store, true);
 
     expect(providersMock).toHaveBeenCalledOnce();
-    expect(registerProvider).toHaveBeenCalledWith(
-      "aperture",
-      expect.objectContaining({
-        baseUrl: `${GATEWAY}/v1`,
-        models: expect.arrayContaining([
-          expect.objectContaining({ id: "gpt-5", api: "aperture" }),
-          expect.objectContaining({ id: "gpt-4", api: "aperture" }),
-        ]),
-      }),
-    );
-    expect(writeCachedDedicatedModels).toHaveBeenCalledOnce();
-    const [url, models, routes] = writeCachedDedicatedModels.mock.calls[0];
-    expect(url).toBe(GATEWAY);
-    expect(models.map((m: { id: string }) => m.id)).toEqual(["gpt-5", "gpt-4"]);
-    expect(routes.get("gpt-5")).toBe("openai-completions");
-  });
-
-  test("does not write cache when no models were resolved", async () => {
-    providersMock.mockResolvedValue([gatewayProvider("openai", [])]);
-    const registerProvider = vi.fn();
-    await new DedicatedRuntime().sync({ registerProvider });
-
-    expect(registerProvider).not.toHaveBeenCalled();
-    expect(writeCachedDedicatedModels).not.toHaveBeenCalled();
+    expect(models.map((m) => m.id)).toEqual(["gpt-5", "gpt-4"]);
+    for (const model of models as DedicatedModel[]) {
+      expect(model.api).toBe("aperture");
+      expect(model.upstreamApi).toBe("openai-completions");
+    }
+    expect(store.entry).toBeDefined();
+    expect(store.entry?.checkedAt).toBeTypeOf("number");
+    expect(
+      (store.entry?.models as unknown as DedicatedModel[]).map((m) => m.id),
+    ).toEqual(["gpt-5", "gpt-4"]);
   });
 
   test("filters providers by dedicated.providers selection", async () => {
@@ -252,68 +345,243 @@ describe("DedicatedRuntime.syncConfig", () => {
       gatewayProvider("openai", ["gpt-5"]),
       gatewayProvider("anthropic", ["claude-x"]),
     ]);
-    const registerProvider = vi.fn();
-    await new DedicatedRuntime().sync({ registerProvider });
+    const provider = register();
 
-    const { models } = captureRegistered(registerProvider) ?? {
-      models: [],
-    };
+    const models = await refresh(
+      provider as RegisteredProvider,
+      memoryStore(),
+      true,
+    );
     expect(models.map((m) => m.id)).toEqual(["claude-x"]);
   });
 
-  test("respects disabled capability", async () => {
-    getConfig.mockReturnValue(dedicatedConfig(false));
-    const registerProvider = vi.fn();
-    await new DedicatedRuntime().sync({ registerProvider });
+  test("propagates gateway fetch failures", async () => {
+    providersMock.mockRejectedValue(new Error("gateway down"));
+    const provider = register();
 
-    expect(providersMock).not.toHaveBeenCalled();
-    expect(registerProvider).not.toHaveBeenCalled();
+    await expect(
+      refresh(provider as RegisteredProvider, memoryStore(), true),
+    ).rejects.toThrow("gateway down");
   });
 
-  // Gateway providers carry pricing from /v1/models via modelInfoById; that
-  // pricing should be converted to per-million-token costs on the registered
-  // model configs and persisted to the cache.
-  test("attaches pricing from modelInfoById to model cost and cache", async () => {
+  test("failed fetch then cache-only call restores the previous catalog", async () => {
+    providersMock.mockResolvedValue([gatewayProvider("openai", ["gpt-5"])]);
+    const provider = register();
+    const store = memoryStore();
+
+    await refresh(provider as RegisteredProvider, store, true);
+    providersMock.mockRejectedValue(new Error("gateway down"));
+    await expect(
+      refresh(provider as RegisteredProvider, store, true),
+    ).rejects.toThrow();
+
+    // Pi re-calls with allowNetwork: false after a failed refresh.
+    const models = await refresh(provider as RegisteredProvider, store, false);
+    expect(models.map((m) => m.id)).toEqual(["gpt-5"]);
+  });
+
+  test("attaches gateway pricing to model cost", async () => {
     providersMock.mockResolvedValue([
       gatewayProviderWithPricing("synthetic", "syn:large:text", {
         input: "0.00000093",
         input_cache_read: "0.00000018",
         input_cache_write: "0.00000300",
-        input_cache_write_1h: "0.00000600",
         output: "0.00000300",
-        web_search: "0.01000000",
       }),
     ]);
-    const registerProvider = vi.fn();
-    await new DedicatedRuntime().sync({ registerProvider });
+    const provider = register();
 
-    const { models } = captureRegistered(registerProvider) ?? { models: [] };
+    const models = await refresh(
+      provider as RegisteredProvider,
+      memoryStore(),
+      true,
+    );
     expect(models).toHaveLength(1);
     expect(models[0].cost?.input).toBeCloseTo(0.93, 10);
     expect(models[0].cost?.output).toBe(3);
     expect(models[0].cost?.cacheRead).toBeCloseTo(0.18, 10);
     expect(models[0].cost?.cacheWrite).toBe(3);
-    expect(writeCachedDedicatedModels).toHaveBeenCalledOnce();
-    const [, cachedModels] = writeCachedDedicatedModels.mock.calls[0];
-    expect(cachedModels[0].cost?.input).toBeCloseTo(0.93, 10);
-    expect(cachedModels[0].cost?.output).toBe(3);
-    expect(cachedModels[0].cost?.cacheRead).toBeCloseTo(0.18, 10);
-    expect(cachedModels[0].cost?.cacheWrite).toBe(3);
   });
 });
 
-describe("DedicatedRuntime upstream base URL inference", () => {
-  beforeEach(() => {
-    getConfig.mockReturnValue(dedicatedConfig());
-    // biome-ignore lint/complexity/useArrowFunction: must be constructible (new ApertureClient)
-    clientMock.mockImplementation(function () {
-      return { providers: providersMock };
-    });
-    loadCachedDedicatedModels.mockReset();
-    writeCachedDedicatedModels.mockReset();
-    providersMock.mockReset();
+describe("refreshModels / metadata enrichment", () => {
+  test("enriches from the Pi registry (provider-exact match)", async () => {
+    providersMock.mockResolvedValue([gatewayProvider("openai", ["gpt-5"])]);
+    const provider = register(() => [
+      nativeModel("openai", "gpt-5", "https://api.openai.com/v1", {
+        name: "GPT-5",
+        reasoning: true,
+        input: ["text", "image"],
+        contextWindow: 400_000,
+        maxTokens: 128_000,
+        cost: { input: 1.25, output: 10, cacheRead: 0.125, cacheWrite: 0 },
+      }),
+    ]);
+
+    const models = await refresh(
+      provider as RegisteredProvider,
+      memoryStore(),
+      true,
+    );
+    expect(models[0].name).toBe("GPT-5");
+    expect(models[0].reasoning).toBe(true);
+    expect(models[0].input).toEqual(["text", "image"]);
+    expect(models[0].contextWindow).toBe(400_000);
+    expect(models[0].maxTokens).toBe(128_000);
+    expect(models[0].cost?.input).toBe(1.25);
   });
 
+  test("partial gateway pricing merges over registry cost", async () => {
+    // Gateway reports only a cache-read rate; input/output/cacheWrite must
+    // keep the registry values instead of being zeroed or discarded.
+    providersMock.mockResolvedValue([
+      gatewayProviderWithPricing("openai", "gpt-5", {
+        input_cache_read: "0.00000020",
+      }),
+    ]);
+    const provider = register(() => [
+      nativeModel("openai", "gpt-5", "https://api.openai.com/v1", {
+        cost: { input: 1.25, output: 10, cacheRead: 0.125, cacheWrite: 2.5 },
+      }),
+    ]);
+
+    const models = await refresh(
+      provider as RegisteredProvider,
+      memoryStore(),
+      true,
+    );
+    expect(models[0].cost?.input).toBe(1.25);
+    expect(models[0].cost?.output).toBe(10);
+    expect(models[0].cost?.cacheRead).toBeCloseTo(0.2, 10);
+    expect(models[0].cost?.cacheWrite).toBe(2.5);
+  });
+
+  test("gateway pricing wins over registry cost", async () => {
+    providersMock.mockResolvedValue([
+      gatewayProviderWithPricing("openai", "gpt-5", {
+        input: "0.00000200",
+        output: "0.00000900",
+      }),
+    ]);
+    const provider = register(() => [
+      nativeModel("openai", "gpt-5", "https://api.openai.com/v1", {
+        cost: { input: 1.25, output: 10, cacheRead: 0.125, cacheWrite: 0 },
+      }),
+    ]);
+
+    const models = await refresh(
+      provider as RegisteredProvider,
+      memoryStore(),
+      true,
+    );
+    expect(models[0].cost?.input).toBe(2);
+    expect(models[0].cost?.output).toBe(9);
+  });
+
+  test("falls back to models.dev when the registry has no match", async () => {
+    providersMock.mockResolvedValue([gatewayProvider("zai", ["glm-5"])]);
+    fetchModelsDevCatalogMock.mockResolvedValue({
+      zai: {
+        models: {
+          "glm-5": {
+            name: "GLM-5",
+            reasoning: true,
+            modalities: { input: ["text", "image"] },
+            limit: { context: 200_000, output: 32_768 },
+            cost: { input: 0.95, output: 2.55 },
+          },
+        },
+      },
+    });
+    const provider = register(() => []);
+
+    const models = await refresh(
+      provider as RegisteredProvider,
+      memoryStore(),
+      true,
+    );
+    expect(models[0].name).toBe("GLM-5");
+    expect(models[0].reasoning).toBe(true);
+    expect(models[0].input).toEqual(["text", "image"]);
+    expect(models[0].contextWindow).toBe(200_000);
+    expect(models[0].maxTokens).toBe(32_768);
+    expect(models[0].cost?.input).toBe(0.95);
+  });
+
+  test("registry wins over models.dev", async () => {
+    providersMock.mockResolvedValue([gatewayProvider("zai", ["glm-5"])]);
+    fetchModelsDevCatalogMock.mockResolvedValue({
+      zai: {
+        models: {
+          "glm-5": { limit: { context: 200_000, output: 32_768 } },
+        },
+      },
+    });
+    const provider = register(() => [
+      nativeModel("zai", "glm-5", "https://api.z.ai/api/coding/paas/v4", {
+        contextWindow: 128_000,
+        maxTokens: 96_000,
+      }),
+    ]);
+
+    const models = await refresh(
+      provider as RegisteredProvider,
+      memoryStore(),
+      true,
+    );
+    expect(models[0].contextWindow).toBe(128_000);
+    expect(models[0].maxTokens).toBe(96_000);
+  });
+
+  test("ignores the aperture provider's own registry models for metadata", async () => {
+    providersMock.mockResolvedValue([
+      gatewayProvider("custom", ["some-model"]),
+    ]);
+    const provider = register(() => [
+      // Stale self-registered model carrying the safe defaults.
+      nativeModel("aperture", "some-model", `${GATEWAY}/v1`, {
+        contextWindow: 128_000,
+        maxTokens: 8_192,
+      }),
+    ]);
+    fetchModelsDevCatalogMock.mockResolvedValue({
+      other: {
+        models: {
+          "some-model": { limit: { context: 1_000_000, output: 65_536 } },
+        },
+      },
+    });
+
+    const models = await refresh(
+      provider as RegisteredProvider,
+      memoryStore(),
+      true,
+    );
+    // models.dev metadata applies because the self-match was excluded.
+    expect(models[0].contextWindow).toBe(1_000_000);
+    expect(models[0].maxTokens).toBe(65_536);
+  });
+
+  test("keeps safe defaults when nothing matches", async () => {
+    providersMock.mockResolvedValue([gatewayProvider("custom", ["mystery"])]);
+    const provider = register(() => []);
+
+    const models = await refresh(
+      provider as RegisteredProvider,
+      memoryStore(),
+      true,
+    );
+    expect(models[0]).toMatchObject({
+      name: "mystery",
+      reasoning: false,
+      input: ["text"],
+      contextWindow: 128_000,
+      maxTokens: 8_192,
+    });
+  });
+});
+
+describe("refreshModels / upstream base URL inference", () => {
   // Z.ai's coding endpoint is /api/coding/paas/v4 (no terminal /v1). A
   // standard /v1/chat/completions client would produce /v4/v1/chat/completions,
   // so the model must register against the gateway root.
@@ -321,36 +589,30 @@ describe("DedicatedRuntime upstream base URL inference", () => {
     providersMock.mockResolvedValue([
       gatewayProvider("zai", ["glm-5.2", "glm-4.7"]),
     ]);
-    const registerProvider = vi.fn();
-    const runtime = new DedicatedRuntime();
+    const provider = register(() => [
+      nativeModel("zai", "glm-5.2", "https://api.z.ai/api/coding/paas/v4"),
+      nativeModel("zai", "glm-4.7", "https://api.z.ai/api/coding/paas/v4"),
+    ]);
 
-    await runtime.sync(
-      { registerProvider },
-      {
-        getModels: () => [
-          nativeModel("zai", "glm-5.2", "https://api.z.ai/api/coding/paas/v4"),
-          nativeModel("zai", "glm-4.7", "https://api.z.ai/api/coding/paas/v4"),
-        ],
-      },
+    const models = await refresh(
+      provider as RegisteredProvider,
+      memoryStore(),
+      true,
     );
-
-    const { models } = captureRegistered(registerProvider) ?? { models: [] };
     expect(models.map((m) => m.baseUrl)).toEqual([GATEWAY, GATEWAY]);
   });
 
   test("routes OpenAI to gateway /v1 via native registry lookup", async () => {
     providersMock.mockResolvedValue([gatewayProvider("openai", ["gpt-5"])]);
-    const registerProvider = vi.fn();
-    await new DedicatedRuntime().sync(
-      { registerProvider },
-      {
-        getModels: () => [
-          nativeModel("openai", "gpt-5", "https://api.openai.com/v1"),
-        ],
-      },
-    );
+    const provider = register(() => [
+      nativeModel("openai", "gpt-5", "https://api.openai.com/v1"),
+    ]);
 
-    const { models } = captureRegistered(registerProvider) ?? { models: [] };
+    const models = await refresh(
+      provider as RegisteredProvider,
+      memoryStore(),
+      true,
+    );
     expect(models.map((m) => m.baseUrl)).toEqual([`${GATEWAY}/v1`]);
   });
 
@@ -361,21 +623,15 @@ describe("DedicatedRuntime upstream base URL inference", () => {
     providersMock.mockResolvedValue([
       gatewayProvider("mistral", ["mistral-small-latest"]),
     ]);
-    const registerProvider = vi.fn();
-    await new DedicatedRuntime().sync(
-      { registerProvider },
-      {
-        getModels: () => [
-          nativeModel(
-            "mistral",
-            "mistral-small-latest",
-            "https://api.mistral.ai",
-          ),
-        ],
-      },
-    );
+    const provider = register(() => [
+      nativeModel("mistral", "mistral-small-latest", "https://api.mistral.ai"),
+    ]);
 
-    const { models } = captureRegistered(registerProvider) ?? { models: [] };
+    const models = await refresh(
+      provider as RegisteredProvider,
+      memoryStore(),
+      true,
+    );
     expect(models.map((m) => m.baseUrl)).toEqual([`${GATEWAY}/v1`]);
   });
 
@@ -383,13 +639,13 @@ describe("DedicatedRuntime upstream base URL inference", () => {
     providersMock.mockResolvedValue([
       gatewayProvider("custom-provider", ["some-model"]),
     ]);
-    const registerProvider = vi.fn();
-    await new DedicatedRuntime().sync(
-      { registerProvider },
-      { getModels: () => [] },
-    );
+    const provider = register(() => []);
 
-    const { models } = captureRegistered(registerProvider) ?? { models: [] };
+    const models = await refresh(
+      provider as RegisteredProvider,
+      memoryStore(),
+      true,
+    );
     expect(models.map((m) => m.baseUrl)).toEqual([`${GATEWAY}/v1`]);
   });
 
@@ -400,17 +656,15 @@ describe("DedicatedRuntime upstream base URL inference", () => {
     providersMock.mockResolvedValue([
       gatewayProvider("my-zai-alias", ["glm-5.2"]),
     ]);
-    const registerProvider = vi.fn();
-    await new DedicatedRuntime().sync(
-      { registerProvider },
-      {
-        getModels: () => [
-          nativeModel("zai", "glm-5.2", "https://api.z.ai/api/coding/paas/v4"),
-        ],
-      },
-    );
+    const provider = register(() => [
+      nativeModel("zai", "glm-5.2", "https://api.z.ai/api/coding/paas/v4"),
+    ]);
 
-    const { models } = captureRegistered(registerProvider) ?? { models: [] };
+    const models = await refresh(
+      provider as RegisteredProvider,
+      memoryStore(),
+      true,
+    );
     expect(models.map((m) => m.baseUrl)).toEqual([GATEWAY]);
   });
 
@@ -419,20 +673,18 @@ describe("DedicatedRuntime upstream base URL inference", () => {
   // (they would flip the inference back to /v1 on re-sync).
   test("ignores registry models already rewritten to the gateway", async () => {
     providersMock.mockResolvedValue([gatewayProvider("zai", ["glm-5.2"])]);
-    const registerProvider = vi.fn();
-    await new DedicatedRuntime().sync(
-      { registerProvider },
-      {
-        getModels: () => [
-          nativeModel("zai", "glm-5.2", "https://api.z.ai/api/coding/paas/v4"),
-          // Already-rewritten dedicated model from a prior sync.
-          nativeModel("aperture", "glm-5.2", GATEWAY),
-          nativeModel("aperture", "glm-5.2", `${GATEWAY}/v1`),
-        ],
-      },
-    );
+    const provider = register(() => [
+      nativeModel("zai", "glm-5.2", "https://api.z.ai/api/coding/paas/v4"),
+      // Already-rewritten dedicated model from a prior sync.
+      nativeModel("aperture", "glm-5.2", GATEWAY),
+      nativeModel("aperture", "glm-5.2", `${GATEWAY}/v1`),
+    ]);
 
-    const { models } = captureRegistered(registerProvider) ?? { models: [] };
+    const models = await refresh(
+      provider as RegisteredProvider,
+      memoryStore(),
+      true,
+    );
     expect(models.map((m) => m.baseUrl)).toEqual([GATEWAY]);
   });
 });

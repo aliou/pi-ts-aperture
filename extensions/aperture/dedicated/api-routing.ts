@@ -8,10 +8,6 @@ import type {
   SimpleStreamOptions,
 } from "../../../src/shared/types";
 
-interface ModelRoute {
-  api: Api;
-}
-
 export function getApiForCompatibility(
   compatibility: ProviderCompatibility | undefined,
 ): Api {
@@ -49,14 +45,31 @@ export function getBaseUrlForApi(
   }
 }
 
-export function buildStreamSimple(routeByModelId: Map<string, ModelRoute>) {
+/**
+ * A dedicated model as seen at stream time. `upstreamApi` is stamped on each
+ * model config by `buildModels` (runtime.ts) so the request can be routed to
+ * the correct upstream Pi API; `model.api` itself is the custom `"aperture"`
+ * marker. Pi types the model handed to `streamSimple` as `Model<Api>`, but
+ * its provider composition spreads our full model definition (verified
+ * against provider-composer.ts in pi 0.83.0), so the extra field survives
+ * registration, the models store, and cache-only restores. The cast below
+ * only recovers that field.
+ */
+type ApertureRoutedModel = Model<Api> & { upstreamApi?: Api };
+
+/**
+ * Stream by dispatching to the upstream Pi API stamped on the model.
+ * A missing field falls back to openai-completions, matching the old
+ * missing-route behavior.
+ */
+export function buildStreamSimple() {
   return (
     model: Model<Api>,
     context: Context,
     options?: SimpleStreamOptions,
   ): AssistantMessageEventStream => {
-    const route = routeByModelId.get(model.id);
-    const api = route?.api ?? "openai-completions";
+    const api =
+      (model as ApertureRoutedModel).upstreamApi ?? "openai-completions";
     const provider = getApiProvider(api);
     if (!provider) {
       throw new Error(`Unsupported Aperture provider API: ${api}`);
