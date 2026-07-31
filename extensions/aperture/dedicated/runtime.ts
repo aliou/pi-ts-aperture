@@ -11,6 +11,7 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import { ApertureClient } from "../../../src/api/client";
 import type { ApertureProvider } from "../../../src/api/types";
+import { getBaseUrlForApi } from "../../../src/base-url-routing";
 import {
   fetchModelsDevCatalog,
   type ModelsDevCatalog,
@@ -21,11 +22,7 @@ import {
   type ResolvedConfig,
 } from "../../../src/shared/config/loader";
 import { resolveGatewayUrl, resolveProviderBaseUrl } from "../../../src/url";
-import {
-  buildStreamSimple,
-  getApiForCompatibility,
-  getBaseUrlForApi,
-} from "./api-routing";
+import { buildStreamSimple, getApiForCompatibility } from "./api-routing";
 import { buildDefaultModelConfig } from "./model-defaults";
 
 const PROVIDER_NAME = "aperture";
