@@ -266,6 +266,59 @@ describe("ApertureRuntime.sync OpenAI SDK inference", () => {
   });
 });
 
+describe("ApertureRuntime.sync fixed-path APIs", () => {
+  test("routes a proxied Bedrock provider through /bedrock, not /v1", async () => {
+    // Regression for the shared-resolver move: proxy used to inline only
+    // shouldUseGatewayRoot, which is false for bedrock-converse-stream, so a
+    // proxied bedrock provider was registered at gateway/v1 (protocol error).
+    // It now goes through the shared getBaseUrlForApi -> /bedrock.
+    getConfig.mockReturnValue(
+      proxyConfig([{ id: "bedrock", shouldCheckGatewayModels: false }]),
+    );
+    const registerProvider = vi.fn();
+    const runtime = new ApertureRuntime();
+
+    await runtime.sync({
+      registerProvider,
+      getModels: () => [
+        model(
+          "bedrock",
+          "anthropic.claude-3-5-sonnet-20241022-v2:0",
+          "bedrock-converse-stream",
+          "https://bedrock-runtime.us-east-1.amazonaws.com",
+        ),
+      ],
+    });
+
+    expect(registerProvider).toHaveBeenCalledWith(
+      "bedrock",
+      expect.objectContaining({ baseUrl: "http://gateway.test/bedrock" }),
+    );
+  });
+
+  test("aligns a proxied Gemini provider to /v1beta via the shared resolver", async () => {
+    // Side effect of sharing getBaseUrlForApi: proxy Gemini now matches
+    // dedicated and routes to /v1beta instead of the OpenAI-shaped /v1.
+    getConfig.mockReturnValue(
+      proxyConfig([{ id: "google", shouldCheckGatewayModels: false }]),
+    );
+    const registerProvider = vi.fn();
+    const runtime = new ApertureRuntime();
+
+    await runtime.sync({
+      registerProvider,
+      getModels: () => [
+        model("google", "gemini-2.5-pro", "google-generative-ai"),
+      ],
+    });
+
+    expect(registerProvider).toHaveBeenCalledWith(
+      "google",
+      expect.objectContaining({ baseUrl: "http://gateway.test/v1beta" }),
+    );
+  });
+});
+
 describe("ApertureRuntime.checkMissingModels", () => {
   beforeEach(() => {
     getConfig.mockReturnValue(

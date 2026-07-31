@@ -1,6 +1,6 @@
 import { ApertureClient } from "../../../src/api/client";
 import type { ApertureProvider } from "../../../src/api/types";
-import { shouldUseGatewayRoot } from "../../../src/base-url-routing";
+import { getBaseUrlForApi } from "../../../src/base-url-routing";
 import { configLoader } from "../../../src/shared/config/loader";
 import type { ResolvedConfig } from "../../../src/shared/config/types";
 import type {
@@ -57,9 +57,12 @@ export class ApertureRuntime {
         this.upstreamBaseUrls.set(providerName, upstreamBaseUrl);
       }
 
-      const providerBaseUrl = shouldUseGatewayRoot(api, upstreamBaseUrl)
-        ? gatewayRoot
-        : baseUrl;
+      const providerBaseUrl = getBaseUrlForApi(
+        api,
+        gatewayRoot,
+        baseUrl,
+        upstreamBaseUrl,
+      );
 
       // Referer and x-session-id are injected per-request via the
       // `before_provider_headers` hook registered in the extension entry
