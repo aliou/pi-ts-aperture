@@ -35,6 +35,12 @@ export function getBaseUrlForApi(
       return `${gatewayUrl}/v1beta`;
     case "google-vertex":
       return `${gatewayUrl}/v1`;
+    // Aperture's native Bedrock-compatible surface lives at /bedrock, not
+    // /v1. The default branch below would otherwise point bedrock_converse
+    // models at the generic OpenAI-shaped base URL and fail with a
+    // protocol error.
+    case "bedrock-converse-stream":
+      return `${gatewayUrl}/bedrock`;
     default:
       // openai-completions / openai-responses: infer from the upstream base
       // URL (when known) whether the gateway root or gateway/v1 is correct.
