@@ -705,3 +705,170 @@ describe("refreshModels / upstream base URL inference", () => {
     expect(models.map((m) => m.baseUrl)).toEqual([GATEWAY]);
   });
 });
+
+describe("refreshModels / per-model supported_endpoints routing", () => {
+  // A provider with multi-protocol compatibility; one model reports only
+  // chat completions via supported_endpoints, the other reports all three.
+  // Per-model endpoints should override the per-provider compatibility.
+  function multiCompatProvider(
+    id: string,
+    models: string[],
+    modelInfoById?: ApertureProvider["modelInfoById"],
+  ): ApertureProvider {
+    return {
+      id,
+      name: id,
+      models,
+      compatibility: {
+        openai_chat: true,
+        anthropic_messages: true,
+        openai_responses: true,
+      },
+      ...(modelInfoById ? { modelInfoById } : {}),
+    };
+  }
+
+  test("routes each model by its own supported_endpoints, not the provider compatibility", async () => {
+    providersMock.mockResolvedValue([
+      multiCompatProvider("synthetic", ["hf:zai-org/GLM-5.2", "glm-5.2"], {
+        "hf:zai-org/GLM-5.2": {
+          id: "hf:zai-org/GLM-5.2",
+          supported_endpoints: [
+            "/v1/chat/completions",
+            "/v1/messages",
+            "/v1/responses",
+          ],
+        },
+        "glm-5.2": {
+          id: "glm-5.2",
+          supported_endpoints: ["/v1/chat/completions"],
+        },
+      }),
+    ]);
+
+    const provider = register();
+    const result = await refresh(
+      provider as RegisteredProvider,
+      memoryStore(),
+      true,
+    );
+    const models = result as DedicatedModel[];
+
+    // Both prefer /v1/chat/completions (matching the compatibility-preference
+    // order), but the test verifies that the routing reads from
+    // supported_endpoints, not the compatibility map.
+    expect(models).toHaveLength(2);
+    expect(models[0].upstreamApi).toBe("openai-completions");
+    expect(models[1].upstreamApi).toBe("openai-completions");
+  });
+
+  test("routes a model with only /v1/messages to anthropic-messages", async () => {
+    providersMock.mockResolvedValue([
+      multiCompatProvider("synthetic", ["anthropic-only-model"], {
+        "anthropic-only-model": {
+          id: "anthropic-only-model",
+          supported_endpoints: ["/v1/messages"],
+        },
+      }),
+    ]);
+
+    const provider = register();
+    const result = await refresh(
+      provider as RegisteredProvider,
+      memoryStore(),
+      true,
+    );
+    const models = result as DedicatedModel[];
+
+    expect(models).toHaveLength(1);
+    expect(models[0].upstreamApi).toBe("anthropic-messages");
+  });
+
+  test("routes a model with only /v1/responses to openai-responses", async () => {
+    providersMock.mockResolvedValue([
+      multiCompatProvider("synthetic", ["responses-only-model"], {
+        "responses-only-model": {
+          id: "responses-only-model",
+          supported_endpoints: ["/v1/responses"],
+        },
+      }),
+    ]);
+
+    const provider = register();
+    const result = await refresh(
+      provider as RegisteredProvider,
+      memoryStore(),
+      true,
+    );
+    const models = result as DedicatedModel[];
+
+    expect(models).toHaveLength(1);
+    expect(models[0].upstreamApi).toBe("openai-responses");
+  });
+
+  test("falls back to provider compatibility when supported_endpoints is absent", async () => {
+    // No supported_endpoints on modelInfoById; should use the provider's
+    // compatibility (openai_chat -> openai-completions).
+    providersMock.mockResolvedValue([
+      multiCompatProvider("synthetic", ["legacy-model"]),
+    ]);
+
+    const provider = register();
+    const result = await refresh(
+      provider as RegisteredProvider,
+      memoryStore(),
+      true,
+    );
+    const models = result as DedicatedModel[];
+
+    expect(models).toHaveLength(1);
+    expect(models[0].upstreamApi).toBe("openai-completions");
+  });
+
+  test("falls back to provider compatibility when supported_endpoints is empty", async () => {
+    providersMock.mockResolvedValue([
+      multiCompatProvider("synthetic", ["empty-endpoints-model"], {
+        "empty-endpoints-model": {
+          id: "empty-endpoints-model",
+          supported_endpoints: [],
+        },
+      }),
+    ]);
+
+    const provider = register();
+    const result = await refresh(
+      provider as RegisteredProvider,
+      memoryStore(),
+      true,
+    );
+    const models = result as DedicatedModel[];
+
+    expect(models).toHaveLength(1);
+    expect(models[0].upstreamApi).toBe("openai-completions");
+  });
+
+  test("falls back to provider compatibility for unrecognized endpoints", async () => {
+    // Endpoints that don't map to a known Pi API should fall back to the
+    // provider compatibility, not crash or default silently.
+    providersMock.mockResolvedValue([
+      multiCompatProvider("synthetic", ["unknown-endpoint-model"], {
+        "unknown-endpoint-model": {
+          id: "unknown-endpoint-model",
+          supported_endpoints: ["/v1/unknown/path"],
+        },
+      }),
+    ]);
+
+    const provider = register();
+    const result = await refresh(
+      provider as RegisteredProvider,
+      memoryStore(),
+      true,
+    );
+    const models = result as DedicatedModel[];
+
+    expect(models).toHaveLength(1);
+    // Provider compat has openai_chat: true -> openai-completions
+    expect(models[0].upstreamApi).toBe("openai-completions");
+  });
+});
