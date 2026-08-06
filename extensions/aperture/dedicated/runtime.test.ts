@@ -152,7 +152,24 @@ async function refresh(
   allowNetwork: boolean,
 ): Promise<ProviderModelConfig[]> {
   if (!provider.refreshModels) throw new Error("no refreshModels registered");
-  return provider.refreshModels({ store, allowNetwork });
+  // Provide both the 0.84 (stored/publish/signal) and legacy (store)
+  // refresh-context shapes so the tests exercise the runtime shim.
+  const tracked = store as ProviderModelsStore & {
+    entry: ModelsStoreEntry | undefined;
+  };
+  const context = {
+    allowNetwork,
+    signal: new AbortController().signal,
+    get stored() {
+      return tracked.entry;
+    },
+    publish: async (publication: { persist?: ModelsStoreEntry | null }) => {
+      if (publication.persist) await store.write(publication.persist);
+      return true;
+    },
+    store,
+  } as unknown as RefreshModelsContext;
+  return provider.refreshModels(context);
 }
 
 type DedicatedModel = ProviderModelConfig & { upstreamApi?: Api };

@@ -102,12 +102,25 @@ export default async function (pi: ExtensionAPI): Promise<void> {
     // before extensions load, so the dedicated provider never sees it.
     // Built-in providers self-throttle, so this costs about one gateway
     // fetch. Refresh failures fall back to the stored catalog inside Pi.
-    void ctx.modelRegistry.refresh().catch((error: unknown) => {
-      ctx.ui.notify(
-        `[aperture] model refresh failed: ${error instanceof Error ? error.message : String(error)}`,
-        "warning",
-      );
-    });
+    void ctx.modelRegistry
+      .refresh()
+      .then((result) => {
+        // Pi >=0.84 resolves with a ModelsRefreshResult carrying per-provider
+        // errors; older versions resolve with void.
+        const error = result?.errors?.get("aperture");
+        if (error) {
+          ctx.ui.notify(
+            `[aperture] model refresh failed: ${error.message}`,
+            "warning",
+          );
+        }
+      })
+      .catch((error: unknown) => {
+        ctx.ui.notify(
+          `[aperture] model refresh failed: ${error instanceof Error ? error.message : String(error)}`,
+          "warning",
+        );
+      });
   };
 
   pi.on("session_start", (_event, ctx) => {
