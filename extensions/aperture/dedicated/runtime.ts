@@ -2,7 +2,6 @@ import type {
   Api,
   Model,
   ModelsStoreEntry,
-  ProviderModelsStore,
   RefreshModelsContext,
 } from "@earendil-works/pi-ai";
 import type {
@@ -17,6 +16,10 @@ import {
   type ModelsDevCatalog,
   resolveModelMetadata,
 } from "../../../src/model-metadata";
+import {
+  persistModels,
+  readStoredModels,
+} from "../../../src/refresh-store-compat";
 import {
   configLoader,
   type ResolvedConfig,
@@ -149,16 +152,16 @@ function buildModels(
 }
 
 /**
- * Cache-only restore from Pi's models store. Returns `[]` when the store is
- * empty, predates the catalog key, or was written for a different catalog
- * identity (gateway origin or dedicated provider selection changed).
+ * Cache-only restore from the persisted catalog snapshot. Returns `[]` when
+ * the snapshot is empty, predates the catalog key, or was written for a
+ * different catalog identity (gateway origin or dedicated provider selection
+ * changed).
  */
-async function readStoredModels(
-  store: ProviderModelsStore,
+function storedCatalogModels(
+  stored: ModelsStoreEntry | undefined,
   catalogKey: string,
-): Promise<ProviderModelConfig[]> {
+): ProviderModelConfig[] {
   try {
-    const stored = await store.read();
     const entry = stored as DedicatedStoreEntry | undefined;
     if (!entry || !Array.isArray(entry.models)) return [];
     if (entry.catalogKey !== catalogKey) return [];
@@ -188,8 +191,10 @@ async function refreshDedicatedModels(
 
   const catalogKey = buildCatalogKey(gatewayUrl, config);
 
+  const stored = await readStoredModels(context);
+
   if (!context.allowNetwork) {
-    return readStoredModels(context.store, catalogKey);
+    return storedCatalogModels(stored, catalogKey);
   }
 
   const client = new ApertureClient(gatewayUrl);
@@ -206,12 +211,14 @@ async function refreshDedicatedModels(
     modelsDev,
   );
 
+  context.signal?.throwIfAborted();
+
   const entry: DedicatedStoreEntry = {
     models: models as unknown as Model<Api>[],
     checkedAt: Date.now(),
     catalogKey,
   };
-  await context.store.write(entry);
+  await persistModels(context, entry);
   return models;
 }
 
