@@ -2,6 +2,7 @@ import type {
   ExtensionAPI,
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
+import { markRetryableApertureError } from "../../src/retryable-errors";
 import { configLoader } from "../../src/shared/config/loader";
 import {
   APERTURE_FEATURE_REGISTER_EVENT,
@@ -40,6 +41,20 @@ export default async function (pi: ExtensionAPI): Promise<void> {
   pi.on("before_provider_headers", (event, ctx) => {
     event.headers.Referer = "https://pi.dev";
     event.headers["x-session-id"] = ctx.sessionManager.getSessionId();
+  });
+
+  // Tag transient gateway failures so Pi's auto-retry picks them up. Pi
+  // applies `message_end` replacements in place before the retry check runs.
+  // Hooking the message rather than the provider also covers proxy mode.
+  pi.on("message_end", (event) => {
+    if (event.message.role !== "assistant") return;
+    const message = event.message;
+    if (message.stopReason !== "error" || !message.errorMessage) return;
+
+    const errorMessage = markRetryableApertureError(message.errorMessage);
+    if (!errorMessage) return;
+
+    return { message: { ...message, errorMessage } };
   });
 
   // Register the dedicated provider with a `refreshModels` hook. Pi restores

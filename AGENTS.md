@@ -75,6 +75,7 @@ Pi-agnostic Aperture API and mapping code lives under `src/`. Extension glue (Pi
 - `provider-mapping.ts` - Maps Aperture providers to local Pi registry models for proxy and dedicated selection.
 - `base-url-routing.ts` - Shared gateway base-URL routing for both proxy and dedicated modes. `getBaseUrlForApi` resolves the per-API gateway base URL (Anthropic/Codex root, Gemini `/v1beta`, Vertex `/v1`, Bedrock `/bedrock`, OpenAI-SDK root-vs-`/v1` inference); `shouldUseGatewayRoot` is the low-level inference it builds on.
 - `model-metadata/` - Capability metadata resolver for dedicated models. `index.ts` orchestrates precedence (Pi registry wins over models.dev) and re-exports the public API; `pi-registry.ts` and `models-dev.ts` implement one source each (including the best-effort `fetchModelsDevCatalog` fetch); `types.ts` holds the shared `ModelMetadata` shape.
+- `retryable-errors.ts` - `TRANSIENT_APERTURE_ERROR_PATTERNS` and `markRetryableApertureError`, which tag transient gateway errors so Pi's auto-retry picks them up.
 - `url.ts` - URL normalization helpers.
 - `mcp-client.ts` - MCP client for Aperture's `/v1/mcp` Streamable HTTP endpoint (2024-11-05 protocol).
 
@@ -170,6 +171,11 @@ There is no current `mode` setting. Legacy `mode` configs are migrated to capabi
 - Each pinned tool adds its full JSON Schema to the system prompt, raising context cost. The settings UI warns above a threshold (currently 10).
 - Pi cannot unregister tools at runtime, so pinning takes effect on the next full Pi restart (which re-runs the extension factory). The settings submenu reads the live gateway tool list every time it opens, but saved changes only apply after reload.
 - Resource proxy tools (`connector_resource_*`) were removed because Pi does not support MCP resources well enough yet. The MCP session still exposes resource methods; only the Pi tool wrappers were removed.
+
+### Retryable errors
+
+- Pi's retry classifier matches error text against a hardcoded pattern list extensions cannot extend. A `message_end` handler in the extension entry point appends ` (service unavailable)` to transient Aperture errors so Pi retries them. Covers both modes, since it hooks the message and not the provider.
+- Add new patterns to `TRANSIENT_APERTURE_ERROR_PATTERNS` in `src/retryable-errors.ts`.
 
 ### Requests and credentials
 
