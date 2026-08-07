@@ -132,7 +132,33 @@ describe("resolveModelMetadata / Pi registry", () => {
     expect(metadata.compat).toEqual({ supportsStore: false });
   });
 
-  test("model-id fallback copies capabilities but not cost or compat", () => {
+  test("model-id fallback copies capabilities but not cost; copies only model-intrinsic compat", () => {
+    const model = registryModel({
+      provider: "openrouter",
+      id: "gpt-5",
+      compat: {
+        supportsStore: false,
+        supportsDeveloperRole: false,
+        maxTokensField: "max_tokens",
+        supportsLongCacheRetention: false,
+      } as Model<Api>["compat"],
+    });
+    const metadata = resolveModelMetadata("my-openai-alias", "gpt-5", {
+      registryModels: [model],
+    });
+
+    expect(metadata.contextWindow).toBe(400_000);
+    expect(metadata.input).toEqual(["text", "image"]);
+    expect(metadata.cost).toBeUndefined();
+    // Intrinsic fields (model-dictated) are copied on a model-id fallback...
+    expect(metadata.compat?.supportsDeveloperRole).toBe(false);
+    expect(metadata.compat?.maxTokensField).toBe("max_tokens");
+    // ...endpoint-specific fields are not.
+    expect(metadata.compat?.supportsStore).toBeUndefined();
+    expect(metadata.compat?.supportsLongCacheRetention).toBeUndefined();
+  });
+
+  test("model-id fallback with endpoint-only compat copies nothing", () => {
     const model = registryModel({
       provider: "openrouter",
       id: "gpt-5",
@@ -142,9 +168,6 @@ describe("resolveModelMetadata / Pi registry", () => {
       registryModels: [model],
     });
 
-    expect(metadata.contextWindow).toBe(400_000);
-    expect(metadata.input).toEqual(["text", "image"]);
-    expect(metadata.cost).toBeUndefined();
     expect(metadata.compat).toBeUndefined();
   });
 

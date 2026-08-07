@@ -14,8 +14,11 @@
  * The registry wins over models.dev; gateway pricing is applied later by the
  * caller and wins over both. Matching prefers an exact provider-id + model-id
  * match. A model-id-only fallback match copies capabilities but never cost
- * (the same model id can be served with different pricing by e.g. OpenRouter)
- * and never `compat` (endpoint quirks are provider-specific).
+ * (the same model id can be served with different pricing by e.g. OpenRouter).
+ * It copies only the model-intrinsic `compat` fields
+ * (`supportsDeveloperRole`, `maxTokensField`,
+ * `requiresReasoningContentOnAssistantMessages`) - endpoint quirks such as
+ * `supportsStore` or `deferredToolsMode` are provider-specific and stay out.
  */
 
 import type { Api, Model } from "@earendil-works/pi-ai";
