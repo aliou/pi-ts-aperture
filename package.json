@@ -34,7 +34,7 @@
     "image": "https://assets.aliou.me/github/aliou/pi-ts-aperture/banner.png"
   },
   "dependencies": {
-    "@aliou/pi-utils-settings": "^0.18.0",
+    "@aliou/pi-utils-settings": "^0.19.1",
     "@aliou/pi-utils-ui": "^0.5.0"
   },
   "peerDependencies": {
@@ -64,8 +64,8 @@
     "release": "pnpm changeset publish",
     "test": "vitest run",
     "test:watch": "vitest",
-    "gen:schema": "ts-json-schema-generator --path src/shared/config/types.ts --type ApertureConfig --no-type-check -o schema.json",
-    "check:schema": "ts-json-schema-generator --path src/shared/config/types.ts --type ApertureConfig --no-type-check -o /tmp/pi-ts-aperture-schema-check.json && diff -q schema.json /tmp/pi-ts-aperture-schema-check.json"
+    "gen:schema": "pi-settings-schema -p src/shared/config/types.ts -t ApertureConfig -o schema.json --version 0.11.4",
+    "check:schema": "pi-settings-schema -p src/shared/config/types.ts -t ApertureConfig -o schema.json --version 0.11.4 --check"
   },
   "devDependencies": {
     "@aliou/biome-plugins": "^0.11.0",

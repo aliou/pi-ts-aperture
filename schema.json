@@ -1,145 +1,161 @@
 {
-  "$ref": "#/definitions/ApertureConfig",
   "$schema": "http://json-schema.org/draft-07/schema#",
+  "$ref": "#/definitions/ApertureConfig",
   "definitions": {
     "ApertureConfig": {
-      "additionalProperties": false,
+      "type": "object",
       "properties": {
-        "baseUrl": {
-          "description": "Aperture gateway base URL (e.g. `https://aperture.example.com`).",
+        "$schema": {
           "type": "string"
+        },
+        "version": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "string",
+              "pattern": "^\\d{1,15}(\\.\\d{1,15})?(\\.\\d{1,15})?$"
+            }
+          ],
+          "description": "Config schema version, stamped by migrations. Current version: 0.11.4."
+        },
+        "baseUrl": {
+          "type": "string",
+          "description": "Aperture gateway base URL (e.g. `https://aperture.example.com`)."
+        },
+        "onboardingDone": {
+          "type": "boolean",
+          "description": "Whether onboarding has been completed."
+        },
+        "onboarding": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Whether the onboarding extension affordances are active."
+            }
+          },
+          "additionalProperties": false
+        },
+        "proxy": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Reroute selected Pi providers through Aperture."
+            },
+            "upstreamProviders": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/ProxiedProviderConfig"
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        "dedicated": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Register a standalone `aperture` provider from gateway models."
+            },
+            "providers": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/DedicatedProviderConfig"
+              }
+            }
+          },
+          "additionalProperties": false
         },
         "connectors": {
           "$ref": "#/definitions/ConnectorsConfig"
-        },
-        "dedicated": {
-          "additionalProperties": false,
-          "properties": {
-            "enabled": {
-              "description": "Register a standalone `aperture` provider from gateway models.",
-              "type": "boolean"
-            },
-            "providers": {
-              "items": {
-                "$ref": "#/definitions/DedicatedProviderConfig"
-              },
-              "type": "array"
-            }
-          },
-          "type": "object"
-        },
-        "onboarding": {
-          "additionalProperties": false,
-          "properties": {
-            "enabled": {
-              "description": "Whether the onboarding extension affordances are active.",
-              "type": "boolean"
-            }
-          },
-          "type": "object"
-        },
-        "onboardingDone": {
-          "description": "Whether onboarding has been completed.",
-          "type": "boolean"
-        },
-        "proxy": {
-          "additionalProperties": false,
-          "properties": {
-            "enabled": {
-              "description": "Reroute selected Pi providers through Aperture.",
-              "type": "boolean"
-            },
-            "upstreamProviders": {
-              "items": {
-                "$ref": "#/definitions/ProxiedProviderConfig"
-              },
-              "type": "array"
-            }
-          },
-          "type": "object"
         }
       },
-      "type": "object"
+      "additionalProperties": false
     },
-    "ConnectorsConfig": {
-      "additionalProperties": false,
-      "description": "Connector tools configuration.\n\n`enabled` gates the entire connectors feature: when `false`, no connector tools (pinned or discovery) are registered. It replaces the former `features.connectors` flag.",
+    "ProxiedProviderConfig": {
+      "type": "object",
       "properties": {
-        "discoveryTools": {
-          "description": "Register the connector discovery meta-tools (list / search / describe / call).\n\nWhen `false`, only pinned tools are registered as first-class Pi tools. Decorrelated from `enabled`, which still gates whether pinning runs at all. Defaults to `true`.",
-          "type": "boolean"
+        "id": {
+          "type": "string",
+          "description": "Aperture provider id (matches `/api/providers` response)."
         },
-        "enabled": {
-          "description": "Master switch for the connectors feature. When `false`, the connectors extension registers nothing. Defaults to `false`.",
-          "type": "boolean"
-        },
-        "pinnedTools": {
-          "description": "MCP tools to register as first-class Pi tools instead of via the discovery meta-tools. Matching is by `toolName`; stale entries are silently skipped on registration.\n\nEach pinned tool adds its full JSON Schema to the system prompt, so prefer pinning only the few tools you use every session.",
-          "items": {
-            "$ref": "#/definitions/PinnedConnectorTool"
-          },
-          "type": "array"
+        "shouldCheckGatewayModels": {
+          "type": "boolean",
+          "description": "Warn when configured local models are missing from the Aperture gateway."
         }
       },
-      "type": "object"
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
     },
     "DedicatedProviderConfig": {
-      "additionalProperties": false,
+      "type": "object",
       "properties": {
-        "enabled": {
-          "description": "Include this provider's models in the dedicated provider.",
-          "type": "boolean"
-        },
         "id": {
-          "description": "Aperture provider id.",
-          "type": "string"
+          "type": "string",
+          "description": "Aperture provider id."
         },
         "name": {
-          "description": "Optional display name override.",
-          "type": "string"
+          "type": "string",
+          "description": "Optional display name override."
+        },
+        "enabled": {
+          "type": "boolean",
+          "description": "Include this provider's models in the dedicated provider."
         }
       },
       "required": [
         "id",
         "enabled"
       ],
-      "type": "object"
+      "additionalProperties": false
+    },
+    "ConnectorsConfig": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Master switch for the connectors feature. When `false`, the connectors extension registers nothing. Defaults to `false`."
+        },
+        "pinnedTools": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/PinnedConnectorTool"
+          },
+          "description": "MCP tools to register as first-class Pi tools instead of via the discovery meta-tools. Matching is by `toolName`; stale entries are silently skipped on registration.\n\nEach pinned tool adds its full JSON Schema to the system prompt, so prefer pinning only the few tools you use every session."
+        },
+        "discoveryTools": {
+          "type": "boolean",
+          "description": "Register the connector discovery meta-tools (list / search / describe / call).\n\nWhen `false`, only pinned tools are registered as first-class Pi tools. Decorrelated from `enabled`, which still gates whether pinning runs at all. Defaults to `true`."
+        }
+      },
+      "additionalProperties": false,
+      "description": "Connector tools configuration.\n\n`enabled` gates the entire connectors feature: when `false`, no connector tools (pinned or discovery) are registered. It replaces the former `features.connectors` flag."
     },
     "PinnedConnectorTool": {
-      "additionalProperties": false,
-      "description": "A pinned connector tool entry.\n\n`toolName` is matched verbatim against the MCP tool name returned by Aperture's /v1/mcp endpoint. `connectorId` is the connector that exposes the tool (the tool name prefix before the first `_`). It is stored for traceability; matching is done by `toolName`.\n\nPinned tools are registered as first-class Pi tools instead of being reached through the connector proxy meta-tools. Entries whose `toolName` no longer exists on the gateway are silently skipped on registration, so stale entries are harmless.\n\nEach pinned tool adds its full schema to the system prompt, which raises context cost. Prefer pinning only the few tools you use every session.",
+      "type": "object",
       "properties": {
         "connectorId": {
-          "description": "Connector id exposing the tool (tool name prefix before the first `_`).",
-          "type": "string"
+          "type": "string",
+          "description": "Connector id exposing the tool (tool name prefix before the first `_`)."
         },
         "toolName": {
-          "description": "MCP tool name (from Aperture `/v1/mcp` `tools/list`), matched verbatim.",
-          "type": "string"
+          "type": "string",
+          "description": "MCP tool name (from Aperture `/v1/mcp` `tools/list`), matched verbatim."
         }
       },
       "required": [
         "connectorId",
         "toolName"
       ],
-      "type": "object"
-    },
-    "ProxiedProviderConfig": {
       "additionalProperties": false,
-      "properties": {
-        "id": {
-          "description": "Aperture provider id (matches `/api/providers` response).",
-          "type": "string"
-        },
-        "shouldCheckGatewayModels": {
-          "description": "Warn when configured local models are missing from the Aperture gateway.",
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "id"
-      ],
-      "type": "object"
+      "description": "A pinned connector tool entry.\n\n`toolName` is matched verbatim against the MCP tool name returned by Aperture's /v1/mcp endpoint. `connectorId` is the connector that exposes the tool (the tool name prefix before the first `_`). It is stored for traceability; matching is done by `toolName`.\n\nPinned tools are registered as first-class Pi tools instead of being reached through the connector proxy meta-tools. Entries whose `toolName` no longer exists on the gateway are silently skipped on registration, so stale entries are harmless.\n\nEach pinned tool adds its full schema to the system prompt, which raises context cost. Prefer pinning only the few tools you use every session."
     }
   }
 }
