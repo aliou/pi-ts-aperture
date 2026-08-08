@@ -130,6 +130,9 @@ export class ApertureClient {
         byId.set(id, {
           id,
           pricing: record.pricing as ApertureModelInfo["pricing"] | undefined,
+          supported_endpoints: Array.isArray(record.supported_endpoints)
+            ? (record.supported_endpoints as string[])
+            : undefined,
         });
       }
       return byId;

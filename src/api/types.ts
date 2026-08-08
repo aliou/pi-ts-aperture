@@ -40,6 +40,8 @@ export interface ApertureModelPricing {
 export interface ApertureModelInfo {
   id: string;
   pricing?: ApertureModelPricing;
+  /** Per-model protocol endpoints reported by `/v1/models` (e.g. `"/v1/chat/completions"`). */
+  supported_endpoints?: string[];
 }
 
 export const ApertureModelInfoSchema = Type.Object(
@@ -58,6 +60,7 @@ export const ApertureModelInfoSchema = Type.Object(
         { additionalProperties: true },
       ),
     ),
+    supported_endpoints: Type.Optional(Type.Array(Type.String())),
   },
   { additionalProperties: true },
 );

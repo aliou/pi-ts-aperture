@@ -206,4 +206,66 @@ describe("ApertureClient", () => {
       pricing,
     });
   });
+
+  // /v1/models entries carry `supported_endpoints`; providers() should retain
+  // it on `modelInfoById` so dedicated mode can use it for per-model API
+  // routing instead of the per-provider `compatibility` map.
+  test("providers() retains /v1/models supported_endpoints on modelInfoById", async () => {
+    mockFetch((url) => {
+      if (url.endsWith("/api/providers")) {
+        return providersArray({
+          id: "synthetic",
+          name: "Synthetic",
+          description: "",
+          models: ["hf:zai-org/GLM-5.2", "glm-5.2"],
+          compatibility: {
+            openai_chat: true,
+            anthropic_messages: true,
+            openai_responses: true,
+          },
+        });
+      }
+      if (url.endsWith("/v1/models")) {
+        return {
+          data: [
+            {
+              id: "hf:zai-org/GLM-5.2",
+              object: "model",
+              supported_endpoints: [
+                "/v1/chat/completions",
+                "/v1/messages",
+                "/v1/responses",
+              ],
+              pricing: { input: "0.00000040", output: "0.00000175" },
+            },
+            {
+              id: "glm-5.2",
+              object: "model",
+              supported_endpoints: ["/v1/chat/completions"],
+              pricing: { input: "0.00000063", output: "0.00000198" },
+            },
+          ],
+        };
+      }
+      return notOk(404, "Not Found");
+    });
+
+    const providers = await new ApertureClient(
+      "http://gateway.test",
+    ).providers();
+    expect(providers[0].modelInfoById?.["hf:zai-org/GLM-5.2"]).toEqual({
+      id: "hf:zai-org/GLM-5.2",
+      pricing: { input: "0.00000040", output: "0.00000175" },
+      supported_endpoints: [
+        "/v1/chat/completions",
+        "/v1/messages",
+        "/v1/responses",
+      ],
+    });
+    expect(providers[0].modelInfoById?.["glm-5.2"]).toEqual({
+      id: "glm-5.2",
+      pricing: { input: "0.00000063", output: "0.00000198" },
+      supported_endpoints: ["/v1/chat/completions"],
+    });
+  });
 });

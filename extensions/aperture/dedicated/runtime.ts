@@ -11,6 +11,7 @@ import type {
 import { ApertureClient } from "../../../src/api/client";
 import type { ApertureProvider } from "../../../src/api/types";
 import { getBaseUrlForApi } from "../../../src/base-url-routing";
+import { getApiForEndpoints } from "../../../src/endpoint-mapping";
 import {
   fetchModelsDevCatalog,
   type ModelsDevCatalog,
@@ -122,10 +123,17 @@ function buildModels(
   const models: DedicatedModelConfig[] = [];
 
   for (const provider of providers) {
-    const api = getApiForCompatibility(provider.compatibility);
+    const providerApi = getApiForCompatibility(provider.compatibility);
     const providerUpstream = upstreamByProvider.get(provider.id);
     for (const modelId of provider.models) {
       const modelInfo = provider.modelInfoById?.[modelId];
+      // Prefer per-model `supported_endpoints` from `/v1/models` for protocol
+      // selection: it is per-model and comes from the same fetch. Fall back to
+      // the provider-level `compatibility` map for older gateways that don't
+      // report `supported_endpoints`, or for APIs not covered by the endpoint
+      // mapping (Gemini, Vertex, Bedrock).
+      const api =
+        getApiForEndpoints(modelInfo?.supported_endpoints) ?? providerApi;
       // Fall back to a model-id lookup when the provider id does not match a
       // native Pi provider (e.g. a custom Aperture provider name).
       const upstreamBaseUrl = providerUpstream ?? upstreamByModel.get(modelId);
