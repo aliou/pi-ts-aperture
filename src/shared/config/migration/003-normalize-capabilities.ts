@@ -3,6 +3,7 @@ import type { LegacyApertureConfig } from "./legacy";
 
 export const normalizeCapabilitiesMigration: Migration<ApertureConfig> = {
   name: "003-normalize-capabilities",
+  version: "0.8.0",
   shouldRun: (config) =>
     config.proxy?.enabled === undefined ||
     config.proxy?.upstreamProviders === undefined ||

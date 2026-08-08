@@ -3,6 +3,7 @@ import type { LegacyApertureConfig } from "./legacy";
 
 export const modeToCapabilitiesMigration: Migration<ApertureConfig> = {
   name: "002-mode-to-capabilities",
+  version: "0.7.0",
   shouldRun: (config) => (config as LegacyApertureConfig).mode !== undefined,
   run: (config) => {
     const migrated = { ...config } as LegacyApertureConfig;
