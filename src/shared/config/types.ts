@@ -71,6 +71,16 @@ export interface ConnectorsConfig {
 }
 
 export interface ApertureConfig {
+  /**
+   * JSON Schema URL. Injected by the config loader when writing config to
+   * disk; not part of the TypeScript API.
+   */
+  $schema?: string;
+  /**
+   * Config schema version, stamped by content-gated migrations. Not part of
+   * the TypeScript API.
+   */
+  version?: string;
   /** Aperture gateway base URL (e.g. `https://aperture.example.com`). */
   baseUrl?: string;
   /** Whether onboarding has been completed. */
@@ -115,6 +125,8 @@ export interface ResolvedConfig {
 
 export interface Migration<TConfig> {
   name: string;
+  /** semver version string that shipped this migration. */
+  version?: string;
   shouldRun: (config: TConfig) => boolean;
   run: (config: TConfig, filePath: string) => TConfig;
 }

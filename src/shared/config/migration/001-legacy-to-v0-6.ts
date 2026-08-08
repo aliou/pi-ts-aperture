@@ -3,6 +3,7 @@ import type { LegacyApertureConfig } from "./legacy";
 
 export const legacyToV06Migration: Migration<ApertureConfig> = {
   name: "001-legacy-to-v0-6",
+  version: "0.6.0",
   shouldRun: (config) => {
     const legacy = config as LegacyApertureConfig;
     return (
