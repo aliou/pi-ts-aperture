@@ -94,7 +94,8 @@ export default async function (pi: ExtensionAPI): Promise<void> {
 
     void proxyRuntime
       .sync({
-        registerProvider: pi.registerProvider.bind(pi),
+        getProvider: (id) => ctx.modelRegistry.getProvider(id),
+        registerNativeProvider: (provider) => pi.registerProvider(provider),
         getModels: () => ctx.modelRegistry.getAll(),
       })
       .then(() => {

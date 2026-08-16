@@ -7,6 +7,7 @@ import type {
   Api,
   CheckDeps,
   Model,
+  Provider,
   SyncDeps,
 } from "../../../src/shared/types";
 import { resolveGatewayUrl, resolveProviderBaseUrl } from "../../../src/url";
@@ -68,11 +69,54 @@ export class ApertureRuntime {
       // `before_provider_headers` hook registered in the extension entry
       // point, so provider registration only needs the gateway URL and API
       // path here.
-      deps.registerProvider(providerName, {
-        baseUrl: providerBaseUrl,
-        apiKey: "-",
-        api,
-      });
+      //
+      // Re-register via the NATIVE path (passing a wrapped Provider object)
+      // rather than the config path. Pi's config-path registerProvider deletes
+      // the extension-native provider entry from the model runtime, which
+      // leaves no `base` for the composer to rewrite model baseUrls, so
+      // requests keep their baked upstream URL and bypass the gateway.
+      // Builtins (zai) survive because their built-in registration still
+      // resolves; these providers are extension-native, so we preserve them by
+      // re-registering a wrapped provider whose getModels() returns
+      // gateway-rewritten models.
+      const native = deps.getProvider(providerName);
+      if (!native) continue;
+      const baseAuth = native.auth?.apiKey;
+      const baseResolve = baseAuth?.resolve;
+      const wrapped: Provider = {
+        ...native,
+        id: providerName,
+        getModels: () =>
+          native.getModels().map((model) => ({
+            ...model,
+            baseUrl: providerBaseUrl,
+          })),
+        // Override resolve so the gateway-bound request always carries a
+        // non-empty apiKey. openai-completions throws "No API key for provider"
+        // on an empty/absent key, and these providers resolve to "" when no
+        // local key is configured (anonymous mode). The gateway ignores the
+        // client Bearer token and injects its own auth, so a placeholder is
+        // safe.
+        auth:
+          native.auth && baseAuth && baseResolve
+            ? {
+                ...native.auth,
+                apiKey: {
+                  ...baseAuth,
+                  resolve: async (input: Parameters<typeof baseResolve>[0]) => {
+                    const result = await baseResolve(input);
+                    if (!result) return result;
+                    return {
+                      ...result,
+                      auth: { ...result.auth, apiKey: "-" },
+                      source: "aperture proxy",
+                    };
+                  },
+                },
+              }
+            : native.auth,
+      };
+      deps.registerNativeProvider(wrapped);
     }
   }
 

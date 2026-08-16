@@ -7,6 +7,7 @@ import type {
   AssistantMessageEventStream,
   Context,
   Model,
+  Provider,
   SimpleStreamOptions,
 } from "@earendil-works/pi-ai";
 
@@ -15,6 +16,7 @@ export type {
   AssistantMessageEventStream,
   Context,
   Model,
+  Provider,
   SimpleStreamOptions,
 };
 
@@ -22,19 +24,8 @@ export type {
  * Dependencies for ApertureRuntime.sync()
  */
 export interface SyncDeps {
-  registerProvider: (
-    name: string,
-    config: {
-      baseUrl: string;
-      apiKey: string;
-      api: string;
-      streamSimple?: (
-        model: Model<Api>,
-        context: Context,
-        options?: SimpleStreamOptions,
-      ) => AssistantMessageEventStream;
-    },
-  ) => void;
+  getProvider: (id: string) => Provider | undefined;
+  registerNativeProvider: (provider: Provider) => void;
   getModels: () => Model<Api>[];
 }
 

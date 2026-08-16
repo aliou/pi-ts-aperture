@@ -28,6 +28,44 @@ function model(
   return { provider, id, api, baseUrl } as Model<Api>;
 }
 
+// Builds SyncDeps whose getProvider returns a fake native provider backed by
+// the supplied models, and records native re-registrations so tests can assert
+// on the wrapped provider's rewritten getModels() baseUrl.
+function syncDeps(models: () => Model<Api>[]) {
+  const registerNativeProvider = vi.fn();
+  const store = new Map<string, { getModels: () => Model<Api>[] }>();
+  const deps = {
+    getProvider: (id: string) => {
+      if (!store.has(id)) {
+        store.set(id, {
+          getModels: () => models().filter((m) => m.provider === id),
+        });
+      }
+      return store.get(id);
+    },
+    registerNativeProvider: (p: {
+      id: string;
+      getModels: () => Model<Api>[];
+    }) => {
+      registerNativeProvider(p);
+      store.set(p.id, p);
+    },
+    getModels: models,
+  };
+  return { deps, registerNativeProvider };
+}
+
+function wrappedBaseUrl(
+  mock: ReturnType<typeof vi.fn>,
+  providerId: string,
+): string | undefined {
+  const call = mock.mock.calls.find(
+    ([p]: unknown[]) => (p as { id?: string }).id === providerId,
+  );
+  return (call?.[0] as { getModels?: () => Model<Api>[] })?.getModels?.()?.[0]
+    ?.baseUrl;
+}
+
 function provider(id: string, models: string[]) {
   return { id, name: id, models, compatibility: {} };
 }
@@ -86,34 +124,28 @@ describe("ApertureRuntime.sync", () => {
   });
 
   test("uses gateway root for Anthropic and Codex because Pi appends API paths", async () => {
-    const registerProvider = vi.fn();
+    const { deps, registerNativeProvider } = syncDeps(() => [
+      model("anthropic", "claude-sonnet-4-6", "anthropic-messages"),
+      model(
+        "openai",
+        "gpt-5.5",
+        "openai-responses",
+        "https://api.openai.com/v1",
+      ),
+      model("openai-codex", "gpt-5.5", "openai-codex-responses"),
+    ]);
     const runtime = new ApertureRuntime();
 
-    await runtime.sync({
-      registerProvider,
-      getModels: () => [
-        model("anthropic", "claude-sonnet-4-6", "anthropic-messages"),
-        model(
-          "openai",
-          "gpt-5.5",
-          "openai-responses",
-          "https://api.openai.com/v1",
-        ),
-        model("openai-codex", "gpt-5.5", "openai-codex-responses"),
-      ],
-    });
+    await runtime.sync(deps);
 
-    expect(registerProvider).toHaveBeenCalledWith(
-      "anthropic",
-      expect.objectContaining({ baseUrl: "http://gateway.test" }),
+    expect(wrappedBaseUrl(registerNativeProvider, "anthropic")).toBe(
+      "http://gateway.test",
     );
-    expect(registerProvider).toHaveBeenCalledWith(
-      "openai",
-      expect.objectContaining({ baseUrl: "http://gateway.test/v1" }),
+    expect(wrappedBaseUrl(registerNativeProvider, "openai")).toBe(
+      "http://gateway.test/v1",
     );
-    expect(registerProvider).toHaveBeenCalledWith(
-      "openai-codex",
-      expect.objectContaining({ baseUrl: "http://gateway.test" }),
+    expect(wrappedBaseUrl(registerNativeProvider, "openai-codex")).toBe(
+      "http://gateway.test",
     );
   });
 });
@@ -184,84 +216,77 @@ describe("ApertureRuntime.sync OpenAI SDK inference", () => {
   });
 
   test("routes Z.ai to gateway root and OpenAI/Groq to gateway /v1", async () => {
-    const registerProvider = vi.fn();
-    const runtime = new ApertureRuntime();
-
-    await runtime.sync({
-      registerProvider,
-      getModels: () => [
-        model(
-          "zai",
-          "glm-4.5-air",
-          "openai-completions",
-          "https://api.z.ai/api/coding/paas/v4",
-        ),
-        model(
-          "openai",
-          "gpt-5.5",
-          "openai-responses",
-          "https://api.openai.com/v1",
-        ),
-        model(
-          "groq",
-          "llama-4",
-          "openai-completions",
-          "https://api.groq.com/openai/v1",
-        ),
-      ],
-    });
-
-    expect(registerProvider).toHaveBeenCalledWith(
-      "zai",
-      expect.objectContaining({ baseUrl: "http://gateway.test" }),
-    );
-    expect(registerProvider).toHaveBeenCalledWith(
-      "openai",
-      expect.objectContaining({ baseUrl: "http://gateway.test/v1" }),
-    );
-    expect(registerProvider).toHaveBeenCalledWith(
-      "groq",
-      expect.objectContaining({ baseUrl: "http://gateway.test/v1" }),
-    );
-  });
-
-  test("keeps the inferred upstream base URL stable across re-syncs", async () => {
-    const registerProvider = vi.fn();
-    const runtime = new ApertureRuntime();
-
-    const upstreamModels = () => [
+    const { deps, registerNativeProvider } = syncDeps(() => [
       model(
         "zai",
         "glm-4.5-air",
         "openai-completions",
         "https://api.z.ai/api/coding/paas/v4",
       ),
-    ];
+      model(
+        "openai",
+        "gpt-5.5",
+        "openai-responses",
+        "https://api.openai.com/v1",
+      ),
+      model(
+        "groq",
+        "llama-4",
+        "openai-completions",
+        "https://api.groq.com/openai/v1",
+      ),
+    ]);
+    const runtime = new ApertureRuntime();
 
-    await runtime.sync({
-      registerProvider,
-      getModels: upstreamModels,
-    });
+    await runtime.sync(deps);
+
+    expect(wrappedBaseUrl(registerNativeProvider, "zai")).toBe(
+      "http://gateway.test",
+    );
+    expect(wrappedBaseUrl(registerNativeProvider, "openai")).toBe(
+      "http://gateway.test/v1",
+    );
+    expect(wrappedBaseUrl(registerNativeProvider, "groq")).toBe(
+      "http://gateway.test/v1",
+    );
+  });
+
+  test("keeps the inferred upstream base URL stable across re-syncs", async () => {
+    const { deps, registerNativeProvider } = syncDeps(() => [
+      model(
+        "zai",
+        "glm-4.5-air",
+        "openai-completions",
+        "https://api.z.ai/api/coding/paas/v4",
+      ),
+    ]);
+    const runtime = new ApertureRuntime();
+
+    await runtime.sync(deps);
 
     // Second sync: model list is already rewritten to the gateway (as Pi
     // would surface after a settings reload). The cached upstream URL must
     // keep Z.ai on gateway root instead of flipping back to /v1.
-    const rewrittenModels = () => [
-      model("zai", "glm-4.5-air", "openai-completions", "http://gateway.test"),
-    ];
     await runtime.sync({
-      registerProvider,
-      getModels: rewrittenModels,
+      ...deps,
+      getModels: () => [
+        model(
+          "zai",
+          "glm-4.5-air",
+          "openai-completions",
+          "http://gateway.test",
+        ),
+      ],
     });
 
-    const zaiCalls = registerProvider.mock.calls.filter(
-      ([name]) => name === "zai",
+    const zaiCalls = registerNativeProvider.mock.calls.filter(
+      ([p]: unknown[]) => (p as { id?: string }).id === "zai",
     );
     expect(zaiCalls).toHaveLength(2);
-    for (const [, config] of zaiCalls) {
-      expect(config).toEqual(
-        expect.objectContaining({ baseUrl: "http://gateway.test" }),
-      );
+    for (const [p] of zaiCalls) {
+      expect(
+        (p as { getModels: () => Model<Api>[] }).getModels()[0].baseUrl,
+      ).toBe("http://gateway.test");
     }
   });
 });
@@ -275,24 +300,20 @@ describe("ApertureRuntime.sync fixed-path APIs", () => {
     getConfig.mockReturnValue(
       proxyConfig([{ id: "bedrock", shouldCheckGatewayModels: false }]),
     );
-    const registerProvider = vi.fn();
+    const { deps, registerNativeProvider } = syncDeps(() => [
+      model(
+        "bedrock",
+        "anthropic.claude-3-5-sonnet-20241022-v2:0",
+        "bedrock-converse-stream",
+        "https://bedrock-runtime.us-east-1.amazonaws.com",
+      ),
+    ]);
     const runtime = new ApertureRuntime();
 
-    await runtime.sync({
-      registerProvider,
-      getModels: () => [
-        model(
-          "bedrock",
-          "anthropic.claude-3-5-sonnet-20241022-v2:0",
-          "bedrock-converse-stream",
-          "https://bedrock-runtime.us-east-1.amazonaws.com",
-        ),
-      ],
-    });
+    await runtime.sync(deps);
 
-    expect(registerProvider).toHaveBeenCalledWith(
-      "bedrock",
-      expect.objectContaining({ baseUrl: "http://gateway.test/bedrock" }),
+    expect(wrappedBaseUrl(registerNativeProvider, "bedrock")).toBe(
+      "http://gateway.test/bedrock",
     );
   });
 
@@ -302,19 +323,15 @@ describe("ApertureRuntime.sync fixed-path APIs", () => {
     getConfig.mockReturnValue(
       proxyConfig([{ id: "google", shouldCheckGatewayModels: false }]),
     );
-    const registerProvider = vi.fn();
+    const { deps, registerNativeProvider } = syncDeps(() => [
+      model("google", "gemini-2.5-pro", "google-generative-ai"),
+    ]);
     const runtime = new ApertureRuntime();
 
-    await runtime.sync({
-      registerProvider,
-      getModels: () => [
-        model("google", "gemini-2.5-pro", "google-generative-ai"),
-      ],
-    });
+    await runtime.sync(deps);
 
-    expect(registerProvider).toHaveBeenCalledWith(
-      "google",
-      expect.objectContaining({ baseUrl: "http://gateway.test/v1beta" }),
+    expect(wrappedBaseUrl(registerNativeProvider, "google")).toBe(
+      "http://gateway.test/v1beta",
     );
   });
 });
