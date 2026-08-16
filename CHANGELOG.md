@@ -1,5 +1,22 @@
 # @aliou/pi-ts-aperture
 
+## 0.12.0
+
+### Minor Changes
+
+- 7e76634: Native pi-ai provider registration for both modes, and a proxy-mode routing fix.
+
+  Proxy mode: requests for extension-native providers (synthetic, neuralwatt) now go through the Aperture gateway. Sync previously re-registered providers via the name-plus-config path, which deletes the extension-native provider entry from pi's model runtime; with no base provider left, model baseUrls were never rewritten to the gateway, so requests hit upstream APIs with no credentials and 401'd. Sync now wraps the live provider (gateway baseUrls, placeholder key for anonymous providers) and re-registers it through the native path.
+
+  Dedicated mode: the `aperture` provider is now registered as a pi-ai `Provider`, mirroring pi-synthetic and pi-neuralwatt. The provider owns its auth (gateway-authenticated: resolve always succeeds with a placeholder key, check always reports configured), owns its live model list (adopted via `context.publish`), and gains full `stream` dispatch alongside `streamSimple`.
+
+  Peers now require pi >= 0.84; the pre/post-0.84 store shim is deleted.
+
+### Patch Changes
+
+- 73bdefb: Drop the custom `aperture` API marker from dedicated models. Models now carry their real upstream Pi API (from gateway compatibility), so they get API-correct option shaping — reasoning effort mapping, sampling params — instead of the generic defaults the unknown marker produced. Legacy models-store snapshots stamped with the marker still restore.
+- eae7e89: Stamp dedicated Aperture models with their provider id and repair cached catalogs that were written without it, preventing Pi's model selector from crashing after first model discovery.
+
 ## 0.11.5
 
 ### Patch Changes
