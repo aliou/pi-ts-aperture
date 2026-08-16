@@ -84,7 +84,7 @@ function buildModels(
   baseUrl: string,
   registryModels: Model<Api>[],
   modelsDev: ModelsDevCatalog | null,
-): ProviderModelConfig[] {
+): Model<Api>[] {
   // Look up native upstream base URLs from Pi's model registry. Prefer a
   // provider-id match (same naming as the gateway), then a model-id match
   // (model ids are upstream-standardized, so they survive provider renaming).
@@ -112,7 +112,7 @@ function buildModels(
     (m) => m.provider !== PROVIDER_NAME,
   );
 
-  const models: ProviderModelConfig[] = [];
+  const models: Model<Api>[] = [];
 
   for (const provider of providers) {
     const api = getApiForCompatibility(provider.compatibility);
@@ -127,6 +127,7 @@ function buildModels(
         modelsDev,
       });
       models.push({
+        provider: PROVIDER_NAME,
         ...buildDefaultModelConfig({
           id: modelId,
           providerId: provider.id,
@@ -136,11 +137,21 @@ function buildModels(
         }),
         api,
         baseUrl: getBaseUrlForApi(api, gatewayUrl, baseUrl, upstreamBaseUrl),
-      });
+      } as Model<Api>);
     }
   }
 
   return models;
+}
+
+function normalizeDedicatedModels(models: ProviderModelConfig[]): Model<Api>[] {
+  return models.map(
+    (model) =>
+      ({
+        ...model,
+        provider: (model as Partial<Model<Api>>).provider ?? PROVIDER_NAME,
+      }) as Model<Api>,
+  );
 }
 
 /**
@@ -152,12 +163,14 @@ function buildModels(
 function storedCatalogModels(
   stored: ModelsStoreEntry | undefined,
   catalogKey: string,
-): ProviderModelConfig[] {
+): Model<Api>[] {
   try {
     const entry = stored as DedicatedStoreEntry | undefined;
     if (!entry || !Array.isArray(entry.models)) return [];
     if (entry.catalogKey !== catalogKey) return [];
-    return [...(entry.models as unknown as ProviderModelConfig[])];
+    return normalizeDedicatedModels(
+      entry.models as unknown as ProviderModelConfig[],
+    );
   } catch {
     return [];
   }

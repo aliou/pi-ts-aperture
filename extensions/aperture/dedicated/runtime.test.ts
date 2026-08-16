@@ -270,8 +270,34 @@ describe("refreshModels / cache-only restore", () => {
     const models = await refresh(provider, store, false);
 
     expect(models.map((m) => m.id)).toEqual(["gpt-x"]);
+    expect(models[0]?.provider).toBe("aperture");
     expect(models[0]?.api).toBe("openai-completions");
     expect(providersMock).not.toHaveBeenCalled();
+  });
+
+  test("repairs cached catalogs from the native-provider release that omitted provider", async () => {
+    const provider = register();
+    const store = memoryStore({
+      models: [
+        {
+          id: "gpt-x",
+          name: "gpt-x",
+          api: "openai-completions",
+          baseUrl: `${GATEWAY}/v1`,
+          reasoning: false,
+          input: ["text"],
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+          contextWindow: 128_000,
+          maxTokens: 8_192,
+        },
+      ] as unknown as Model<Api>[],
+      checkedAt: Date.now(),
+      catalogKey: `${GATEWAY} *`,
+    });
+
+    const models = await refresh(provider, store, false);
+
+    expect(models[0]?.provider).toBe("aperture");
   });
 
   test("returns [] when the store is empty", async () => {
@@ -357,6 +383,7 @@ describe("refreshModels / networked refresh", () => {
     expect(providersMock).toHaveBeenCalledOnce();
     expect(models.map((m) => m.id)).toEqual(["gpt-5", "gpt-4"]);
     for (const model of models) {
+      expect(model.provider).toBe("aperture");
       expect(model.api).toBe("openai-completions");
     }
     expect(store.entry).toBeDefined();
