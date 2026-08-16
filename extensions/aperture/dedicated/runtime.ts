@@ -17,18 +17,15 @@ import {
   resolveModelMetadata,
 } from "../../../src/model-metadata";
 import {
-  persistModels,
-  readStoredModels,
-} from "../../../src/refresh-store-compat";
-import {
   configLoader,
   type ResolvedConfig,
 } from "../../../src/shared/config/loader";
 import { resolveGatewayUrl, resolveProviderBaseUrl } from "../../../src/url";
-import { buildStreamSimple, getApiForCompatibility } from "./api-routing";
+import { getApiForCompatibility } from "./api-routing";
 import { buildDefaultModelConfig } from "./model-defaults";
+import { createDedicatedProvider, DEDICATED_PROVIDER_ID } from "./provider";
 
-const PROVIDER_NAME = "aperture";
+const PROVIDER_NAME = DEDICATED_PROVIDER_ID;
 const APERTURE_API = "aperture";
 
 /**
@@ -176,13 +173,20 @@ function storedCatalogModels(
  * right after registration (cache-only restore, before scope validation) and
  * with network access when `ctx.modelRegistry.refresh()` runs.
  *
+ * Builds and persists the dedicated catalog: restores the `context.stored`
+ * snapshot on cache-only refreshes, and on networked refreshes fetches the
+ * gateway catalog, builds models, and publishes the store entry
+ * (`context.publish({ persist })`). Fetch failures propagate so Pi reports
+ * them through ModelsRefreshResult.errors; the caller retains the previous
+ * model list.
+ *
  * Reads config live at call time so settings changes (gateway URL, provider
  * filter) apply on the next refresh without re-registering.
  */
-async function refreshDedicatedModels(
+export async function refreshDedicatedCatalog(
   context: RefreshModelsContext,
   getModels: GetRegistryModels,
-): Promise<ProviderModelConfig[]> {
+): Promise<Model<Api>[]> {
   const config = configLoader.getConfig();
   if (!config.dedicated.enabled) return [];
   const gatewayUrl = resolveGatewayUrl(config);
@@ -191,10 +195,8 @@ async function refreshDedicatedModels(
 
   const catalogKey = buildCatalogKey(gatewayUrl, config);
 
-  const stored = await readStoredModels(context);
-
   if (!context.allowNetwork) {
-    return storedCatalogModels(stored, catalogKey);
+    return storedCatalogModels(context.stored, catalogKey) as Model<Api>[];
   }
 
   const client = new ApertureClient(gatewayUrl);
@@ -203,7 +205,7 @@ async function refreshDedicatedModels(
     fetchModelsDevCatalog({ signal: context.signal }),
   ]);
   const providers = filterProviders(gatewayProviders, config);
-  const models = buildModels(
+  const catalog = buildModels(
     providers,
     gatewayUrl,
     baseUrl,
@@ -214,12 +216,12 @@ async function refreshDedicatedModels(
   context.signal?.throwIfAborted();
 
   const entry: DedicatedStoreEntry = {
-    models: models as unknown as Model<Api>[],
+    models: catalog as unknown as Model<Api>[],
     checkedAt: Date.now(),
     catalogKey,
   };
-  await persistModels(context, entry);
-  return models;
+  await context.publish({ persist: entry });
+  return catalog as unknown as Model<Api>[];
 }
 
 /**
@@ -242,13 +244,11 @@ export function registerDedicatedProvider(
   const baseUrl = resolveProviderBaseUrl(config);
   if (!baseUrl) return;
 
-  pi.registerProvider(PROVIDER_NAME, {
-    baseUrl,
-    apiKey: "-",
-    api: APERTURE_API,
-    streamSimple: buildStreamSimple(),
-    refreshModels: (context) => refreshDedicatedModels(context, getModels),
-  });
+  pi.registerProvider(
+    createDedicatedProvider(baseUrl, (context) =>
+      refreshDedicatedCatalog(context, getModels),
+    ),
+  );
 }
 
 /**

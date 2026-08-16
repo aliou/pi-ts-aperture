@@ -49,8 +49,9 @@ Pi-agnostic Aperture API and mapping code lives under `src/`. Extension glue (Pi
 
 - `index.ts` - Single extension entry point. Loads config, syncs proxy and dedicated providers, registers onboarding and settings.
 - `proxy/runtime.ts` - `ApertureRuntime` for proxy provider registration/unregistration and gateway model verification.
-- `dedicated/runtime.ts` - `registerDedicatedProvider` / `reconcileDedicatedProvider` for the standalone `aperture` provider. Model discovery and caching go through Pi's `refreshModels` hook and per-provider models store.
-- `dedicated/api-routing.ts` - Aperture compatibility-to-Pi API mapping (`getApiForCompatibility`) and stream-time dispatch (`buildStreamSimple`) for dedicated mode. Per-API gateway base-URL resolution lives in the shared `src/base-url-routing.ts` (`getBaseUrlForApi`).
+- `dedicated/runtime.ts` - `registerDedicatedProvider` / `reconcileDedicatedProvider` for the standalone `aperture` provider. Model discovery and caching go through the provider's `refreshModels` (`refreshDedicatedCatalog`) and Pi's per-provider models store.
+- `dedicated/provider.ts` - Native pi-ai `Provider` assembly for dedicated mode: gateway-authenticated auth (resolve always succeeds with a placeholder key), live model list adopted via `context.publish({ update })`.
+- `dedicated/api-routing.ts` - Aperture compatibility-to-Pi API mapping (`getApiForCompatibility`) and stream-time dispatch (`buildStream` / `buildStreamSimple`) for dedicated mode. Per-API gateway base-URL resolution lives in the shared `src/base-url-routing.ts` (`getBaseUrlForApi`).
 - `dedicated/model-defaults.ts` - Model config builder merging safe defaults, resolved metadata, and gateway pricing.
 - `onboarding/index.ts` - Registers temporary onboarding affordances while onboarding is enabled.
 - `onboarding/onboarding.ts` - Onboarding wizard. Steps: welcome, URL, capability selection, provider selection, recap.

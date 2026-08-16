@@ -121,8 +121,7 @@ export default async function (pi: ExtensionAPI): Promise<void> {
     void ctx.modelRegistry
       .refresh()
       .then((result) => {
-        // Pi >=0.84 resolves with a ModelsRefreshResult carrying per-provider
-        // errors; older versions resolve with void.
+        // Per-provider refresh errors resolve rather than reject; relay them.
         const error = result?.errors?.get("aperture");
         if (error) {
           ctx.ui.notify(

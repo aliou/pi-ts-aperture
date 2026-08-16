@@ -1,4 +1,4 @@
-import type { Api, Model } from "@earendil-works/pi-ai";
+import type { Api, Model, StreamOptions } from "@earendil-works/pi-ai";
 import { getApiProvider } from "@earendil-works/pi-ai/compat";
 import type { ProviderCompatibility } from "../../../src/api/types";
 import type {
@@ -27,7 +27,7 @@ export function getApiForCompatibility(
  * the correct upstream Pi API; `model.api` itself is the custom `"aperture"`
  * marker. Pi types the model handed to `streamSimple` as `Model<Api>`, but
  * its provider composition spreads our full model definition (verified
- * against provider-composer.ts in pi 0.83.0), so the extra field survives
+ * against pi's provider-composer), so the extra field survives
  * registration, the models store, and cache-only restores. The cast below
  * only recovers that field.
  */
@@ -52,5 +52,28 @@ export function buildStreamSimple() {
     }
 
     return provider.streamSimple({ ...model, api }, context, options);
+  };
+}
+
+/**
+ * Full-stream counterpart of buildStreamSimple: the composer previously
+ * routed `provider.stream()` through the config form's streamSimple because
+ * the custom `aperture` API marker matched; a native Provider must implement
+ * `stream` itself.
+ */
+export function buildStream() {
+  return (
+    model: Model<Api>,
+    context: Context,
+    options?: StreamOptions,
+  ): AssistantMessageEventStream => {
+    const api =
+      (model as ApertureRoutedModel).upstreamApi ?? "openai-completions";
+    const provider = getApiProvider(api);
+    if (!provider) {
+      throw new Error(`Unsupported Aperture provider API: ${api}`);
+    }
+
+    return provider.stream({ ...model, api }, context, options);
   };
 }

@@ -2,6 +2,7 @@ import type {
   Api,
   Model,
   ModelsStoreEntry,
+  Provider,
   ProviderModelsStore,
   RefreshModelsContext,
 } from "@earendil-works/pi-ai";
@@ -125,35 +126,32 @@ function memoryStore(initial?: ModelsStoreEntry): ProviderModelsStore & {
   return store;
 }
 
-interface RegisteredProvider {
-  baseUrl?: string;
-  apiKey?: string;
-  streamSimple?: unknown;
-  refreshModels?: (
-    context: RefreshModelsContext,
-  ) => Promise<ProviderModelConfig[]>;
+interface DedicatedPublication {
+  persist?: ModelsStoreEntry | null;
+  update?: () => void;
 }
 
-/** Register the provider against a fake pi and return the captured config. */
-function register(
-  getModels: () => Model<Api>[] = () => [],
-): RegisteredProvider | null {
+/** Register the provider against a fake pi and return the native Provider. */
+function register(getModels: () => Model<Api>[] = () => []): Provider | null {
   const registerProvider = vi.fn();
   registerDedicatedProvider({ registerProvider }, getModels);
-  const call = registerProvider.mock.calls.at(-1) as
-    | [string, RegisteredProvider]
+  const provider = registerProvider.mock.calls.at(-1)?.[0] as
+    | Provider
     | undefined;
-  return call ? call[1] : null;
+  return provider ?? null;
 }
 
+/**
+ * Drive refreshModels the way Pi does: a refresh context whose publish
+ * applies the persist entry to the memory store and runs update hooks, so the
+ * provider's live list reflects the catalog after the call.
+ */
 async function refresh(
-  provider: RegisteredProvider,
+  provider: Provider | null,
   store: ProviderModelsStore,
   allowNetwork: boolean,
-): Promise<ProviderModelConfig[]> {
-  if (!provider.refreshModels) throw new Error("no refreshModels registered");
-  // Provide both the 0.84 (stored/publish/signal) and legacy (store)
-  // refresh-context shapes so the tests exercise the runtime shim.
+): Promise<readonly Model<Api>[]> {
+  if (!provider?.refreshModels) throw new Error("no refreshModels on provider");
   const tracked = store as ProviderModelsStore & {
     entry: ModelsStoreEntry | undefined;
   };
@@ -163,13 +161,14 @@ async function refresh(
     get stored() {
       return tracked.entry;
     },
-    publish: async (publication: { persist?: ModelsStoreEntry | null }) => {
+    publish: async (publication: DedicatedPublication) => {
       if (publication.persist) await store.write(publication.persist);
+      publication.update?.();
       return true;
     },
-    store,
   } as unknown as RefreshModelsContext;
-  return provider.refreshModels(context);
+  await provider.refreshModels(context);
+  return provider.getModels();
 }
 
 type DedicatedModel = ProviderModelConfig & { upstreamApi?: Api };
@@ -186,14 +185,35 @@ beforeEach(() => {
 });
 
 describe("registerDedicatedProvider", () => {
-  test("registers the provider with a refreshModels hook", () => {
+  test("registers the provider as a native Provider", async () => {
     const provider = register();
 
     expect(provider).not.toBeNull();
+    expect(provider?.id).toBe("aperture");
     expect(provider?.baseUrl).toBe(`${GATEWAY}/v1`);
-    expect(provider?.apiKey).toBe("-");
+    expect(provider?.getModels()).toEqual([]);
+    expect(provider?.stream).toBeTypeOf("function");
     expect(provider?.streamSimple).toBeTypeOf("function");
     expect(provider?.refreshModels).toBeTypeOf("function");
+  });
+
+  test("owns gateway auth: always configured, placeholder api key", async () => {
+    const input = {
+      ctx: { env: async () => undefined, fileExists: async () => false },
+      signal: new AbortController().signal,
+    };
+    const auth = register()?.auth.apiKey;
+
+    expect(auth).toBeDefined();
+    // No user key exists for the gateway provider, so check always passes.
+    await expect(auth?.check?.(input)).resolves.toMatchObject({
+      type: "api_key",
+    });
+    await expect(auth?.resolve(input)).resolves.toMatchObject({
+      auth: { apiKey: "-" },
+    });
+    // Ambient-only: no interactive login for a gateway-authenticated provider.
+    expect(auth?.login).toBeUndefined();
   });
 
   test("no-ops when dedicated is disabled", () => {
@@ -231,10 +251,12 @@ describe("reconcileDedicatedProvider", () => {
       () => [],
     );
 
-    expect(registerProvider).toHaveBeenCalledWith(
-      "aperture",
-      expect.objectContaining({ baseUrl: `${GATEWAY}/v1` }),
-    );
+    expect(registerProvider).toHaveBeenCalledOnce();
+    const provider = registerProvider.mock.calls[0][0];
+    expect(provider).toMatchObject({
+      id: "aperture",
+      baseUrl: `${GATEWAY}/v1`,
+    });
     expect(unregisterProvider).not.toHaveBeenCalled();
   });
 });
@@ -245,10 +267,10 @@ describe("refreshModels / cache-only restore", () => {
     const provider = register();
     const store = memoryStore();
 
-    await refresh(provider as RegisteredProvider, store, true);
+    await refresh(provider, store, true);
     providersMock.mockClear();
 
-    const models = await refresh(provider as RegisteredProvider, store, false);
+    const models = await refresh(provider, store, false);
 
     expect(models.map((m) => m.id)).toEqual(["gpt-x"]);
     expect((models[0] as DedicatedModel).upstreamApi).toBe(
@@ -259,11 +281,7 @@ describe("refreshModels / cache-only restore", () => {
 
   test("returns [] when the store is empty", async () => {
     const provider = register();
-    const models = await refresh(
-      provider as RegisteredProvider,
-      memoryStore(),
-      false,
-    );
+    const models = await refresh(provider, memoryStore(), false);
     expect(models).toEqual([]);
   });
 
@@ -271,14 +289,14 @@ describe("refreshModels / cache-only restore", () => {
     providersMock.mockResolvedValue([gatewayProvider("openai", ["gpt-x"])]);
     const provider = register();
     const store = memoryStore();
-    await refresh(provider as RegisteredProvider, store, true);
+    await refresh(provider, store, true);
 
     getConfig.mockReturnValue({
       ...dedicatedConfig(),
       baseUrl: "http://other-gateway.test",
     });
 
-    const models = await refresh(provider as RegisteredProvider, store, false);
+    const models = await refresh(provider, store, false);
     expect(models).toEqual([]);
   });
 
@@ -292,11 +310,11 @@ describe("refreshModels / cache-only restore", () => {
     });
     const provider = register();
     const store = memoryStore();
-    await refresh(provider as RegisteredProvider, store, true);
+    await refresh(provider, store, true);
 
     // Back to the legitimate gateway: the stored catalog must not restore.
     getConfig.mockReturnValue(dedicatedConfig());
-    const models = await refresh(provider as RegisteredProvider, store, false);
+    const models = await refresh(provider, store, false);
     expect(models).toEqual([]);
   });
 
@@ -307,13 +325,13 @@ describe("refreshModels / cache-only restore", () => {
     ]);
     const provider = register();
     const store = memoryStore();
-    await refresh(provider as RegisteredProvider, store, true);
+    await refresh(provider, store, true);
 
     getConfig.mockReturnValue(
       dedicatedConfig(true, [{ id: "anthropic", enabled: true }]),
     );
 
-    const models = await refresh(provider as RegisteredProvider, store, false);
+    const models = await refresh(provider, store, false);
     expect(models).toEqual([]);
   });
 
@@ -326,7 +344,7 @@ describe("refreshModels / cache-only restore", () => {
       checkedAt: Date.now(),
     });
 
-    const models = await refresh(provider as RegisteredProvider, store, false);
+    const models = await refresh(provider, store, false);
     expect(models).toEqual([]);
   });
 });
@@ -339,7 +357,7 @@ describe("refreshModels / networked refresh", () => {
     const provider = register();
     const store = memoryStore();
 
-    const models = await refresh(provider as RegisteredProvider, store, true);
+    const models = await refresh(provider, store, true);
 
     expect(providersMock).toHaveBeenCalledOnce();
     expect(models.map((m) => m.id)).toEqual(["gpt-5", "gpt-4"]);
@@ -364,11 +382,7 @@ describe("refreshModels / networked refresh", () => {
     ]);
     const provider = register();
 
-    const models = await refresh(
-      provider as RegisteredProvider,
-      memoryStore(),
-      true,
-    );
+    const models = await refresh(provider, memoryStore(), true);
     expect(models.map((m) => m.id)).toEqual(["claude-x"]);
   });
 
@@ -376,9 +390,9 @@ describe("refreshModels / networked refresh", () => {
     providersMock.mockRejectedValue(new Error("gateway down"));
     const provider = register();
 
-    await expect(
-      refresh(provider as RegisteredProvider, memoryStore(), true),
-    ).rejects.toThrow("gateway down");
+    await expect(refresh(provider, memoryStore(), true)).rejects.toThrow(
+      "gateway down",
+    );
   });
 
   test("failed fetch then cache-only call restores the previous catalog", async () => {
@@ -386,14 +400,12 @@ describe("refreshModels / networked refresh", () => {
     const provider = register();
     const store = memoryStore();
 
-    await refresh(provider as RegisteredProvider, store, true);
+    await refresh(provider, store, true);
     providersMock.mockRejectedValue(new Error("gateway down"));
-    await expect(
-      refresh(provider as RegisteredProvider, store, true),
-    ).rejects.toThrow();
+    await expect(refresh(provider, store, true)).rejects.toThrow();
 
     // Pi re-calls with allowNetwork: false after a failed refresh.
-    const models = await refresh(provider as RegisteredProvider, store, false);
+    const models = await refresh(provider, store, false);
     expect(models.map((m) => m.id)).toEqual(["gpt-5"]);
   });
 
@@ -408,11 +420,7 @@ describe("refreshModels / networked refresh", () => {
     ]);
     const provider = register();
 
-    const models = await refresh(
-      provider as RegisteredProvider,
-      memoryStore(),
-      true,
-    );
+    const models = await refresh(provider, memoryStore(), true);
     expect(models).toHaveLength(1);
     expect(models[0].cost?.input).toBeCloseTo(0.93, 10);
     expect(models[0].cost?.output).toBe(3);
@@ -435,11 +443,7 @@ describe("refreshModels / metadata enrichment", () => {
       }),
     ]);
 
-    const models = await refresh(
-      provider as RegisteredProvider,
-      memoryStore(),
-      true,
-    );
+    const models = await refresh(provider, memoryStore(), true);
     expect(models[0].name).toBe("GPT-5");
     expect(models[0].reasoning).toBe(true);
     expect(models[0].input).toEqual(["text", "image"]);
@@ -462,11 +466,7 @@ describe("refreshModels / metadata enrichment", () => {
       }),
     ]);
 
-    const models = await refresh(
-      provider as RegisteredProvider,
-      memoryStore(),
-      true,
-    );
+    const models = await refresh(provider, memoryStore(), true);
     expect(models[0].cost?.input).toBe(1.25);
     expect(models[0].cost?.output).toBe(10);
     expect(models[0].cost?.cacheRead).toBeCloseTo(0.2, 10);
@@ -486,11 +486,7 @@ describe("refreshModels / metadata enrichment", () => {
       }),
     ]);
 
-    const models = await refresh(
-      provider as RegisteredProvider,
-      memoryStore(),
-      true,
-    );
+    const models = await refresh(provider, memoryStore(), true);
     expect(models[0].cost?.input).toBe(2);
     expect(models[0].cost?.output).toBe(9);
   });
@@ -512,11 +508,7 @@ describe("refreshModels / metadata enrichment", () => {
     });
     const provider = register(() => []);
 
-    const models = await refresh(
-      provider as RegisteredProvider,
-      memoryStore(),
-      true,
-    );
+    const models = await refresh(provider, memoryStore(), true);
     expect(models[0].name).toBe("GLM-5");
     expect(models[0].reasoning).toBe(true);
     expect(models[0].input).toEqual(["text", "image"]);
@@ -541,11 +533,7 @@ describe("refreshModels / metadata enrichment", () => {
       }),
     ]);
 
-    const models = await refresh(
-      provider as RegisteredProvider,
-      memoryStore(),
-      true,
-    );
+    const models = await refresh(provider, memoryStore(), true);
     expect(models[0].contextWindow).toBe(128_000);
     expect(models[0].maxTokens).toBe(96_000);
   });
@@ -569,11 +557,7 @@ describe("refreshModels / metadata enrichment", () => {
       },
     });
 
-    const models = await refresh(
-      provider as RegisteredProvider,
-      memoryStore(),
-      true,
-    );
+    const models = await refresh(provider, memoryStore(), true);
     // models.dev metadata applies because the self-match was excluded.
     expect(models[0].contextWindow).toBe(1_000_000);
     expect(models[0].maxTokens).toBe(65_536);
@@ -583,11 +567,7 @@ describe("refreshModels / metadata enrichment", () => {
     providersMock.mockResolvedValue([gatewayProvider("custom", ["mystery"])]);
     const provider = register(() => []);
 
-    const models = await refresh(
-      provider as RegisteredProvider,
-      memoryStore(),
-      true,
-    );
+    const models = await refresh(provider, memoryStore(), true);
     expect(models[0]).toMatchObject({
       name: "mystery",
       reasoning: false,
@@ -611,11 +591,7 @@ describe("refreshModels / upstream base URL inference", () => {
       nativeModel("zai", "glm-4.7", "https://api.z.ai/api/coding/paas/v4"),
     ]);
 
-    const models = await refresh(
-      provider as RegisteredProvider,
-      memoryStore(),
-      true,
-    );
+    const models = await refresh(provider, memoryStore(), true);
     expect(models.map((m) => m.baseUrl)).toEqual([GATEWAY, GATEWAY]);
   });
 
@@ -625,11 +601,7 @@ describe("refreshModels / upstream base URL inference", () => {
       nativeModel("openai", "gpt-5", "https://api.openai.com/v1"),
     ]);
 
-    const models = await refresh(
-      provider as RegisteredProvider,
-      memoryStore(),
-      true,
-    );
+    const models = await refresh(provider, memoryStore(), true);
     expect(models.map((m) => m.baseUrl)).toEqual([`${GATEWAY}/v1`]);
   });
 
@@ -644,11 +616,7 @@ describe("refreshModels / upstream base URL inference", () => {
       nativeModel("mistral", "mistral-small-latest", "https://api.mistral.ai"),
     ]);
 
-    const models = await refresh(
-      provider as RegisteredProvider,
-      memoryStore(),
-      true,
-    );
+    const models = await refresh(provider, memoryStore(), true);
     expect(models.map((m) => m.baseUrl)).toEqual([`${GATEWAY}/v1`]);
   });
 
@@ -658,11 +626,7 @@ describe("refreshModels / upstream base URL inference", () => {
     ]);
     const provider = register(() => []);
 
-    const models = await refresh(
-      provider as RegisteredProvider,
-      memoryStore(),
-      true,
-    );
+    const models = await refresh(provider, memoryStore(), true);
     expect(models.map((m) => m.baseUrl)).toEqual([`${GATEWAY}/v1`]);
   });
 
@@ -677,11 +641,7 @@ describe("refreshModels / upstream base URL inference", () => {
       nativeModel("zai", "glm-5.2", "https://api.z.ai/api/coding/paas/v4"),
     ]);
 
-    const models = await refresh(
-      provider as RegisteredProvider,
-      memoryStore(),
-      true,
-    );
+    const models = await refresh(provider, memoryStore(), true);
     expect(models.map((m) => m.baseUrl)).toEqual([GATEWAY]);
   });
 
@@ -697,11 +657,7 @@ describe("refreshModels / upstream base URL inference", () => {
       nativeModel("aperture", "glm-5.2", `${GATEWAY}/v1`),
     ]);
 
-    const models = await refresh(
-      provider as RegisteredProvider,
-      memoryStore(),
-      true,
-    );
+    const models = await refresh(provider, memoryStore(), true);
     expect(models.map((m) => m.baseUrl)).toEqual([GATEWAY]);
   });
 });
