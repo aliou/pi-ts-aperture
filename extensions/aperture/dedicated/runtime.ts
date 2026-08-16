@@ -26,7 +26,6 @@ import { buildDefaultModelConfig } from "./model-defaults";
 import { createDedicatedProvider, DEDICATED_PROVIDER_ID } from "./provider";
 
 const PROVIDER_NAME = DEDICATED_PROVIDER_ID;
-const APERTURE_API = "aperture";
 
 /**
  * Supplier of Pi's native registry models, used for upstream base URL
@@ -36,9 +35,6 @@ const APERTURE_API = "aperture";
  * refreshes must see a live view, not a snapshot.
  */
 export type GetRegistryModels = () => Model<Api>[];
-
-/** Model config with the upstream Pi API embedded for stream-time routing. */
-type DedicatedModelConfig = ProviderModelConfig & { upstreamApi: Api };
 
 /**
  * Store entry with the catalog identity it was built for. Restores are only
@@ -88,7 +84,7 @@ function buildModels(
   baseUrl: string,
   registryModels: Model<Api>[],
   modelsDev: ModelsDevCatalog | null,
-): DedicatedModelConfig[] {
+): ProviderModelConfig[] {
   // Look up native upstream base URLs from Pi's model registry. Prefer a
   // provider-id match (same naming as the gateway), then a model-id match
   // (model ids are upstream-standardized, so they survive provider renaming).
@@ -116,7 +112,7 @@ function buildModels(
     (m) => m.provider !== PROVIDER_NAME,
   );
 
-  const models: DedicatedModelConfig[] = [];
+  const models: ProviderModelConfig[] = [];
 
   for (const provider of providers) {
     const api = getApiForCompatibility(provider.compatibility);
@@ -138,9 +134,8 @@ function buildModels(
           pricing: modelInfo?.pricing,
           metadata,
         }),
-        api: APERTURE_API,
+        api,
         baseUrl: getBaseUrlForApi(api, gatewayUrl, baseUrl, upstreamBaseUrl),
-        upstreamApi: api,
       });
     }
   }

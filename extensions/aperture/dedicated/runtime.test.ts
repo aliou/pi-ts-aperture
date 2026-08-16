@@ -6,7 +6,6 @@ import type {
   ProviderModelsStore,
   RefreshModelsContext,
 } from "@earendil-works/pi-ai";
-import type { ProviderModelConfig } from "@earendil-works/pi-coding-agent";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import type { ApertureProvider } from "../../../src/api/types";
 import type { ModelsDevCatalog } from "../../../src/model-metadata";
@@ -171,8 +170,6 @@ async function refresh(
   return provider.getModels();
 }
 
-type DedicatedModel = ProviderModelConfig & { upstreamApi?: Api };
-
 beforeEach(() => {
   getConfig.mockReturnValue(dedicatedConfig());
   // biome-ignore lint/complexity/useArrowFunction: must be constructible (new ApertureClient)
@@ -273,9 +270,7 @@ describe("refreshModels / cache-only restore", () => {
     const models = await refresh(provider, store, false);
 
     expect(models.map((m) => m.id)).toEqual(["gpt-x"]);
-    expect((models[0] as DedicatedModel).upstreamApi).toBe(
-      "openai-completions",
-    );
+    expect(models[0]?.api).toBe("openai-completions");
     expect(providersMock).not.toHaveBeenCalled();
   });
 
@@ -361,15 +356,12 @@ describe("refreshModels / networked refresh", () => {
 
     expect(providersMock).toHaveBeenCalledOnce();
     expect(models.map((m) => m.id)).toEqual(["gpt-5", "gpt-4"]);
-    for (const model of models as DedicatedModel[]) {
-      expect(model.api).toBe("aperture");
-      expect(model.upstreamApi).toBe("openai-completions");
+    for (const model of models) {
+      expect(model.api).toBe("openai-completions");
     }
     expect(store.entry).toBeDefined();
     expect(store.entry?.checkedAt).toBeTypeOf("number");
-    expect(
-      (store.entry?.models as unknown as DedicatedModel[]).map((m) => m.id),
-    ).toEqual(["gpt-5", "gpt-4"]);
+    expect(store.entry?.models?.map((m) => m.id)).toEqual(["gpt-5", "gpt-4"]);
   });
 
   test("filters providers by dedicated.providers selection", async () => {

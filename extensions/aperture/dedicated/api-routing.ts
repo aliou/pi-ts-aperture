@@ -21,31 +21,30 @@ export function getApiForCompatibility(
   return "openai-completions";
 }
 
-/**
- * A dedicated model as seen at stream time. `upstreamApi` is stamped on each
- * model config by `buildModels` (runtime.ts) so the request can be routed to
- * the correct upstream Pi API; `model.api` itself is the custom `"aperture"`
- * marker. Pi types the model handed to `streamSimple` as `Model<Api>`, but
- * its provider composition spreads our full model definition (verified
- * against pi's provider-composer), so the extra field survives
- * registration, the models store, and cache-only restores. The cast below
- * only recovers that field.
- */
-type ApertureRoutedModel = Model<Api> & { upstreamApi?: Api };
+/** A legacy store entry, stamped before models carried their real Pi API. */
+type LegacyRoutedModel = Model<Api> & { upstreamApi?: Api };
 
 /**
- * Stream by dispatching to the upstream Pi API stamped on the model.
- * A missing field falls back to openai-completions, matching the old
- * missing-route behavior.
+ * Pi API the model's requests route through. Models built by the current
+ * catalog carry their real API on `model.api`; snapshots persisted by older
+ * versions stamped the custom `"aperture"` marker and kept the real API on a
+ * side field.
  */
+function upstreamApi(model: Model<Api>): Api {
+  if (model.api === "aperture") {
+    return (model as LegacyRoutedModel).upstreamApi ?? "openai-completions";
+  }
+  return model.api;
+}
+
+/** Stream by dispatching to the upstream Pi API the model routes through. */
 export function buildStreamSimple() {
   return (
     model: Model<Api>,
     context: Context,
     options?: SimpleStreamOptions,
   ): AssistantMessageEventStream => {
-    const api =
-      (model as ApertureRoutedModel).upstreamApi ?? "openai-completions";
+    const api = upstreamApi(model);
     const provider = getApiProvider(api);
     if (!provider) {
       throw new Error(`Unsupported Aperture provider API: ${api}`);
@@ -55,20 +54,14 @@ export function buildStreamSimple() {
   };
 }
 
-/**
- * Full-stream counterpart of buildStreamSimple: the composer previously
- * routed `provider.stream()` through the config form's streamSimple because
- * the custom `aperture` API marker matched; a native Provider must implement
- * `stream` itself.
- */
+/** Full-stream counterpart of buildStreamSimple. */
 export function buildStream() {
   return (
     model: Model<Api>,
     context: Context,
     options?: StreamOptions,
   ): AssistantMessageEventStream => {
-    const api =
-      (model as ApertureRoutedModel).upstreamApi ?? "openai-completions";
+    const api = upstreamApi(model);
     const provider = getApiProvider(api);
     if (!provider) {
       throw new Error(`Unsupported Aperture provider API: ${api}`);

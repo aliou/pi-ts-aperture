@@ -152,9 +152,9 @@ There is no current `mode` setting. Legacy `mode` configs are migrated to capabi
 
 ### Dedicated mode
 
-- Registers the Pi provider with a custom `aperture` API and routes each request through the target Pi API selected from Aperture provider compatibility.
+- Registers the Pi provider as a native pi-ai `Provider`; each model carries the real upstream Pi API (`model.api`) selected from Aperture provider compatibility, and the provider's `stream`/`streamSimple` dispatch requests through it.
 - Model IDs are exposed exactly as Aperture reports them. They are not prefixed with `provider::`.
-- Tracks model routing by stamping `upstreamApi` on each model config; the field survives Pi's provider composition and persists through the models store.
+- Legacy models-store snapshots (stamped with the custom `aperture` API marker and an `upstreamApi` side field) still restore: stream dispatch resolves the real API from the side field for those entries.
 - Can filter gateway models by enabled `dedicated.providers`; an empty provider filter means all gateway providers are included. A non-empty list with all `enabled: false` means no dedicated models are registered.
 - Resolves capability metadata per model at refresh time (`src/model-metadata.ts`): Pi's native model registry first (context window, output limit, input modalities, reasoning, `thinkingLevelMap`, `compat`), then the models.dev catalog (`https://models.dev/api.json`, best-effort fetch) as a fallback, then safe defaults (128k context, 8k output, text-only, no reasoning). Matching prefers an exact provider-id + model-id match; a model-id-only fallback copies capabilities but never cost or `compat`. Gateway pricing from `/v1/models` wins field-by-field for costs; rates the gateway omits keep the registry/models.dev value. The dedicated provider's own registry entries are excluded from metadata matching (they carry defaults from a prior refresh). `~/.pi/agent/models.json` remains the user-side override.
 - Fetches provider compatibility from `/api/providers` (each gateway provider reports its `compatibility` map) and maps it to Pi APIs: OpenAI chat/completions, Anthropic messages, OpenAI responses, Gemini generate content, Google Vertex, or Bedrock converse.
