@@ -34,7 +34,7 @@
     "image": "https://assets.aliou.me/github/aliou/pi-ts-aperture/banner.png"
   },
   "dependencies": {
-    "@aliou/pi-utils-settings": "^0.19.1",
+    "@aliou/pi-utils-settings": "^0.19.2",
     "@aliou/pi-utils-ui": "^0.5.0"
   },
   "peerDependencies": {
