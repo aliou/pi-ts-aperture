@@ -3,7 +3,7 @@ import { createMcpSession, type McpTool } from "../../../src/mcp-client";
 import type {
   ApertureConfig,
   ResolvedConfig,
-} from "../../../src/shared/config/loader";
+} from "../../shared/config/loader";
 
 /**
  * Above this many pinned tools, the submodule title warns about the system

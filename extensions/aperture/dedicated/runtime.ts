@@ -16,11 +16,8 @@ import {
   type ModelsDevCatalog,
   resolveModelMetadata,
 } from "../../../src/model-metadata";
-import {
-  configLoader,
-  type ResolvedConfig,
-} from "../../../src/shared/config/loader";
 import { resolveGatewayUrl, resolveProviderBaseUrl } from "../../../src/url";
+import { configLoader, type ResolvedConfig } from "../../shared/config/loader";
 import { getApiForCompatibility } from "./api-routing";
 import { buildDefaultModelConfig } from "./model-defaults";
 import { createDedicatedProvider, DEDICATED_PROVIDER_ID } from "./provider";

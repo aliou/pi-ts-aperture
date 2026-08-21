@@ -3,13 +3,13 @@ import type {
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import { markRetryableApertureError } from "../../src/retryable-errors";
-import { configLoader } from "../../src/shared/config/loader";
+import { configLoader } from "../shared/config/loader";
 import {
   APERTURE_FEATURE_REGISTER_EVENT,
   APERTURE_FEATURE_REQUEST_EVENT,
   createFeatureRequestPayload,
-} from "../../src/shared/events";
-import { emitConfigSync } from "../../src/shared/sync-bus";
+} from "../shared/events";
+import { emitConfigSync } from "../shared/sync-bus";
 import {
   reconcileDedicatedProvider,
   registerDedicatedProvider,

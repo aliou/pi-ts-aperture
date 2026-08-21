@@ -1,16 +1,16 @@
 import { ApertureClient } from "../../../src/api/client";
 import type { ApertureProvider } from "../../../src/api/types";
 import { getBaseUrlForApi } from "../../../src/base-url-routing";
-import { configLoader } from "../../../src/shared/config/loader";
-import type { ResolvedConfig } from "../../../src/shared/config/types";
+import { resolveGatewayUrl, resolveProviderBaseUrl } from "../../../src/url";
+import { configLoader } from "../../shared/config/loader";
+import type { ResolvedConfig } from "../../shared/config/types";
 import type {
   Api,
   CheckDeps,
   Model,
   Provider,
   SyncDeps,
-} from "../../../src/shared/types";
-import { resolveGatewayUrl, resolveProviderBaseUrl } from "../../../src/url";
+} from "../../shared/types";
 
 const MAX_MISSING_MODELS_PER_PROVIDER = 5;
 

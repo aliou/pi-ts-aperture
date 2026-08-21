@@ -64,8 +64,8 @@
     "release": "pnpm changeset publish",
     "test": "vitest run",
     "test:watch": "vitest",
-    "gen:schema": "pi-settings-schema -p src/shared/config/types.ts -t ApertureConfig -o schema.json --version 0.11.4",
-    "check:schema": "pi-settings-schema -p src/shared/config/types.ts -t ApertureConfig -o schema.json --version 0.11.4 --check"
+    "gen:schema": "pi-settings-schema -p extensions/shared/config/types.ts -t ApertureConfig -o schema.json --version 0.11.4",
+    "check:schema": "pi-settings-schema -p extensions/shared/config/types.ts -t ApertureConfig -o schema.json --version 0.11.4 --check"
   },
   "devDependencies": {
     "@aliou/biome-plugins": "^0.11.0",

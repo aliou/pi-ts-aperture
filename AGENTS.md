@@ -28,7 +28,7 @@ Development commands (`package.json` scripts, run with `pnpm`):
 | `pnpm format` | `biome check --write` (applies fixes). |
 | `pnpm test` | `vitest run` (unit tests, run on every push). |
 | `pnpm test:watch` | `vitest` in watch mode. |
-| `pnpm gen:schema` | Regenerates `schema.json` from `src/shared/config/types.ts`. |
+| `pnpm gen:schema` | Regenerates `schema.json` from `extensions/shared/config/types.ts`. |
 | `pnpm check:schema` | Verifies `schema.json` is in sync with the types. |
 | `pnpm check:lockfile` | `pnpm install --frozen-lockfile --ignore-scripts`. |
 | `pnpm changeset` | Add a changeset entry. |
@@ -59,15 +59,23 @@ Pi-agnostic Aperture API and mapping code lives under `src/`. Extension glue (Pi
 - `onboarding/setup-wizard.ts` - `UrlStep` TUI component with inline Aperture health check.
 - `settings/index.ts` - Registration entry for the `/aperture:settings` command via `registerSettingsCommand`. Per-tab files in `settings/` build the Global / Proxy / Dedicated / Connectors sections. Includes the pinned connector tools submenu (`connectors.pinnedTools`), which uses `FilterableChecklist` and reads the live gateway tool list via `createMcpSession().listTools()`.
 - `shared/filterable-checklist.ts` - Shared `FilterableChecklist` Component (search input + checkbox list with Space toggle, optional Esc-to-close). Used by the onboarding provider steps and the settings pinned-tools submenu.
-- `shared/config/types.ts` - Config types.
-- `shared/config/defaults.ts` - Default config. Dedicated is enabled by default.
-- `shared/config/loader.ts` - Config loader instance.
-- `shared/config/migration/` - Legacy config migrations.
 
 ### `extensions/connectors/`
 
 - `index.ts` - Connector extension entry point. Splits gateway tools into pinned (registered as first-class Pi tools) vs proxied (reached through the `aperture_connector_tool_*` meta-tools) based on `connectors.pinnedTools`. The discovery meta-tools only register when `connectors.discoveryTools` is on (default `true`); pinned tools register whenever `connectors.enabled` is on.
 - `proxy-tools.ts` - Defines the four prefixed proxy meta-tools (`aperture_connector_list` / `aperture_connector_tool_search` / `aperture_connector_tool_describe` / `aperture_connector_tool_call`), plus `createStandaloneConnectorTool` for pinned tools and the shared `renderConnectorCallResult` used by both the call meta-tool and standalone tools.
+
+### `extensions/shared/`
+
+Pi-extension concerns shared by both extensions. Note the aperture-local `extensions/aperture/shared/` holds UI components only; this is the extension-wide layer.
+
+- `config/types.ts` - Config types.
+- `config/defaults.ts` - Default config. Dedicated is enabled by default.
+- `config/loader.ts` - Config loader instance.
+- `config/migration/` - Legacy config migrations.
+- `types.ts` - Extension-facing types (Pi `Api`, `Model`, provider sync deps).
+- `events.ts` - Extension events shared across the aperture and connectors extensions.
+- `sync-bus.ts` - Config sync bus used to propagate config changes between extensions.
 
 ### `src/`
 
@@ -82,7 +90,7 @@ Pi-agnostic Aperture API and mapping code lives under `src/`. Extension glue (Pi
 
 ## Config shape
 
-Source of truth: `extensions/aperture/shared/config/types.ts` and `extensions/aperture/shared/config/defaults.ts`. The JSON Schema is generated to `schema.json` via `pnpm gen:schema`.
+Source of truth: `extensions/shared/config/types.ts` and `extensions/shared/config/defaults.ts`. The JSON Schema is generated to `schema.json` via `pnpm gen:schema`.
 
 ```ts
 interface ApertureConfig {

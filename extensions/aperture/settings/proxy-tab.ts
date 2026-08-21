@@ -11,7 +11,7 @@ import { mapProxyProviders } from "../../../src/provider-mapping";
 import type {
   ApertureConfig,
   ResolvedConfig,
-} from "../../../src/shared/config/loader";
+} from "../../shared/config/loader";
 import { AsyncEditor } from "./async-editor";
 import { boolLabel, GLOBAL_SCOPE, getTabConfig } from "./shared";
 

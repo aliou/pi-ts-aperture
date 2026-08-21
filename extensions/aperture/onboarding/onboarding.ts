@@ -28,7 +28,7 @@ import {
 import type {
   ApertureConfig,
   DedicatedProviderConfig,
-} from "../../../src/shared/config/loader";
+} from "../../shared/config/loader";
 import {
   type ChecklistItem,
   FilterableChecklist,
