@@ -1,3 +1,4 @@
+import type { SettingsSubmenuComponent } from "@aliou/pi-utils-settings";
 import { EmptyState } from "@aliou/pi-utils-ui";
 import { type Component, Key, matchesKey } from "@earendil-works/pi-tui";
 
@@ -21,6 +22,16 @@ function summarizeError(error: unknown): string {
   return msg;
 }
 
+/** Context passed to the {@link AsyncEditorOptions.loader}. */
+export interface AsyncEditorLoaderContext {
+  /**
+   * Copy of the AsyncEditor's `hideHint` option, forwarded so the loader
+   * can pass it to the editor it builds (the host panel renders the
+   * controls line instead of the editor's own footer hint).
+   */
+  hideHint?: boolean;
+}
+
 export interface AsyncEditorOptions {
   /**
    * Loader invoked once on construction. Resolves with the real editor.
@@ -28,13 +39,22 @@ export interface AsyncEditorOptions {
    * Esc, so the in-flight fetch can be cancelled rather than running to
    * completion (or the 5s timeout) in the background.
    */
-  loader: (signal: AbortSignal) => Promise<Component>;
+  loader: (
+    signal: AbortSignal,
+    ctx: AsyncEditorLoaderContext,
+  ) => Promise<Component>;
   /** Redraw hook from {@link SettingsSubmenuContext}. Required to swap views. */
   requestRender: () => void;
   /** Called when the user aborts loading with Esc while still pending. */
   onCancel?: () => void;
   /** Inline description shown under the loading title. */
   loadingDescription?: string;
+  /**
+   * Forwarded to the loader via {@link AsyncEditorLoaderContext} so the
+   * produced editor can hide its own footer hint when the host panel
+   * renders the controls line.
+   */
+  hideHint?: boolean;
 }
 
 /**
@@ -50,18 +70,24 @@ export class AsyncEditor implements Component {
   private error: string | null = null;
   private readonly loadingDescription?: string;
   private readonly onCancel: (() => void) | undefined;
-  private readonly loader: (signal: AbortSignal) => Promise<Component>;
+  private readonly loader: (
+    signal: AbortSignal,
+    ctx: AsyncEditorLoaderContext,
+  ) => Promise<Component>;
   private readonly requestRender: () => void;
+  private readonly hideHint: boolean;
   private abortController: AbortController;
   /** True once the submenu is closed or cancelled, so late settles are ignored. */
   private cancelled = false;
 
   constructor(options: AsyncEditorOptions) {
-    const { loader, requestRender, onCancel, loadingDescription } = options;
+    const { loader, requestRender, onCancel, loadingDescription, hideHint } =
+      options;
     this.onCancel = onCancel;
     this.loadingDescription = loadingDescription;
     this.loader = loader;
     this.requestRender = requestRender;
+    this.hideHint = hideHint ?? false;
     this.abortController = new AbortController();
     this.runLoader();
   }
@@ -71,7 +97,7 @@ export class AsyncEditor implements Component {
     this.abortController = new AbortController();
     const { signal } = this.abortController;
 
-    void this.loader(signal)
+    void this.loader(signal, { hideHint: this.hideHint })
       .then((editor) => {
         // A late resolve after Esc/cancel, or after a retry superseded this
         // attempt, must not swap in an editor the user no longer wants.
@@ -110,6 +136,15 @@ export class AsyncEditor implements Component {
 
   invalidate(): void {
     this.editor?.invalidate?.();
+  }
+
+  /**
+   * Shortcuts of the loaded editor, if it exposes them. Returns undefined
+   * while loading or on error, so the host panel keeps showing its default
+   * controls line until the real editor is ready.
+   */
+  getShortcuts(): string | undefined {
+    return (this.editor as SettingsSubmenuComponent | null)?.getShortcuts?.();
   }
 
   handleInput(data: string): void {

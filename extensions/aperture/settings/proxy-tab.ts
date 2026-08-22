@@ -13,7 +13,12 @@ import type {
 } from "../../shared/config/loader";
 import { mapProxyProviders } from "../../shared/provider-mapping";
 import { AsyncEditor } from "./async-editor";
-import { boolLabel, GLOBAL_SCOPE, getTabConfig } from "./shared";
+import {
+  boolLabel,
+  GLOBAL_SCOPE,
+  getTabConfig,
+  SETTINGS_CONTENT_HEIGHT,
+} from "./shared";
 
 /**
  * Build the Proxy extra tab.
@@ -65,7 +70,8 @@ export function buildProxyTab(
                   requestRender: submenuCtx.requestRender,
                   onCancel: () => submenuDone(undefined),
                   loadingDescription: "Fetching gateway providers",
-                  loader: async (signal) => {
+                  hideHint: submenuCtx.hideHint,
+                  loader: async (signal, loaderCtx) => {
                     const client = new ApertureClient(baseUrl);
                     // /api/providers reflects grant-scoped enabled/disabled
                     // providers, so we match local Pi providers exclusively
@@ -144,6 +150,8 @@ export function buildProxyTab(
                       fields,
                       theme: settingsTheme,
                       requestRender: submenuCtx.requestRender,
+                      hideHint: loaderCtx.hideHint,
+                      contentHeight: SETTINGS_CONTENT_HEIGHT,
                       onDone: () =>
                         submenuDone(
                           providers.length > 0

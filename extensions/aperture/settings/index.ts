@@ -17,6 +17,7 @@ import { buildConnectorsTab } from "./connectors-tab";
 import { buildDedicatedTab } from "./dedicated-tab";
 import { buildGlobalSections } from "./global-tab";
 import { buildProxyTab } from "./proxy-tab";
+import { SETTINGS_CONTENT_HEIGHT } from "./shared";
 
 export const APERTURE_SETTINGS_COMMAND = "aperture:settings" as const;
 
@@ -37,6 +38,9 @@ export function registerApertureSettings(
     commandName: APERTURE_SETTINGS_COMMAND,
     title: "Aperture Settings",
     configStore: configLoader,
+    // Fixed body height; editors built by the tabs use the same budget
+    // (SETTINGS_CONTENT_HEIGHT) so submenus share the panel's flex layout.
+    contentHeight: SETTINGS_CONTENT_HEIGHT,
 
     buildSections: buildGlobalSections,
 

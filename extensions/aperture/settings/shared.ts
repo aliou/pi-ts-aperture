@@ -18,6 +18,16 @@ export const CONTEXT_COST_WARNING_THRESHOLD = 10;
  */
 export const GLOBAL_SCOPE: Scope = "global";
 
+/**
+ * Fixed content height (lines) of the settings panel body. Passed to
+ * `registerSettingsCommand` and to every `SettingsDetailEditor` built by
+ * the tabs so submenus bottom-anchor descriptions inside the same budget
+ * instead of leaving a floating description above a blank gap. Matches
+ * the library default (20); defined once here so the command and the
+ * editors cannot drift apart.
+ */
+export const SETTINGS_CONTENT_HEIGHT = 20;
+
 export function boolLabel(value: boolean): string {
   return value ? "enabled" : "disabled";
 }
