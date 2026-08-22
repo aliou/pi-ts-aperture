@@ -18,12 +18,12 @@ import {
   type McpSession,
   type McpTool,
 } from "../../src/mcp-client";
-import { configLoader } from "../../src/shared/config/loader";
+import { configLoader } from "../shared/config/loader";
 import {
   APERTURE_FEATURE_REGISTER_EVENT,
   APERTURE_FEATURE_REQUEST_EVENT,
   createFeatureRegisterPayload,
-} from "../../src/shared/events";
+} from "../shared/events";
 import {
   createConnectorListTool,
   createConnectorToolCallTool,

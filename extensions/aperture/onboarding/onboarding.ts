@@ -21,14 +21,14 @@ import { getMarkdownTheme } from "@earendil-works/pi-coding-agent";
 import type { Component, TUI } from "@earendil-works/pi-tui";
 import { Box, Key, Markdown, matchesKey, Text } from "@earendil-works/pi-tui";
 import { ApertureClient } from "../../../src/api/client";
-import {
-  mapDedicatedProviders,
-  mapProxyProviders,
-} from "../../../src/provider-mapping";
 import type {
   ApertureConfig,
   DedicatedProviderConfig,
-} from "../../../src/shared/config/loader";
+} from "../../shared/config/loader";
+import {
+  mapDedicatedProviders,
+  mapProxyProviders,
+} from "../../shared/provider-mapping";
 import {
   type ChecklistItem,
   FilterableChecklist,

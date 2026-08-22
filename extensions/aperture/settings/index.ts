@@ -7,12 +7,12 @@ import type {
   ExtensionAPI,
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
+import { normalizeInputUrl } from "../../../src/url";
 import type {
   ApertureConfig,
   ResolvedConfig,
-} from "../../../src/shared/config/loader";
-import { configLoader } from "../../../src/shared/config/loader";
-import { normalizeInputUrl } from "../../../src/url";
+} from "../../shared/config/loader";
+import { configLoader } from "../../shared/config/loader";
 import { buildConnectorsTab } from "./connectors-tab";
 import { buildDedicatedTab } from "./dedicated-tab";
 import { buildGlobalSections } from "./global-tab";

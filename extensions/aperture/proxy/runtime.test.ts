@@ -2,12 +2,12 @@ import { readFileSync } from "node:fs";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { ApertureClient } from "../../../src/api/client";
 import { shouldUseGatewayRoot } from "../../../src/base-url-routing";
-import { configLoader } from "../../../src/shared/config/loader";
-import type { ResolvedConfig } from "../../../src/shared/config/types";
-import type { Api, Model } from "../../../src/shared/types";
+import { configLoader } from "../../shared/config/loader";
+import type { ResolvedConfig } from "../../shared/config/types";
+import type { Api, Model } from "../../shared/types";
 import { ApertureRuntime } from "./runtime";
 
-vi.mock("../../../src/shared/config/loader", () => ({
+vi.mock("../../shared/config/loader", () => ({
   configLoader: {
     getConfig: vi.fn(),
   },
