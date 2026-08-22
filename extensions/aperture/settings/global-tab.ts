@@ -4,11 +4,11 @@ import {
   type SettingsSection,
   type SettingsTheme,
 } from "@aliou/pi-utils-settings";
+import { normalizeInputUrl } from "../../../src/url";
 import type {
   ApertureConfig,
   ResolvedConfig,
-} from "../../../src/shared/config/loader";
-import { normalizeInputUrl } from "../../../src/url";
+} from "../../shared/config/loader";
 
 interface GlobalTabContext {
   setDraft: (config: ApertureConfig) => void;

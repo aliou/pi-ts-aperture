@@ -1,6 +1,9 @@
 import type { Api, Model } from "@earendil-works/pi-ai";
-import type { ApertureProvider } from "./api/types";
-import type { DedicatedProviderConfig } from "./shared/config/loader";
+import type { ApertureProvider } from "../../src/api/types";
+import type {
+  DedicatedProviderConfig,
+  ProxiedProviderConfig,
+} from "./config/types";
 
 /**
  * Match local Pi providers against Aperture gateway providers.
@@ -14,7 +17,7 @@ import type { DedicatedProviderConfig } from "./shared/config/loader";
 export function mapProxyProviders(
   localModels: readonly Model<Api>[],
   gatewayProviders: ApertureProvider[],
-  existingProviders: { id: string; shouldCheckGatewayModels?: boolean }[],
+  existingProviders: ProxiedProviderConfig[],
 ) {
   const names = new Map(
     gatewayProviders.map((provider) => [provider.id, provider.name]),

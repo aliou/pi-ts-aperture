@@ -22,7 +22,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 // Mock the config loader so the runtime never touches real config.
-vi.mock("../../../src/shared/config/loader", () => ({
+vi.mock("../../shared/config/loader", () => ({
   configLoader: {
     getConfig: mocks.getConfig,
   },
@@ -45,7 +45,7 @@ vi.mock("../../../src/model-metadata", async (importOriginal) => {
   };
 });
 
-const { configLoader } = await import("../../../src/shared/config/loader");
+const { configLoader } = await import("../../shared/config/loader");
 const { registerDedicatedProvider, reconcileDedicatedProvider } = await import(
   "./runtime"
 );

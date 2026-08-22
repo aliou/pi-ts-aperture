@@ -1,5 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { configLoader } from "../../../src/shared/config/loader";
+import { configLoader } from "../../shared/config/loader";
 import {
   isOnboardingExtensionEnabled,
   isOnboardingPending,

@@ -5,7 +5,7 @@ import type {
   AssistantMessageEventStream,
   Context,
   SimpleStreamOptions,
-} from "../../../src/shared/types";
+} from "../../shared/types";
 
 export function getApiForCompatibility(
   compatibility: ProviderCompatibility | undefined,

@@ -6,12 +6,12 @@ import {
   type SettingsSubmenuContext,
 } from "@aliou/pi-utils-settings";
 import { ApertureClient } from "../../../src/api/client";
-import { mapDedicatedProviders } from "../../../src/provider-mapping";
 import type {
   ApertureConfig,
   DedicatedProviderConfig,
   ResolvedConfig,
-} from "../../../src/shared/config/loader";
+} from "../../shared/config/loader";
+import { mapDedicatedProviders } from "../../shared/provider-mapping";
 import { AsyncEditor } from "./async-editor";
 import { boolLabel, GLOBAL_SCOPE, getTabConfig } from "./shared";
 

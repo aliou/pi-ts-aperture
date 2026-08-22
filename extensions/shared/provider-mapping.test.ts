@@ -1,6 +1,6 @@
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { describe, expect, test } from "vitest";
-import type { ApertureProvider } from "./api/types";
+import type { ApertureProvider } from "../../src/api/types";
 import { mapProxyProviders } from "./provider-mapping";
 
 function localModel(

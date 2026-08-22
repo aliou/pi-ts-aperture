@@ -7,11 +7,11 @@ import {
 } from "@aliou/pi-utils-settings";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { ApertureClient } from "../../../src/api/client";
-import { mapProxyProviders } from "../../../src/provider-mapping";
 import type {
   ApertureConfig,
   ResolvedConfig,
-} from "../../../src/shared/config/loader";
+} from "../../shared/config/loader";
+import { mapProxyProviders } from "../../shared/provider-mapping";
 import { AsyncEditor } from "./async-editor";
 import { boolLabel, GLOBAL_SCOPE, getTabConfig } from "./shared";
 
