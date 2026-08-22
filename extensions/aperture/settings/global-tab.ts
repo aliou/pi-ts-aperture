@@ -2,6 +2,7 @@ import {
   SettingsDetailEditor,
   type SettingsDetailField,
   type SettingsSection,
+  type SettingsSubmenuContext,
   type SettingsTheme,
 } from "@aliou/pi-utils-settings";
 import { normalizeInputUrl } from "../../../src/url";
@@ -9,6 +10,7 @@ import type {
   ApertureConfig,
   ResolvedConfig,
 } from "../../shared/config/loader";
+import { SETTINGS_CONTENT_HEIGHT } from "./shared";
 
 interface GlobalTabContext {
   setDraft: (config: ApertureConfig) => void;
@@ -40,7 +42,7 @@ export function buildGlobalSections(
         label: "Base URL",
         description: "Aperture gateway URL on your tailnet",
         currentValue: baseUrl || "(not set)",
-        submenu: (_val, submenuDone) => {
+        submenu: (_val, submenuDone, submenuCtx: SettingsSubmenuContext) => {
           let currentUrl = baseUrl;
           const fields: SettingsDetailField[] = [
             {
@@ -64,6 +66,8 @@ export function buildGlobalSections(
             title: "Base URL",
             fields,
             theme: ctx.theme,
+            hideHint: submenuCtx.hideHint,
+            contentHeight: SETTINGS_CONTENT_HEIGHT,
             onDone: (summary) =>
               submenuDone(summary ?? (currentUrl || "(not set)")),
             getDoneSummary: () => currentUrl || "(not set)",

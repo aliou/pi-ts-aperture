@@ -46,6 +46,13 @@ export class FilterableChecklist implements Component {
      * onboarding behavior.
      */
     private readonly onClose?: () => void,
+    /**
+     * Hide the built-in footer hint line (when the host panel renders its
+     * own controls line). Hosts read the shortcuts to display via
+     * {@link getShortcuts}; registerSettingsCommand wires this through the
+     * submenu factory context (`ctx.hideHint`). Default false.
+     */
+    private readonly hideHint = false,
   ) {
     this.items = items;
     this.filteredItems = items;
@@ -58,6 +65,19 @@ export class FilterableChecklist implements Component {
 
   setExtraHint(hint: string): void {
     this.extraHint = hint;
+  }
+
+  /**
+   * Shortcuts the checklist currently responds to, matching the footer hint
+   * line. Host panels (SectionedSettings via registerSettingsCommand) use
+   * this to render a single unified controls line while the checklist is
+   * open as a submenu.
+   */
+  getShortcuts(): string {
+    const hints = ["↑↓: navigate", "Space: toggle"];
+    if (this.onCtrlG) hints.push("Ctrl+G: gateway check");
+    if (this.onClose) hints.push("Esc: back");
+    return hints.join(" · ");
   }
 
   invalidate() {}
@@ -124,17 +144,19 @@ export class FilterableChecklist implements Component {
       );
     }
 
-    lines.push("");
-    const hints = ["↑↓: navigate", "Space: toggle"];
-    if (this.onCtrlG) hints.push("Ctrl+G: gateway check");
-    if (this.onClose) hints.push("Esc: back");
-    lines.push(this.settingsTheme.hint(`  ${hints.join(" · ")}`));
+    const footer: string[] = [];
+    if (!this.hideHint) {
+      footer.push(this.settingsTheme.hint(`  ${this.getShortcuts()}`));
+    }
     if (this.extraHint) {
-      lines.push(
+      footer.push(
         ...wrapTextWithAnsi(this.extraHint, Math.max(1, width - 4)).map(
           (line) => this.settingsTheme.hint(`  ${line}`),
         ),
       );
+    }
+    if (footer.length > 0) {
+      lines.push("", ...footer);
     }
 
     return lines;

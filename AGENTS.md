@@ -57,8 +57,8 @@ Pi-agnostic Aperture API and mapping code lives under `src/`. Extension glue (Pi
 - `onboarding/onboarding.ts` - Onboarding wizard. Steps: welcome, URL, capability selection, provider selection, recap.
 - `onboarding/setup-command.ts` - `/aperture:onboarding` command registration. Saves config and reloads Pi after completion.
 - `onboarding/setup-wizard.ts` - `UrlStep` TUI component with inline Aperture health check.
-- `settings/index.ts` - Registration entry for the `/aperture:settings` command via `registerSettingsCommand`. Per-tab files in `settings/` build the Global / Proxy / Dedicated / Connectors sections. Includes the pinned connector tools submenu (`connectors.pinnedTools`), which uses `FilterableChecklist` and reads the live gateway tool list via `createMcpSession().listTools()`.
-- `shared/filterable-checklist.ts` - Shared `FilterableChecklist` Component (search input + checkbox list with Space toggle, optional Esc-to-close). Used by the onboarding provider steps and the settings pinned-tools submenu.
+- `settings/index.ts` - Registration entry for the `/aperture:settings` command via `registerSettingsCommand`. Per-tab files in `settings/` build the Global / Proxy / Dedicated / Connectors sections. Includes the pinned connector tools submenu (`connectors.pinnedTools`), which uses `FilterableChecklist` and reads the live gateway tool list via `createMcpSession().listTools()`. The panel renders at a fixed content height (`SETTINGS_CONTENT_HEIGHT` in `settings/shared.ts`, shared by every `SettingsDetailEditor` the tabs build); submenus forward the host's `hideHint` and expose `getShortcuts()` so the panel's single controls line always shows the open submenu's shortcuts.
+- `shared/filterable-checklist.ts` - Shared `FilterableChecklist` Component (search input + checkbox list with Space toggle, optional Esc-to-close, `getShortcuts()` + optional `hideHint` for host-rendered controls lines). Used by the onboarding provider steps and the settings pinned-tools submenu.
 
 ### `extensions/connectors/`
 

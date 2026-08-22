@@ -33,6 +33,12 @@ interface PinnedToolsState {
   render: (width: number) => string[];
   invalidate: () => void;
   handleInput: (data: string) => void;
+  /**
+   * Shortcuts shown in the host panel's controls line while this submenu
+   * is open. Delegates to the checklist (or reports "Esc: back" when the
+   * gateway exposes no tools and only the empty state is rendered).
+   */
+  getShortcuts: () => string;
 }
 
 /**
@@ -93,7 +99,8 @@ export function buildConnectorsTab(): ExtraSettingsTab<
               requestRender: submenuCtx.requestRender,
               onCancel: () => submenuDone(undefined),
               loadingDescription: "Fetching connector tools",
-              loader: async (signal) =>
+              hideHint: submenuCtx.hideHint,
+              loader: async (signal, loaderCtx) =>
                 buildPinnedToolsEditor({
                   baseUrl,
                   draft,
@@ -102,6 +109,7 @@ export function buildConnectorsTab(): ExtraSettingsTab<
                   submenuDone,
                   setDraftForScope,
                   signal,
+                  hideHint: loaderCtx.hideHint,
                 }),
             }),
         },
@@ -127,6 +135,12 @@ interface PinnedToolsEditorOptions {
   ) => void;
   /** Abort signal from the AsyncEditor; aborts the in-flight fetch on Esc. */
   signal?: AbortSignal;
+  /**
+   * Forwarded from the AsyncEditor loader context: when the host panel
+   * renders the controls line, the checklist and empty state suppress
+   * their own footer hints (shortcuts are exposed via `getShortcuts`).
+   */
+  hideHint?: boolean;
 }
 
 /**
@@ -151,6 +165,7 @@ async function buildPinnedToolsEditor(
     submenuDone,
     setDraftForScope,
     signal,
+    hideHint = false,
   } = options;
 
   const tools = await listConnectorTools(baseUrl, signal);
@@ -201,6 +216,7 @@ async function buildPinnedToolsEditor(
     },
     undefined,
     () => submenuDone(summary()),
+    hideHint,
   );
 
   const emptyState = new EmptyState({
@@ -221,7 +237,9 @@ async function buildPinnedToolsEditor(
       const lines = [settingsTheme.label(title, true), ""];
       if (uniqueTools.length === 0) {
         lines.push(...emptyState.render(width));
-        lines.push(settingsTheme.hint("  Esc: back"));
+        if (!hideHint) {
+          lines.push(settingsTheme.hint("  Esc: back"));
+        }
         return lines;
       }
       if (warn) {
@@ -240,6 +258,9 @@ async function buildPinnedToolsEditor(
     },
     handleInput(data: string) {
       checklist.handleInput(data);
+    },
+    getShortcuts() {
+      return uniqueTools.length === 0 ? "Esc: back" : checklist.getShortcuts();
     },
   };
 }

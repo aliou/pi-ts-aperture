@@ -13,7 +13,12 @@ import type {
 } from "../../shared/config/loader";
 import { mapDedicatedProviders } from "../../shared/provider-mapping";
 import { AsyncEditor } from "./async-editor";
-import { boolLabel, GLOBAL_SCOPE, getTabConfig } from "./shared";
+import {
+  boolLabel,
+  GLOBAL_SCOPE,
+  getTabConfig,
+  SETTINGS_CONTENT_HEIGHT,
+} from "./shared";
 
 /**
  * Build the Dedicated extra tab.
@@ -67,7 +72,8 @@ export function buildDedicatedTab(): ExtraSettingsTab<
                   requestRender: submenuCtx.requestRender,
                   onCancel: () => submenuDone(undefined),
                   loadingDescription: "Fetching gateway providers",
-                  loader: async (signal) => {
+                  hideHint: submenuCtx.hideHint,
+                  loader: async (signal, loaderCtx) => {
                     const gatewayProviders = await new ApertureClient(
                       baseUrl,
                     ).providers(signal);
@@ -112,6 +118,8 @@ export function buildDedicatedTab(): ExtraSettingsTab<
                       fields,
                       theme: settingsTheme,
                       requestRender: submenuCtx.requestRender,
+                      hideHint: loaderCtx.hideHint,
+                      contentHeight: SETTINGS_CONTENT_HEIGHT,
                       onDone: () =>
                         submenuDone(
                           providers.length > 0

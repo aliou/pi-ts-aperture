@@ -62,7 +62,7 @@ Enable connectors in `/aperture:settings`. Pin changes take effect on the next P
 | Command | Description |
 |---|---|
 | `/aperture:onboarding` | Onboarding wizard. Only available while onboarding is enabled. |
-| `/aperture:settings` | Edit connection, capabilities, providers, and pinned connector tools. |
+| `/aperture:settings` | Edit connection, capabilities, providers, and pinned connector tools. Fixed-height panel: the bottom controls line always shows the shortcuts of the open submenu. |
 
 ## Configuration
 
