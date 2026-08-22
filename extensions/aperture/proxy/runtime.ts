@@ -22,6 +22,12 @@ export class ApertureRuntime {
   // cache keeps the first inferred value stable across re-syncs.
   private readonly upstreamBaseUrls = new Map<string, string>();
 
+  // The provider as seen at the first sync. From the second sync onwards
+  // deps.getProvider returns our own wrapped provider, whose getModels() is
+  // already gateway-filtered, so filtering and flag toggles need the
+  // first-seen provider to keep reading the unfiltered model list.
+  private readonly firstSeenProviders = new Map<string, Provider>();
+
   async sync(deps: SyncDeps): Promise<void> {
     const config = configLoader.getConfig();
     if (!config.proxy.enabled) return;
@@ -30,6 +36,24 @@ export class ApertureRuntime {
     const gatewayRoot = resolveGatewayUrl(config);
     const baseUrl = resolveProviderBaseUrl(config);
     if (!gatewayRoot || !baseUrl) return;
+
+    const filterableIds = new Set(
+      config.proxy.upstreamProviders
+        .filter((p) => p.keepGatewayModelsOnly)
+        .map((p) => p.id),
+    );
+    let gatewayModelIds: ReadonlyMap<string, ReadonlySet<string>> | undefined;
+    if (filterableIds.size > 0) {
+      try {
+        const providers = await new ApertureClient(gatewayRoot).providers();
+        gatewayModelIds = new Map(
+          providers.map((provider) => [provider.id, new Set(provider.models)]),
+        );
+      } catch {
+        // Best effort: nothing gets filtered when the catalog is unreachable.
+        gatewayModelIds = undefined;
+      }
+    }
 
     const allModels = deps.getModels();
     const providerIds = config.proxy.upstreamProviders
@@ -81,13 +105,29 @@ export class ApertureRuntime {
       // gateway-rewritten models.
       const native = deps.getProvider(providerName);
       if (!native) continue;
+      let firstSeen = this.firstSeenProviders.get(providerName);
+      if (!firstSeen) {
+        firstSeen = native;
+        this.firstSeenProviders.set(providerName, native);
+      }
+      const servedIds = filterableIds.has(providerName)
+        ? gatewayModelIds?.get(providerName)
+        : undefined;
+      if (
+        servedIds !== undefined &&
+        !firstSeen.getModels().some((model) => servedIds.has(model.id))
+      )
+        continue;
       const baseAuth = native.auth?.apiKey;
       const baseResolve = baseAuth?.resolve;
       const wrapped: Provider = {
         ...native,
         id: providerName,
         getModels: () =>
-          native.getModels().map((model) => ({
+          (servedIds === undefined
+            ? firstSeen.getModels()
+            : firstSeen.getModels().filter((model) => servedIds.has(model.id))
+          ).map((model) => ({
             ...model,
             baseUrl: providerBaseUrl,
           })),

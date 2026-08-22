@@ -71,7 +71,11 @@ function provider(id: string, models: string[]) {
 }
 
 function proxyConfig(
-  upstreamProviders: { id: string; shouldCheckGatewayModels: boolean }[],
+  upstreamProviders: {
+    id: string;
+    shouldCheckGatewayModels: boolean;
+    keepGatewayModelsOnly?: boolean;
+  }[],
 ) {
   return {
     baseUrl: "http://gateway.test",
@@ -516,5 +520,171 @@ describe("ApertureRuntime.resolveProxyProviderSync", () => {
     expect(result.unregister).toEqual([]);
     // `next` keeps the previous list so a future re-enable can diff correctly.
     expect(result.next).toEqual(["openai", "openrouter"]);
+  });
+});
+
+describe("ApertureRuntime.sync gateway model filtering", () => {
+  function mockGateway(providersById: Record<string, string[]> | Error) {
+    vi.mocked(ApertureClient).mockImplementation(function (this: {
+      providers: ReturnType<typeof vi.fn>;
+    }) {
+      this.providers =
+        providersById instanceof Error
+          ? vi.fn().mockRejectedValue(providersById)
+          : vi
+              .fn()
+              .mockResolvedValue(
+                Object.entries(providersById).map(([id, models]) =>
+                  provider(id, models),
+                ),
+              );
+      return this;
+    } as unknown as typeof ApertureClient);
+  }
+
+  function lastRegisteredModels(
+    mock: ReturnType<typeof vi.fn>,
+    providerId: string,
+  ): Model<Api>[] {
+    const call = mock.mock.calls
+      .filter(([p]: unknown[]) => (p as { id?: string }).id === providerId)
+      .at(-1);
+    return (
+      (call?.[0] as { getModels?: () => Model<Api>[] })?.getModels?.() ?? []
+    );
+  }
+
+  const openAiModels = () => [
+    model("openai", "gpt-5.5", "openai-responses", "https://api.openai.com/v1"),
+    model("openai", "gpt-4o", "openai-responses", "https://api.openai.com/v1"),
+  ];
+
+  test("registers only the models the gateway lists when the flag is on", async () => {
+    mockGateway({ openai: ["gpt-5.5"] });
+    getConfig.mockReturnValue(
+      proxyConfig([
+        {
+          id: "openai",
+          shouldCheckGatewayModels: false,
+          keepGatewayModelsOnly: true,
+        },
+      ]),
+    );
+    const { deps, registerNativeProvider } = syncDeps(openAiModels);
+
+    await new ApertureRuntime().sync(deps);
+
+    expect(
+      lastRegisteredModels(registerNativeProvider, "openai").map((m) => m.id),
+    ).toEqual(["gpt-5.5"]);
+  });
+
+  test("only opted-in providers are filtered", async () => {
+    mockGateway({ openai: ["gpt-5.5"], groq: [] });
+    getConfig.mockReturnValue(
+      proxyConfig([
+        {
+          id: "openai",
+          shouldCheckGatewayModels: false,
+          keepGatewayModelsOnly: true,
+        },
+        { id: "groq", shouldCheckGatewayModels: false },
+      ]),
+    );
+    const { deps, registerNativeProvider } = syncDeps(() => [
+      model(
+        "groq",
+        "llama-4",
+        "openai-completions",
+        "https://api.groq.com/openai/v1",
+      ),
+      model(
+        "openai",
+        "gpt-5.5",
+        "openai-responses",
+        "https://api.openai.com/v1",
+      ),
+      model(
+        "openai",
+        "gpt-4o",
+        "openai-responses",
+        "https://api.openai.com/v1",
+      ),
+    ]);
+
+    await new ApertureRuntime().sync(deps);
+
+    expect(
+      lastRegisteredModels(registerNativeProvider, "openai").map((m) => m.id),
+    ).toEqual(["gpt-5.5"]);
+    expect(
+      lastRegisteredModels(registerNativeProvider, "groq").map((m) => m.id),
+    ).toEqual(["llama-4"]);
+  });
+
+  test("restores the full list when the flag turns off across syncs", async () => {
+    mockGateway({ openai: ["gpt-5.5"] });
+    const { deps, registerNativeProvider } = syncDeps(openAiModels);
+    const runtime = new ApertureRuntime();
+
+    getConfig.mockReturnValue(
+      proxyConfig([
+        {
+          id: "openai",
+          shouldCheckGatewayModels: false,
+          keepGatewayModelsOnly: true,
+        },
+      ]),
+    );
+    await runtime.sync(deps);
+    expect(
+      lastRegisteredModels(registerNativeProvider, "openai").map((m) => m.id),
+    ).toEqual(["gpt-5.5"]);
+
+    getConfig.mockReturnValue(
+      proxyConfig([{ id: "openai", shouldCheckGatewayModels: false }]),
+    );
+    await runtime.sync(deps);
+    expect(
+      lastRegisteredModels(registerNativeProvider, "openai").map((m) => m.id),
+    ).toEqual(["gpt-5.5", "gpt-4o"]);
+  });
+
+  test("skips a provider when the gateway lists none of its models", async () => {
+    mockGateway({ openai: [] });
+    getConfig.mockReturnValue(
+      proxyConfig([
+        {
+          id: "openai",
+          shouldCheckGatewayModels: false,
+          keepGatewayModelsOnly: true,
+        },
+      ]),
+    );
+    const { deps, registerNativeProvider } = syncDeps(openAiModels);
+
+    await new ApertureRuntime().sync(deps);
+
+    expect(registerNativeProvider).not.toHaveBeenCalled();
+  });
+
+  test("registers everything unfiltered when the catalog fetch fails", async () => {
+    mockGateway(new Error("gateway unreachable"));
+    getConfig.mockReturnValue(
+      proxyConfig([
+        {
+          id: "openai",
+          shouldCheckGatewayModels: false,
+          keepGatewayModelsOnly: true,
+        },
+      ]),
+    );
+    const { deps, registerNativeProvider } = syncDeps(openAiModels);
+
+    await new ApertureRuntime().sync(deps);
+
+    expect(
+      lastRegisteredModels(registerNativeProvider, "openai").map((m) => m.id),
+    ).toEqual(["gpt-5.5", "gpt-4o"]);
   });
 });

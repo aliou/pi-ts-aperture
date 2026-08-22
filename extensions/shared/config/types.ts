@@ -3,6 +3,8 @@ export interface ProxiedProviderConfig {
   id: string;
   /** Warn when configured local models are missing from the Aperture gateway. */
   shouldCheckGatewayModels?: boolean;
+  /** Only register models the gateway actually serves for this provider. */
+  keepGatewayModelsOnly?: boolean;
 }
 
 export interface DedicatedProviderConfig {

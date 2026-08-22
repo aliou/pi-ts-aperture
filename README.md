@@ -44,7 +44,7 @@ Aperture only reports model ids and pricing, so capabilities (context window, vi
 
 Reroutes existing Pi providers through Aperture. Each provider keeps its own model definitions and settings; only the base URL, API key, and headers are overridden. Use this when you want Pi's native per-provider model configuration but want requests to go through Aperture for server-side credentials.
 
-Provider selection matches your local Pi providers against the providers enabled on the gateway. Optional per-provider verification warns when configured local models are missing from the gateway.
+Provider selection matches your local Pi providers against the providers enabled on the gateway. Optional per-provider verification warns when configured local models are missing from the gateway. Set `keepGatewayModelsOnly: true` on a provider to go further and filter those models out of the registered provider entirely, so the model picker only shows models the gateway can actually serve.
 
 ### Connectors
 
@@ -96,6 +96,7 @@ Configuration is saved globally to `~/.pi/agent/extensions/aperture.json`. The s
 
 Notes:
 
+- `keepGatewayModelsOnly` (per provider, default `false`) hides that provider's local models the gateway doesn't serve instead of letting them fail at request time. Also editable per provider from the Proxy tab in `/aperture:settings`.
 - An empty `dedicated.providers` list means all gateway providers are included.
 - Model metadata belongs in `~/.pi/agent/models.json`, not in the extension config.
 - Requests include `Referer` and `x-session-id` (the live Pi session id, injected per-request via the `before_provider_headers` hook) for grouping requests in the Aperture dashboard.

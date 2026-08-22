@@ -43,6 +43,7 @@ export function mapProxyProviders(
       name: names.get(id),
       shouldCheckGatewayModels:
         existing.get(id)?.shouldCheckGatewayModels ?? true,
+      keepGatewayModelsOnly: existing.get(id)?.keepGatewayModelsOnly ?? false,
     }));
 }
 

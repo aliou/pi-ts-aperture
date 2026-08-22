@@ -87,6 +87,10 @@
         "shouldCheckGatewayModels": {
           "type": "boolean",
           "description": "Warn when configured local models are missing from the Aperture gateway."
+        },
+        "keepGatewayModelsOnly": {
+          "type": "boolean",
+          "description": "Only register models the gateway actually serves for this provider."
         }
       },
       "required": [
