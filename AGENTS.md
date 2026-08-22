@@ -48,7 +48,7 @@ Pi-agnostic Aperture API and mapping code lives under `src/`. Extension glue (Pi
 ### `extensions/aperture/`
 
 - `index.ts` - Single extension entry point. Loads config, syncs proxy and dedicated providers, registers onboarding and settings.
-- `proxy/runtime.ts` - `ApertureRuntime` for proxy provider registration/unregistration and gateway model verification.
+- `proxy/runtime.ts` - `ApertureRuntime` for proxy provider registration/unregistration, `keepGatewayModelsOnly` filtering, and gateway model verification.
 - `dedicated/runtime.ts` - `registerDedicatedProvider` / `reconcileDedicatedProvider` for the standalone `aperture` provider. Model discovery and caching go through the provider's `refreshModels` (`refreshDedicatedCatalog`) and Pi's per-provider models store.
 - `dedicated/provider.ts` - Native pi-ai `Provider` assembly for dedicated mode: gateway-authenticated auth (resolve always succeeds with a placeholder key), live model list adopted via `context.publish({ update })`.
 - `dedicated/api-routing.ts` - Aperture compatibility-to-Pi API mapping (`getApiForCompatibility`) and stream-time dispatch (`buildStream` / `buildStreamSimple`) for dedicated mode. Per-API gateway base-URL resolution lives in the shared `src/base-url-routing.ts` (`getBaseUrlForApi`).
@@ -128,6 +128,7 @@ interface ResolvedConfig {
 interface ProxiedProviderConfig {
   id: string;
   shouldCheckGatewayModels?: boolean;
+  keepGatewayModelsOnly?: boolean;
 }
 
 interface DedicatedProviderConfig {
@@ -156,6 +157,7 @@ There is no current `mode` setting. Legacy `mode` configs are migrated to capabi
 - Provider selection maps Aperture providers to local Pi registry providers by id, exclusively from `/api/providers` cross-referenced with `/v1/models`, so only enabled providers (those whose models appear in `/v1/models`) are offered.
 - Proxy and dedicated modes share one gateway base-URL resolver, `getBaseUrlForApi` in `src/base-url-routing.ts`. Anthropic and Codex map to the gateway root (Pi's Anthropic SDK and Codex adapter append their own API paths, `/v1/messages` and `/codex/responses`); Gemini to `/v1beta`; Vertex to `/v1`; Bedrock to `/bedrock` (Aperture's native Bedrock-compatible surface; the OpenAI-shaped `/v1` fails with a protocol error). For the OpenAI SDK APIs (`openai-completions` / `openai-responses`), a model registers against the gateway root only when its upstream base URL ends in a version segment that is not `/v1` (e.g. Z.ai `/api/coding/paas/v4`), because Aperture would otherwise double the version (`/v4/v1/chat/completions`). Root baseurls (Mistral, DeepSeek) and `/v1` baseurls (OpenAI, Groq, OpenRouter) keep `gateway/v1`, which is Aperture's standard `/v1/chat/completions` endpoint. Missing or unparseable upstream URLs keep `gateway/v1`.
 - Optional per-provider gateway model verification (`shouldCheckGatewayModels`) warns if configured local models are missing from the Aperture gateway.
+- Optional per-provider `keepGatewayModelsOnly` (default `false`) filters that provider's registered models down to the gateway catalog at registration time: during `sync`, if any selected provider opts in, the runtime fetches the gateway catalog once (`ApertureClient.providers()`, the same `/api/providers` + `/v1/models` cross-reference the warning path uses) and filters the wrapped provider's `getModels()` to the models the gateway lists. Remaining model definitions are untouched. The fetch fails open: a gateway error registers everything unfiltered. A provider with every model filtered is skipped, mirroring the no-local-models convention. Filtering runs against the provider captured at the first sync (`firstSeenProviders`; from the second sync on, `deps.getProvider` returns our own filtered wrapper), so the full list comes back when the flag is toggled off and a resync runs. Also editable per provider from the Proxy tab in `/aperture:settings`.
 - Removed proxy providers trigger unregistration.
 
 ### Dedicated mode

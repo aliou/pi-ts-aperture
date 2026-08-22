@@ -142,6 +142,29 @@ export function buildProxyTab(
                           trueLabel: "on",
                           falseLabel: "off",
                         },
+                        {
+                          type: "boolean" as const,
+                          id: `provider.${p.id}.keepGatewayModelsOnly`,
+                          label: `${p.name ?? p.id} — gateway models only`,
+                          getValue: () => p.keepGatewayModelsOnly as boolean,
+                          setValue: (value: boolean) => {
+                            const provider = providers[i];
+                            if (provider)
+                              provider.keepGatewayModelsOnly = value;
+                            const updated = structuredClone(
+                              draft,
+                            ) as ApertureConfig;
+                            updated.proxy = {
+                              ...updated.proxy,
+                              upstreamProviders: providers.filter((provider) =>
+                                enabled.has(provider.id),
+                              ),
+                            };
+                            setDraftForScope(GLOBAL_SCOPE, updated);
+                          },
+                          trueLabel: "on",
+                          falseLabel: "off",
+                        },
                       ],
                     );
                     return new SettingsDetailEditor({
