@@ -340,6 +340,99 @@ describe("ApertureRuntime.sync fixed-path APIs", () => {
   });
 });
 
+describe("ApertureRuntime.sync provider-qualified model ids", () => {
+  beforeEach(() => {
+    getConfig.mockReturnValue(
+      proxyConfig([{ id: "synthetic", shouldCheckGatewayModels: false }]),
+    );
+  });
+
+  test("getModels() keeps bare ids while stream dispatch rewrites them", async () => {
+    const stream = vi.fn().mockReturnValue("stream-result");
+    const streamSimple = vi.fn().mockReturnValue("stream-simple-result");
+    const native = {
+      id: "synthetic",
+      getModels: () => [model("synthetic", "foo")],
+      stream,
+      streamSimple,
+    };
+    const registerNativeProvider = vi.fn();
+    const deps = {
+      getProvider: vi.fn().mockReturnValue(native),
+      registerNativeProvider,
+      getModels: () => [model("synthetic", "foo")],
+    };
+
+    await new ApertureRuntime().sync(deps);
+
+    const wrapped = (
+      registerNativeProvider.mock.calls[0] as [typeof native]
+    )[0];
+    const bareModel = model("synthetic", "foo");
+    expect(wrapped.getModels().map((m) => m.id)).toEqual(["foo"]);
+
+    const context = {} as never;
+    expect(wrapped.stream(bareModel, context, undefined)).toBe("stream-result");
+    expect(stream.mock.calls[0]?.[0]).toMatchObject({
+      provider: "synthetic",
+      id: "synthetic/foo",
+    });
+
+    stream.mockClear();
+    expect(wrapped.streamSimple(bareModel, context, undefined)).toBe(
+      "stream-simple-result",
+    );
+    expect(streamSimple.mock.calls[0]?.[0]).toMatchObject({
+      provider: "synthetic",
+      id: "synthetic/foo",
+    });
+
+    // The original model object must not be mutated by the rewrite.
+    expect(bareModel.id).toBe("foo");
+  });
+
+  // Regression: from the second sync onwards, deps.getProvider returns our own
+  // previous wrapper. Routing stream/streamSimple through `native` (the
+  // wrapper) double-qualifies; delegate through the first-seen provider.
+  test("stream dispatch does not double-qualify across re-syncs", async () => {
+    const stream = vi.fn().mockReturnValue("stream-result");
+    const streamSimple = vi.fn().mockReturnValue("stream-simple-result");
+    // An external store mimicking Pi's provider registry: registration
+    // replaces the entry, so a later getProvider returns the wrapper.
+    const store = new Map<string, unknown>();
+    store.set("synthetic", {
+      id: "synthetic",
+      getModels: () => [model("synthetic", "foo")],
+      stream,
+      streamSimple,
+    });
+    const deps = {
+      getProvider: (id: string) => store.get(id),
+      registerNativeProvider: (p: { id: string }) => void store.set(p.id, p),
+      getModels: () => [model("synthetic", "foo")],
+    };
+
+    const runtime = new ApertureRuntime();
+    await runtime.sync(deps as never);
+    await runtime.sync(deps as never);
+
+    const wrapped = store.get("synthetic") as {
+      stream: (m: Model<Api>, c: never, o: never) => unknown;
+      streamSimple: (m: Model<Api>, c: never, o: never) => unknown;
+    };
+    const context = {} as never;
+
+    wrapped.stream(model("synthetic", "foo"), context, undefined);
+    expect(stream.mock.calls[0]?.[0]).toMatchObject({ id: "synthetic/foo" });
+
+    streamSimple.mockClear();
+    wrapped.streamSimple(model("synthetic", "foo"), context, undefined);
+    expect(streamSimple.mock.calls[0]?.[0]).toMatchObject({
+      id: "synthetic/foo",
+    });
+  });
+});
+
 describe("ApertureRuntime.checkMissingModels", () => {
   beforeEach(() => {
     getConfig.mockReturnValue(

@@ -269,7 +269,7 @@ describe("refreshModels / cache-only restore", () => {
 
     const models = await refresh(provider, store, false);
 
-    expect(models.map((m) => m.id)).toEqual(["gpt-x"]);
+    expect(models.map((m) => m.id)).toEqual(["openai/gpt-x"]);
     expect(models[0]?.provider).toBe("aperture");
     expect(models[0]?.api).toBe("openai-completions");
     expect(providersMock).not.toHaveBeenCalled();
@@ -292,7 +292,7 @@ describe("refreshModels / cache-only restore", () => {
         },
       ] as unknown as Model<Api>[],
       checkedAt: Date.now(),
-      catalogKey: `${GATEWAY} *`,
+      catalogKey: `${GATEWAY} * v2`,
     });
 
     const models = await refresh(provider, store, false);
@@ -381,14 +381,17 @@ describe("refreshModels / networked refresh", () => {
     const models = await refresh(provider, store, true);
 
     expect(providersMock).toHaveBeenCalledOnce();
-    expect(models.map((m) => m.id)).toEqual(["gpt-5", "gpt-4"]);
+    expect(models.map((m) => m.id)).toEqual(["openai/gpt-5", "openai/gpt-4"]);
     for (const model of models) {
       expect(model.provider).toBe("aperture");
       expect(model.api).toBe("openai-completions");
     }
     expect(store.entry).toBeDefined();
     expect(store.entry?.checkedAt).toBeTypeOf("number");
-    expect(store.entry?.models?.map((m) => m.id)).toEqual(["gpt-5", "gpt-4"]);
+    expect(store.entry?.models?.map((m) => m.id)).toEqual([
+      "openai/gpt-5",
+      "openai/gpt-4",
+    ]);
   });
 
   test("filters providers by dedicated.providers selection", async () => {
@@ -402,7 +405,7 @@ describe("refreshModels / networked refresh", () => {
     const provider = register();
 
     const models = await refresh(provider, memoryStore(), true);
-    expect(models.map((m) => m.id)).toEqual(["claude-x"]);
+    expect(models.map((m) => m.id)).toEqual(["anthropic/claude-x"]);
   });
 
   test("propagates gateway fetch failures", async () => {
@@ -425,7 +428,7 @@ describe("refreshModels / networked refresh", () => {
 
     // Pi re-calls with allowNetwork: false after a failed refresh.
     const models = await refresh(provider, store, false);
-    expect(models.map((m) => m.id)).toEqual(["gpt-5"]);
+    expect(models.map((m) => m.id)).toEqual(["openai/gpt-5"]);
   });
 
   test("attaches gateway pricing to model cost", async () => {
@@ -678,5 +681,53 @@ describe("refreshModels / upstream base URL inference", () => {
 
     const models = await refresh(provider, memoryStore(), true);
     expect(models.map((m) => m.baseUrl)).toEqual([GATEWAY]);
+  });
+});
+
+describe("refreshModels / provider-qualified model ids", () => {
+  test("qualifies ids with the gateway provider id", async () => {
+    providersMock.mockResolvedValue([gatewayProvider("openai", ["gpt-5"])]);
+    const provider = register();
+
+    const models = await refresh(provider, memoryStore(), true);
+
+    expect(models.map((m) => m.id)).toEqual(["openai/gpt-5"]);
+    expect(models[0]?.provider).toBe("aperture");
+  });
+
+  test("resolves metadata against the bare model id", async () => {
+    providersMock.mockResolvedValue([gatewayProvider("openai", ["gpt-5"])]);
+    const provider = register(() => [
+      nativeModel("openai", "gpt-5", "https://api.openai.com/v1", {
+        reasoning: true,
+        contextWindow: 400_000,
+      }),
+    ]);
+
+    const models = await refresh(provider, memoryStore(), true);
+
+    expect(models).toHaveLength(1);
+    expect(models[0]?.id).toBe("openai/gpt-5");
+    expect(models[0]?.reasoning).toBe(true);
+    expect(models[0]?.contextWindow).toBe(400_000);
+  });
+
+  test("cache-only restore rejects a store entry with a stale (pre-v2) catalogKey", async () => {
+    const provider = register();
+    const store = memoryStore({
+      models: [
+        {
+          id: "gpt-x",
+          api: "openai-completions",
+          baseUrl: `${GATEWAY}/v1`,
+        },
+      ] as unknown as Model<Api>[],
+      checkedAt: Date.now(),
+      catalogKey: `${GATEWAY} *`,
+    });
+
+    const models = await refresh(provider, store, false);
+
+    expect(models).toEqual([]);
   });
 });
