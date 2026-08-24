@@ -14,6 +14,13 @@ import type {
 
 const MAX_MISSING_MODELS_PER_PROVIDER = 5;
 
+function qualifyModelId<T extends Api>(
+  providerName: string,
+  model: Model<T>,
+): Model<T> {
+  return { ...model, id: `${providerName}/${model.id}` };
+}
+
 export class ApertureRuntime {
   // Upstream provider base URLs captured on first registration. A settings
   // reload re-runs sync, but by then the model list is already rewritten to
@@ -131,6 +138,22 @@ export class ApertureRuntime {
             ...model,
             baseUrl: providerBaseUrl,
           })),
+        // Delegate through `firstSeen`, not `native`: from the second sync
+        // onwards `native` is our own previous wrapper, so routing its
+        // streams would double-qualify the model id. Same rationale as
+        // getModels() above.
+        stream: (model, context, options) =>
+          firstSeen.stream(
+            qualifyModelId(providerName, model),
+            context,
+            options,
+          ),
+        streamSimple: (model, context, options) =>
+          firstSeen.streamSimple(
+            qualifyModelId(providerName, model),
+            context,
+            options,
+          ),
         // Override resolve so the gateway-bound request always carries a
         // non-empty apiKey. openai-completions throws "No API key for provider"
         // on an empty/absent key, and these providers resolve to "" when no

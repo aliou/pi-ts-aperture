@@ -4,6 +4,7 @@ import type { ModelMetadata } from "../../../src/model-metadata";
 
 export interface ApertureModelDefaultsInput {
   id: string;
+  name?: string;
   providerId: string;
   provider?: {
     id: string;
@@ -60,7 +61,7 @@ export function buildDefaultModelConfig(
 
   return {
     id,
-    name: metadata?.name ?? id,
+    name: metadata?.name ?? model.name ?? id,
     reasoning: metadata?.reasoning ?? false,
     ...(metadata?.thinkingLevelMap
       ? { thinkingLevelMap: metadata.thinkingLevelMap }

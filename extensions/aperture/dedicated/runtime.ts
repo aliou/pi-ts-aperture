@@ -60,7 +60,7 @@ function buildCatalogKey(gatewayUrl: string, config: ResolvedConfig): string {
     .sort();
   const filter =
     config.dedicated.providers.length === 0 ? "*" : enabled.join(",");
-  return `${origin} ${filter}`;
+  return `${origin} ${filter} v2`;
 }
 
 function filterProviders(
@@ -126,7 +126,8 @@ function buildModels(
       models.push({
         provider: PROVIDER_NAME,
         ...buildDefaultModelConfig({
-          id: modelId,
+          id: `${provider.id}/${modelId}`,
+          name: modelId,
           providerId: provider.id,
           provider: { id: provider.id, name: provider.name },
           pricing: modelInfo?.pricing,
