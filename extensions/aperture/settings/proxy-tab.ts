@@ -25,8 +25,10 @@ import {
  *
  * Hosts the proxy-enable toggle and the upstream-providers submenu, which
  * fetches Aperture gateway providers and lets the user toggle which Pi
- * providers get rerouted through Aperture (plus per-provider gateway model
- * checks).
+ * providers get rerouted through Aperture. The submenu lists one row per
+ * provider with its enabled state; each row opens a per-provider submenu
+ * holding the proxy toggle and the gateway options (model check, gateway
+ * models only).
  */
 export function buildProxyTab(
   getKnownModels: () => Model<Api>[],
@@ -56,7 +58,8 @@ export function buildProxyTab(
             {
               id: "proxy.upstreamProviders",
               label: "Upstream providers",
-              description: "Configured proxy providers and gateway checks",
+              description:
+                "Choose which Pi providers get routed through Aperture, with per-provider gateway options",
               currentValue:
                 upstreamProviders.length > 0
                   ? `${upstreamProviders.length} provider(s)`
@@ -85,7 +88,7 @@ export function buildProxyTab(
                     const enabled = new Set(
                       upstreamProviders.map((provider) => provider.id),
                     );
-                    {
+                    const persistProviders = () => {
                       const updated = structuredClone(draft) as ApertureConfig;
                       updated.proxy = {
                         ...updated.proxy,
@@ -94,78 +97,72 @@ export function buildProxyTab(
                         ),
                       };
                       setDraftForScope(GLOBAL_SCOPE, updated);
-                    }
-                    const fields: SettingsDetailField[] = providers.flatMap(
-                      (p, i) => [
-                        {
-                          type: "boolean" as const,
-                          id: `provider.${p.id}.enabled`,
-                          label: p.name ?? p.id,
-                          getValue: () => enabled.has(p.id),
-                          setValue: (value: boolean) => {
-                            if (value) enabled.add(p.id);
-                            else enabled.delete(p.id);
-                            const updated = structuredClone(
-                              draft,
-                            ) as ApertureConfig;
-                            updated.proxy = {
-                              ...updated.proxy,
-                              upstreamProviders: providers.filter((provider) =>
-                                enabled.has(provider.id),
-                              ),
-                            };
-                            setDraftForScope(GLOBAL_SCOPE, updated);
-                          },
-                          trueLabel: "enabled",
-                          falseLabel: "disabled",
-                        },
-                        {
-                          type: "boolean" as const,
-                          id: `provider.${p.id}.shouldCheckGatewayModels`,
-                          label: `${p.name ?? p.id} — gateway model check`,
-                          getValue: () => p.shouldCheckGatewayModels as boolean,
-                          setValue: (value: boolean) => {
-                            const provider = providers[i];
-                            if (provider)
-                              provider.shouldCheckGatewayModels = value;
-                            const updated = structuredClone(
-                              draft,
-                            ) as ApertureConfig;
-                            updated.proxy = {
-                              ...updated.proxy,
-                              upstreamProviders: providers.filter((provider) =>
-                                enabled.has(provider.id),
-                              ),
-                            };
-                            setDraftForScope(GLOBAL_SCOPE, updated);
-                          },
-                          trueLabel: "on",
-                          falseLabel: "off",
-                        },
-                        {
-                          type: "boolean" as const,
-                          id: `provider.${p.id}.keepGatewayModelsOnly`,
-                          label: `${p.name ?? p.id} — gateway models only`,
-                          getValue: () => p.keepGatewayModelsOnly as boolean,
-                          setValue: (value: boolean) => {
-                            const provider = providers[i];
-                            if (provider)
-                              provider.keepGatewayModelsOnly = value;
-                            const updated = structuredClone(
-                              draft,
-                            ) as ApertureConfig;
-                            updated.proxy = {
-                              ...updated.proxy,
-                              upstreamProviders: providers.filter((provider) =>
-                                enabled.has(provider.id),
-                              ),
-                            };
-                            setDraftForScope(GLOBAL_SCOPE, updated);
-                          },
-                          trueLabel: "on",
-                          falseLabel: "off",
-                        },
-                      ],
+                    };
+                    persistProviders();
+                    const fields: SettingsDetailField[] = providers.map(
+                      (p) => ({
+                        type: "submenu" as const,
+                        id: `provider.${p.id}`,
+                        label: p.name ?? p.id,
+                        description: `Proxy toggle and gateway options for ${p.name ?? p.id}`,
+                        getValue: () =>
+                          enabled.has(p.id) ? "enabled" : "disabled",
+                        submenu: (providerDone, providerCtx) =>
+                          new SettingsDetailEditor({
+                            title: () =>
+                              `${p.name ?? p.id} (${enabled.has(p.id) ? "enabled" : "disabled"})`,
+                            fields: [
+                              {
+                                type: "boolean" as const,
+                                id: `provider.${p.id}.enabled`,
+                                label: "Proxy this provider",
+                                description:
+                                  "Route this provider's requests through the Aperture gateway",
+                                getValue: () => enabled.has(p.id),
+                                setValue: (value: boolean) => {
+                                  if (value) enabled.add(p.id);
+                                  else enabled.delete(p.id);
+                                  persistProviders();
+                                },
+                                trueLabel: "enabled",
+                                falseLabel: "disabled",
+                              },
+                              {
+                                type: "boolean" as const,
+                                id: `provider.${p.id}.shouldCheckGatewayModels`,
+                                label: "Gateway model check",
+                                description:
+                                  "Warn when configured local models are missing from the gateway catalog",
+                                getValue: () => p.shouldCheckGatewayModels,
+                                setValue: (value: boolean) => {
+                                  p.shouldCheckGatewayModels = value;
+                                  persistProviders();
+                                },
+                                trueLabel: "on",
+                                falseLabel: "off",
+                              },
+                              {
+                                type: "boolean" as const,
+                                id: `provider.${p.id}.keepGatewayModelsOnly`,
+                                label: "Gateway models only",
+                                description:
+                                  "Register only the models the gateway serves instead of all locally known models",
+                                getValue: () => p.keepGatewayModelsOnly,
+                                setValue: (value: boolean) => {
+                                  p.keepGatewayModelsOnly = value;
+                                  persistProviders();
+                                },
+                                trueLabel: "on",
+                                falseLabel: "off",
+                              },
+                            ],
+                            theme: settingsTheme,
+                            requestRender: providerCtx.requestRender,
+                            hideHint: providerCtx.hideHint,
+                            contentHeight: SETTINGS_CONTENT_HEIGHT,
+                            onDone: () => providerDone(),
+                          }),
+                      }),
                     );
                     return new SettingsDetailEditor({
                       title: () =>
