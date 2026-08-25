@@ -51,7 +51,7 @@ Pi-agnostic Aperture API and mapping code lives under `src/`. Extension glue (Pi
 - `proxy/runtime.ts` - `ApertureRuntime` for proxy provider registration/unregistration, `keepGatewayModelsOnly` filtering, and gateway model verification.
 - `dedicated/runtime.ts` - `registerDedicatedProvider` / `reconcileDedicatedProvider` for the standalone `aperture` provider. Model discovery and caching go through the provider's `refreshModels` (`refreshDedicatedCatalog`) and Pi's per-provider models store.
 - `dedicated/provider.ts` - Native pi-ai `Provider` assembly for dedicated mode: gateway-authenticated auth (resolve always succeeds with a placeholder key), live model list adopted via `context.publish({ update })`.
-- `dedicated/api-routing.ts` - Aperture compatibility-to-Pi API mapping (`getApiForCompatibility`) and stream-time dispatch (`buildStream` / `buildStreamSimple`) for dedicated mode. Per-API gateway base-URL resolution lives in the shared `src/base-url-routing.ts` (`getBaseUrlForApi`).
+- `dedicated/api-routing.ts` - Stream-time dispatch (`buildStream` / `buildStreamSimple`) for dedicated mode. The Aperture compatibility-to-Pi API mapping (`getSelectableApis`, `getApiForCompatibility`) lives in `extensions/shared/api-selection.ts`. Per-API gateway base-URL resolution lives in the shared `src/base-url-routing.ts` (`getBaseUrlForApi`).
 - `dedicated/model-defaults.ts` - Model config builder merging safe defaults, resolved metadata, and gateway pricing.
 - `onboarding/index.ts` - Registers temporary onboarding affordances while onboarding is enabled.
 - `onboarding/onboarding.ts` - Onboarding wizard. Steps: welcome, URL, capability selection, provider selection, recap.
@@ -77,6 +77,7 @@ Pi-extension concerns shared by both extensions. Note the aperture-local `extens
 - `events.ts` - Extension events shared across the aperture and connectors extensions.
 - `sync-bus.ts` - Config sync bus used to propagate config changes between extensions.
 - `provider-mapping.ts` - Maps Aperture providers to local Pi registry models for proxy and dedicated selection, preserving per-provider config toggles. Extension glue consumed by the settings tabs and onboarding.
+- `api-selection.ts` - Compatibility-map to Pi API mapping (`getSelectableApis` in auto-pick precedence order, `getApiForCompatibility`, `isSelectableApi` override validation) shared by dedicated, proxy, and the settings tabs. Compatibility flags Pi cannot dispatch are excluded. `openai_responses` maps to the generic `openai-responses` adapter even for the `openai-codex` gateway provider (the Codex-specific `openai-codex-responses` adapter is not selectable).
 
 ### `src/`
 
@@ -118,7 +119,7 @@ interface ResolvedConfig {
   baseUrl: string;
   onboardingDone: boolean;
   onboarding: { enabled: boolean };
-  proxy: { enabled: boolean; upstreamProviders: Required<ProxiedProviderConfig>[] };
+  proxy: { enabled: boolean; upstreamProviders: (Required<Omit<ProxiedProviderConfig, "api" | "enabled">> & Pick<ProxiedProviderConfig, "api" | "enabled">)[] };
   dedicated: { enabled: boolean; providers: DedicatedProviderConfig[] };
   connectors: { enabled: boolean; pinnedTools: { connectorId: string; toolName: string }[]; discoveryTools: boolean };
 }
@@ -127,14 +128,17 @@ interface ResolvedConfig {
 ```ts
 interface ProxiedProviderConfig {
   id: string;
+  enabled?: boolean; // default true; false keeps per-provider settings without proxying
   shouldCheckGatewayModels?: boolean;
   keepGatewayModelsOnly?: boolean;
+  api?: RoutableApi;
 }
 
 interface DedicatedProviderConfig {
   id: string;
   name?: string;
   enabled: boolean;
+  api?: RoutableApi;
 }
 ```
 
@@ -152,7 +156,7 @@ There is no current `mode` setting. Legacy `mode` configs are migrated to capabi
 
 ### Proxy mode
 
-- Only overrides `baseUrl`, `apiKey`, and headers on existing providers. Model definitions are never touched.
+- Only overrides `baseUrl`, `apiKey`, and headers on existing providers. Model definitions are never touched, with one opt-in exception: a per-provider `api` override rewrites `model.api` on that provider's models.
 - Skips providers with no local models because there is nothing to reroute.
 - Provider selection maps Aperture providers to local Pi registry providers by id, exclusively from `/api/providers` cross-referenced with `/v1/models`, so only enabled providers (those whose models appear in `/v1/models`) are offered.
 - Proxy and dedicated modes share one gateway base-URL resolver, `getBaseUrlForApi` in `src/base-url-routing.ts`. Anthropic and Codex map to the gateway root (Pi's Anthropic SDK and Codex adapter append their own API paths, `/v1/messages` and `/codex/responses`); Gemini to `/v1beta`; Vertex to `/v1`; Bedrock to `/bedrock` (Aperture's native Bedrock-compatible surface; the OpenAI-shaped `/v1` fails with a protocol error). For the OpenAI SDK APIs (`openai-completions` / `openai-responses`), a model registers against the gateway root only when its upstream base URL ends in a version segment that is not `/v1` (e.g. Z.ai `/api/coding/paas/v4`), because Aperture would otherwise double the version (`/v4/v1/chat/completions`). Root baseurls (Mistral, DeepSeek) and `/v1` baseurls (OpenAI, Groq, OpenRouter) keep `gateway/v1`, which is Aperture's standard `/v1/chat/completions` endpoint. Missing or unparseable upstream URLs keep `gateway/v1`.
@@ -160,19 +164,21 @@ There is no current `mode` setting. Legacy `mode` configs are migrated to capabi
 - Auth depends on the gateway provider's `auth_mode`. Override/none providers (the common case; gateway injects or strips the upstream credential) get a placeholder-key override: both `check` and `resolve` are replaced so the provider always counts as configured (env-key providers otherwise hide from the model picker when no env key is set) and requests carry `apiKey: "-"`. Passthrough providers (`requires_client_auth` on `/api/providers`) keep native auth so the client sends a real key/OAuth token the gateway forwards. OAuth-only providers (no `apiKey` field, e.g. `openai-codex`) also keep native auth. The passthrough set is re-derived each sync from the single `/api/providers` fetch that also serves `keepGatewayModelsOnly` filtering (`fetchProviders`), failing open to an empty set.
 - Optional per-provider gateway model verification (`shouldCheckGatewayModels`) warns if configured local models are missing from the Aperture gateway.
 - Optional per-provider `keepGatewayModelsOnly` (default `false`) filters that provider's registered models down to the gateway catalog at registration time: during `sync`, if any selected provider opts in, the runtime fetches the gateway catalog once (`ApertureClient.providers()`, the same `/api/providers` + `/v1/models` cross-reference the warning path uses) and filters the wrapped provider's `getModels()` to the models the gateway lists. Remaining model definitions are untouched. The fetch fails open: a gateway error registers everything unfiltered. A provider with every model filtered is skipped, mirroring the no-local-models convention. Filtering runs against the provider captured at the first sync (`firstSeenProviders`; from the second sync on, `deps.getProvider` returns our own filtered wrapper), so the full list comes back when the flag is toggled off and a resync runs. Also editable per provider from the Proxy tab in `/aperture:settings`.
-- In `/aperture:settings`, the Proxy tab's upstream-providers item lists one row per provider with its enabled state; each row opens a per-provider submenu holding the proxy toggle and the gateway options (`shouldCheckGatewayModels`, `keepGatewayModelsOnly`). The submenu is the extension point for new per-provider settings.
-- Removed proxy providers trigger unregistration.
+- Optional per-provider `api` override: a configured Pi API wins over the provider's own `model.api` and drives the gateway base-URL choice. It is validated each sync against the provider's gateway compatibility map (from the same `/api/providers` fetch); an override the gateway no longer serves falls back to the provider's own api (named in the `ui.notify` warning), and stays inert when the catalog fetch fails (fail-open). The original api is read from the first-seen provider, so removing the override restores the previous routing on the next sync.
+- In `/aperture:settings`, the Proxy tab's upstream-providers item lists one row per provider with its enabled state; each row opens a per-provider submenu holding the proxy toggle, the gateway options (`shouldCheckGatewayModels`, `keepGatewayModelsOnly`), and the API selector (shown when the gateway maps at least one API; the auto option shows which API it resolves to). The submenu is the extension point for new per-provider settings.
+- Removed or disabled (`enabled: false`) proxy providers trigger unregistration on the next sync. Disabling a provider from the settings menu keeps its entry (and per-provider settings) in `proxy.upstreamProviders`.
 
 ### Dedicated mode
 
-- Registers the Pi provider as a native pi-ai `Provider`; each model carries the real upstream Pi API (`model.api`) selected from Aperture provider compatibility, and the provider's `stream`/`streamSimple` dispatch requests through it.
+- Registers the Pi provider as a native pi-ai `Provider`; each model carries the real upstream Pi API (`model.api`), either the per-provider `api` override or the one auto-picked from Aperture provider compatibility, and the provider's `stream`/`streamSimple` dispatch requests through it.
 - Model IDs are provider-qualified (`provider/model-id`), same routing rationale as proxy mode. The catalog key is suffixed ` v2` so store snapshots with bare ids are not restored.
-- Legacy models-store snapshots (stamped with the custom `aperture` API marker and an `upstreamApi` side field) still restore: stream dispatch resolves the real API from the side field for those entries.
 - Can filter gateway models by enabled `dedicated.providers`; an empty provider filter means all gateway providers are included. A non-empty list with all `enabled: false` means no dedicated models are registered.
 - Resolves capability metadata per model at refresh time (`src/model-metadata.ts`): Pi's native model registry first (context window, output limit, input modalities, reasoning, `thinkingLevelMap`, `compat`), then the models.dev catalog (`https://models.dev/api.json`, best-effort fetch) as a fallback, then safe defaults (128k context, 8k output, text-only, no reasoning). Matching prefers an exact provider-id + model-id match; a model-id-only fallback copies capabilities but never cost or `compat`. Gateway pricing from `/v1/models` wins field-by-field for costs; rates the gateway omits keep the registry/models.dev value. The dedicated provider's own registry entries are excluded from metadata matching (they carry defaults from a prior refresh). `~/.pi/agent/models.json` remains the user-side override.
 - Fetches provider compatibility from `/api/providers` (each gateway provider reports its `compatibility` map) and maps it to Pi APIs: OpenAI chat/completions, Anthropic messages, OpenAI responses, Gemini generate content, Google Vertex, or Bedrock converse.
 - Per-model base URL is inferred from the upstream provider's base URL, looked up from Pi's native model registry (cross-referenced by provider id, then model id). Both modes resolve the per-model base URL with the shared `getBaseUrlForApi`: a model uses the gateway root only when its upstream base URL ends in a non-`/v1` version segment (e.g. Z.ai `/api/coding/paas/v4`); root baseurls (Mistral, DeepSeek) and `/v1` baseurls (OpenAI, Groq) keep `gateway/v1`. Anthropic, Gemini, Vertex, and Bedrock keep their fixed paths (`/bedrock` for Bedrock). Gateway providers with no native Pi registry match keep `gateway/v1`. Inference runs at refresh time (registry available via `session_start`); the resolved per-model base URLs persist through the models store, so cache-only restores replay them before the first revalidation.
-- Model discovery and caching use Pi's `refreshModels` hook (requires Pi >= 0.80.8). The provider is registered in the extension factory body with a `refreshModels` callback; Pi immediately fires a cache-only refresh that restores the previous catalog from its per-provider models store (`~/.pi/agent/models-store.json`), so scoped models validate during startup, including offline. `session_start`/`onSync` then calls `ctx.modelRegistry.refresh()` for the networked revalidation, which fetches `/api/providers`, rebuilds and enriches the models, and writes the store back. Each store entry records a catalog key (gateway origin + normalized dedicated provider filter + version suffix); cache-only restores return nothing when the key no longer matches the current config. First run with no stored catalog resolves nothing until the first networked refresh.
+- Optional per-provider `api` override, validated on every refresh against the provider's compatibility map: an override the gateway no longer serves falls back to the auto-picked api with a `ui.notify` warning (the refresh hook has no UI channel, so the notify callback is threaded from the entry point through `registerDedicatedProvider`). Overrides only apply to enabled providers.
+- In `/aperture:settings`, the Dedicated tab's provider list mirrors the Proxy tab: one row per provider with its enabled state, and each row opens a per-provider submenu holding the include toggle, and the API selector (shown when the gateway maps at least one API; the auto option shows which API it resolves to).
+- Model discovery and caching use Pi's `refreshModels` hook (requires Pi >= 0.80.8). The provider is registered in the extension factory body with a `refreshModels` callback; Pi immediately fires a cache-only refresh that restores the previous catalog from its per-provider models store (`~/.pi/agent/models-store.json`), so scoped models validate during startup, including offline. `session_start`/`onSync` then calls `ctx.modelRegistry.refresh()` for the networked revalidation, which fetches `/api/providers`, rebuilds and enriches the models, and writes the store back. Each store entry records a catalog key (gateway origin + normalized dedicated provider filter, with api overrides recorded as `id@api`, + version suffix); cache-only restores return nothing when the key no longer matches the current config. First run with no stored catalog resolves nothing until the first networked refresh.
 
 ### Connectors
 
