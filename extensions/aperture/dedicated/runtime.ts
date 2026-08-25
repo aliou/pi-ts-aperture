@@ -17,8 +17,11 @@ import {
   resolveModelMetadata,
 } from "../../../src/model-metadata";
 import { resolveGatewayUrl, resolveProviderBaseUrl } from "../../../src/url";
+import {
+  getApiForCompatibility,
+  isSelectableApi,
+} from "../../shared/api-selection";
 import { configLoader, type ResolvedConfig } from "../../shared/config/loader";
-import { getApiForCompatibility } from "./api-routing";
 import { buildDefaultModelConfig } from "./model-defaults";
 import { createDedicatedProvider, DEDICATED_PROVIDER_ID } from "./provider";
 
@@ -42,10 +45,11 @@ type DedicatedStoreEntry = ModelsStoreEntry & { catalogKey?: string };
 
 /**
  * Identity of the catalog a store entry was built from: gateway origin plus
- * the normalized dedicated provider filter. Comparing keys on cache-only
- * restore rejects catalogs for a different gateway (origin equality, not a
- * string prefix, so `gateway.example.evil` never matches `gateway.example`)
- * and catalogs built under a different provider selection.
+ * the normalized dedicated provider filter, with api overrides recorded as
+ * `id@api` so a catalog stamped for a different routing api never replays.
+ * Comparing keys on cache-only restore rejects catalogs for a different
+ * gateway (origin equality, not a string prefix, so `gateway.example.evil`
+ * never matches `gateway.example`) or provider selection.
  */
 function buildCatalogKey(gatewayUrl: string, config: ResolvedConfig): string {
   let origin: string;
@@ -56,7 +60,7 @@ function buildCatalogKey(gatewayUrl: string, config: ResolvedConfig): string {
   }
   const enabled = config.dedicated.providers
     .filter((p) => p.enabled)
-    .map((p) => p.id)
+    .map((p) => (p.api ? `${p.id}@${p.api}` : p.id))
     .sort();
   const filter =
     config.dedicated.providers.length === 0 ? "*" : enabled.join(",");
@@ -81,6 +85,8 @@ function buildModels(
   baseUrl: string,
   registryModels: Model<Api>[],
   modelsDev: ModelsDevCatalog | null,
+  apiOverrides: ReadonlyMap<string, Api>,
+  notify?: (warning: string) => void,
 ): Model<Api>[] {
   // Look up native upstream base URLs from Pi's model registry. Prefer a
   // provider-id match (same naming as the gateway), then a model-id match
@@ -112,7 +118,18 @@ function buildModels(
   const models: Model<Api>[] = [];
 
   for (const provider of providers) {
-    const api = getApiForCompatibility(provider.compatibility);
+    const override = apiOverrides.get(provider.id);
+    let api: Api;
+    if (override && isSelectableApi(override, provider.compatibility)) {
+      api = override;
+    } else {
+      if (override) {
+        notify?.(
+          `[aperture] api override "${override}" for dedicated provider ${provider.id} is not served by the gateway; using the auto-picked api.`,
+        );
+      }
+      api = getApiForCompatibility(provider.compatibility);
+    }
     const providerUpstream = upstreamByProvider.get(provider.id);
     for (const modelId of provider.models) {
       const modelInfo = provider.modelInfoById?.[modelId];
@@ -192,6 +209,7 @@ function storedCatalogModels(
 export async function refreshDedicatedCatalog(
   context: RefreshModelsContext,
   getModels: GetRegistryModels,
+  notify?: (warning: string) => void,
 ): Promise<Model<Api>[]> {
   const config = configLoader.getConfig();
   if (!config.dedicated.enabled) return [];
@@ -211,12 +229,19 @@ export async function refreshDedicatedCatalog(
     fetchModelsDevCatalog({ signal: context.signal }),
   ]);
   const providers = filterProviders(gatewayProviders, config);
+  const apiOverrides = new Map(
+    config.dedicated.providers
+      .filter((p) => p.enabled && p.api)
+      .map((p) => [p.id, p.api as Api]),
+  );
   const catalog = buildModels(
     providers,
     gatewayUrl,
     baseUrl,
     getModels(),
     modelsDev,
+    apiOverrides,
+    notify,
   );
 
   context.signal?.throwIfAborted();
@@ -243,6 +268,7 @@ export async function refreshDedicatedCatalog(
 export function registerDedicatedProvider(
   pi: Pick<ExtensionAPI, "registerProvider">,
   getModels: GetRegistryModels,
+  notify?: (warning: string) => void,
 ): void {
   const config = configLoader.getConfig();
   if (!config.dedicated.enabled) return;
@@ -252,7 +278,7 @@ export function registerDedicatedProvider(
 
   pi.registerProvider(
     createDedicatedProvider(baseUrl, (context) =>
-      refreshDedicatedCatalog(context, getModels),
+      refreshDedicatedCatalog(context, getModels, notify),
     ),
   );
 }
@@ -265,11 +291,12 @@ export function registerDedicatedProvider(
 export function reconcileDedicatedProvider(
   pi: Pick<ExtensionAPI, "registerProvider" | "unregisterProvider">,
   getModels: GetRegistryModels,
+  notify?: (warning: string) => void,
 ): void {
   const config = configLoader.getConfig();
   if (!config.dedicated.enabled || !resolveProviderBaseUrl(config)) {
     pi.unregisterProvider(PROVIDER_NAME);
     return;
   }
-  registerDedicatedProvider(pi, getModels);
+  registerDedicatedProvider(pi, getModels, notify);
 }

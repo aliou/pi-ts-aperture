@@ -97,6 +97,7 @@ export default async function (pi: ExtensionAPI): Promise<void> {
         getProvider: (id) => ctx.modelRegistry.getProvider(id),
         registerNativeProvider: (provider) => pi.registerProvider(provider),
         getModels: () => ctx.modelRegistry.getAll(),
+        notify: (msg, type) => ctx.ui.notify(msg, type),
       })
       .then(() => {
         const active = ctx.model;
@@ -112,7 +113,9 @@ export default async function (pi: ExtensionAPI): Promise<void> {
       notify: (msg, type) => ctx.ui.notify(msg, type),
     });
 
-    reconcileDedicatedProvider(pi, getRegistryModels);
+    reconcileDedicatedProvider(pi, getRegistryModels, (msg) =>
+      ctx.ui.notify(msg, "warning"),
+    );
 
     // Trigger the networked model refresh: Pi's own startup refresh runs
     // before extensions load, so the dedicated provider never sees it.

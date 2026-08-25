@@ -27,6 +27,7 @@ export interface SyncDeps {
   getProvider: (id: string) => Provider | undefined;
   registerNativeProvider: (provider: Provider) => void;
   getModels: () => Model<Api>[];
+  notify?: (msg: string, type: "warning" | "info") => void;
 }
 
 /**

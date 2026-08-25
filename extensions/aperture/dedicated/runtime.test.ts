@@ -131,9 +131,12 @@ interface DedicatedPublication {
 }
 
 /** Register the provider against a fake pi and return the native Provider. */
-function register(getModels: () => Model<Api>[] = () => []): Provider | null {
+function register(
+  getModels: () => Model<Api>[] = () => [],
+  notify?: (warning: string) => void,
+): Provider | null {
   const registerProvider = vi.fn();
-  registerDedicatedProvider({ registerProvider }, getModels);
+  registerDedicatedProvider({ registerProvider }, getModels, notify);
   const provider = registerProvider.mock.calls.at(-1)?.[0] as
     | Provider
     | undefined;
@@ -729,5 +732,89 @@ describe("refreshModels / provider-qualified model ids", () => {
     const models = await refresh(provider, store, false);
 
     expect(models).toEqual([]);
+  });
+});
+
+describe("refreshModels / api overrides", () => {
+  function multiApiProvider(id: string, models: string[]): ApertureProvider {
+    return {
+      id,
+      name: id,
+      models,
+      compatibility: { openai_chat: true, anthropic_messages: true },
+    };
+  }
+
+  test("routes models through the overridden api when the gateway serves it", async () => {
+    getConfig.mockReturnValue(
+      dedicatedConfig(true, [
+        { id: "openrouter", enabled: true, api: "anthropic-messages" },
+      ]),
+    );
+    providersMock.mockResolvedValue([multiApiProvider("openrouter", ["m-1"])]);
+    const notify = vi.fn();
+    const provider = register(() => [], notify);
+
+    const models = await refresh(provider, memoryStore(), true);
+
+    expect(models[0]?.api).toBe("anthropic-messages");
+    expect(models[0]?.baseUrl).toBe(GATEWAY);
+    expect(notify).not.toHaveBeenCalled();
+  });
+
+  test("falls back to the auto-picked api with a warning for an unserved override", async () => {
+    getConfig.mockReturnValue(
+      dedicatedConfig(true, [
+        { id: "openrouter", enabled: true, api: "google-vertex" },
+      ]),
+    );
+    providersMock.mockResolvedValue([multiApiProvider("openrouter", ["m-1"])]);
+    const notify = vi.fn();
+    const provider = register(() => [], notify);
+
+    const models = await refresh(provider, memoryStore(), true);
+
+    expect(models[0]?.api).toBe("openai-completions");
+    expect(notify).toHaveBeenCalledTimes(1);
+    expect(notify.mock.calls[0]?.[0]).toContain("google-vertex");
+    expect(notify.mock.calls[0]?.[0]).toContain("openrouter");
+  });
+
+  test("rejects a stored catalog built under a different api override", async () => {
+    getConfig.mockReturnValue(
+      dedicatedConfig(true, [
+        { id: "openrouter", enabled: true, api: "anthropic-messages" },
+      ]),
+    );
+    providersMock.mockResolvedValue([multiApiProvider("openrouter", ["m-1"])]);
+    const provider = register();
+    const store = memoryStore();
+    await refresh(provider, store, true);
+
+    getConfig.mockReturnValue(
+      dedicatedConfig(true, [{ id: "openrouter", enabled: true }]),
+    );
+
+    const models = await refresh(provider, store, false);
+    expect(models).toEqual([]);
+  });
+
+  test("restores a stored catalog keyed with the current api override", async () => {
+    getConfig.mockReturnValue(
+      dedicatedConfig(true, [
+        { id: "openrouter", enabled: true, api: "anthropic-messages" },
+      ]),
+    );
+    providersMock.mockResolvedValue([multiApiProvider("openrouter", ["m-1"])]);
+    const provider = register();
+    const store = memoryStore();
+    await refresh(provider, store, true);
+    providersMock.mockClear();
+
+    const models = await refresh(provider, store, false);
+
+    expect(models.map((m) => m.id)).toEqual(["openrouter/m-1"]);
+    expect(models[0]?.api).toBe("anthropic-messages");
+    expect(providersMock).not.toHaveBeenCalled();
   });
 });
