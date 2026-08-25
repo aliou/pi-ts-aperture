@@ -781,3 +781,228 @@ describe("ApertureRuntime.sync gateway model filtering", () => {
     ).toEqual(["gpt-5.5", "gpt-4o"]);
   });
 });
+
+describe("ApertureRuntime.sync passthrough auth", () => {
+  function mockGatewayWithAuthFlags(
+    providers: {
+      id: string;
+      models: string[];
+      requires_client_auth?: boolean;
+    }[],
+  ) {
+    vi.mocked(ApertureClient).mockImplementation(function (this: {
+      providers: ReturnType<typeof vi.fn>;
+    }) {
+      this.providers = vi.fn().mockResolvedValue(providers);
+      return this;
+    } as unknown as typeof ApertureClient);
+  }
+
+  // A native provider carrying an apiKey auth with a real `resolve`, like
+  // Pi's built-in env-key providers (openrouter, openai, …).
+  function nativeWithApiKey(id: string, models: Model<Api>[]) {
+    const resolve = vi.fn().mockResolvedValue({
+      auth: { apiKey: "real-key" },
+      source: "env",
+    });
+    return {
+      id,
+      getModels: () => models,
+      auth: { apiKey: { name: `${id} key`, resolve } },
+      stream: vi.fn(),
+      streamSimple: vi.fn(),
+    };
+  }
+
+  function syncDepsWithNative(
+    natives: Record<string, ReturnType<typeof nativeWithApiKey>>,
+  ) {
+    const registerNativeProvider = vi.fn();
+    const allModels = () =>
+      Object.values(natives).flatMap((n) => n.getModels());
+    return {
+      deps: {
+        getProvider: (id: string) => natives[id],
+        registerNativeProvider,
+        getModels: allModels,
+      },
+      registerNativeProvider,
+    };
+  }
+
+  function wrappedProvider(
+    mock: ReturnType<typeof vi.fn>,
+    providerId: string,
+  ): {
+    auth?: {
+      apiKey?: {
+        check?: (input: unknown) => Promise<unknown>;
+        resolve?: (input: unknown) => Promise<unknown>;
+      };
+    };
+  } {
+    const call = mock.mock.calls.find(
+      ([p]: unknown[]) => (p as { id?: string }).id === providerId,
+    );
+    return call?.[0] as never;
+  }
+
+  beforeEach(() => {
+    getConfig.mockReturnValue(
+      proxyConfig([
+        { id: "openrouter", shouldCheckGatewayModels: false },
+        { id: "openai-codex", shouldCheckGatewayModels: false },
+      ]),
+    );
+  });
+
+  test("override/none providers get a placeholder auth that always counts as configured", async () => {
+    mockGatewayWithAuthFlags([
+      { id: "openrouter", models: ["or-1"], requires_client_auth: false },
+    ]);
+    const native = nativeWithApiKey("openrouter", [
+      model(
+        "openrouter",
+        "or-1",
+        "openai-completions",
+        "https://openrouter.ai/api/v1",
+      ),
+    ]);
+    const { deps, registerNativeProvider } = syncDepsWithNative({
+      openrouter: native,
+    });
+
+    await new ApertureRuntime().sync(deps);
+
+    const wrapped = wrappedProvider(registerNativeProvider, "openrouter");
+    expect(wrapped.auth?.apiKey?.check).toBeDefined();
+    await expect(wrapped.auth?.apiKey?.check?.({})).resolves.toEqual({
+      type: "api_key",
+      source: "aperture proxy",
+    });
+    await expect(wrapped.auth?.apiKey?.resolve?.({})).resolves.toEqual({
+      auth: { apiKey: "-" },
+      source: "aperture proxy",
+    });
+    // The native resolve (real key) is not called; the override replaces it.
+    expect(native.auth.apiKey.resolve).not.toHaveBeenCalled();
+  });
+
+  test("passthrough providers keep their native auth so the client sends a real credential", async () => {
+    mockGatewayWithAuthFlags([
+      { id: "openai-codex", models: ["gpt-5.5"], requires_client_auth: true },
+    ]);
+    const native = nativeWithApiKey("openai-codex", [
+      model("openai-codex", "gpt-5.5", "openai-codex-responses"),
+    ]);
+    const { deps, registerNativeProvider } = syncDepsWithNative({
+      "openai-codex": native,
+    });
+
+    await new ApertureRuntime().sync(deps);
+
+    const wrapped = wrappedProvider(registerNativeProvider, "openai-codex");
+    // No placeholder override: the wrapped auth is the native auth untouched.
+    expect(wrapped.auth).toBe(native.auth);
+    expect(wrapped.auth?.apiKey?.check).toBeUndefined();
+    await expect(wrapped.auth?.apiKey?.resolve?.({})).resolves.toEqual({
+      auth: { apiKey: "real-key" },
+      source: "env",
+    });
+    expect(native.auth.apiKey.resolve).toHaveBeenCalled();
+  });
+
+  test("fetches the catalog once per sync", async () => {
+    mockGatewayWithAuthFlags([
+      { id: "openrouter", models: ["or-1"], requires_client_auth: false },
+    ]);
+    getConfig.mockReturnValue(
+      proxyConfig([
+        {
+          id: "openrouter",
+          shouldCheckGatewayModels: false,
+          keepGatewayModelsOnly: true,
+        },
+      ]),
+    );
+    const { deps } = syncDepsWithNative({
+      openrouter: nativeWithApiKey("openrouter", [model("openrouter", "or-1")]),
+    });
+
+    await new ApertureRuntime().sync(deps);
+
+    // One fetch serves both passthrough detection and model filtering.
+    expect(vi.mocked(ApertureClient).mock.calls.length).toBe(1);
+  });
+
+  test("recovers native auth when the gateway flips a provider to passthrough mid-session", async () => {
+    const native = nativeWithApiKey("openrouter", [
+      model("openrouter", "or-1"),
+    ]);
+
+    // Simulate real Pi: getProvider returns the last-registered provider, so
+    // the second sync sees the first sync's wrapper, not the original native.
+    let current: unknown = native;
+    const registerNativeProvider = vi.fn((p: unknown) => {
+      current = p;
+    });
+    const deps = {
+      getProvider: () => current,
+      registerNativeProvider,
+      getModels: () => native.getModels(),
+    };
+
+    // First sync: non-passthrough → placeholder auth applied.
+    mockGatewayWithAuthFlags([
+      { id: "openrouter", models: ["or-1"], requires_client_auth: false },
+    ]);
+    const runtime = new ApertureRuntime();
+    await runtime.sync(deps);
+
+    // Second sync: gateway now marks the provider as passthrough.
+    mockGatewayWithAuthFlags([
+      { id: "openrouter", models: ["or-1"], requires_client_auth: true },
+    ]);
+    await runtime.sync(deps);
+
+    // The last wrapper should carry the original native auth, not the stale
+    // placeholder from the first sync.
+    const lastWrapped = registerNativeProvider.mock.calls.at(-1)?.[0] as
+      | {
+          auth?: {
+            apiKey?: { resolve?: (input: unknown) => Promise<unknown> };
+          };
+        }
+      | undefined;
+    await expect(lastWrapped.auth?.apiKey?.resolve?.({})).resolves.toEqual({
+      auth: { apiKey: "real-key" },
+      source: "env",
+    });
+    expect(native.auth.apiKey.resolve).toHaveBeenCalled();
+  });
+
+  test("fails open when the catalog is unreachable: treats nothing as passthrough", async () => {
+    vi.mocked(ApertureClient).mockImplementation(function (this: {
+      providers: ReturnType<typeof vi.fn>;
+    }) {
+      this.providers = vi.fn().mockRejectedValue(new Error("gateway down"));
+      return this;
+    } as unknown as typeof ApertureClient);
+    const native = nativeWithApiKey("openrouter", [
+      model("openrouter", "or-1"),
+    ]);
+    const { deps, registerNativeProvider } = syncDepsWithNative({
+      openrouter: native,
+    });
+
+    await new ApertureRuntime().sync(deps);
+
+    // Override applied (empty passthrough set), so the provider still counts
+    // as configured with the placeholder key.
+    const wrapped = wrappedProvider(registerNativeProvider, "openrouter");
+    await expect(wrapped.auth?.apiKey?.resolve?.({})).resolves.toEqual({
+      auth: { apiKey: "-" },
+      source: "aperture proxy",
+    });
+  });
+});

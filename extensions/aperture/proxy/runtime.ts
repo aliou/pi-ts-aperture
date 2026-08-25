@@ -35,6 +35,10 @@ export class ApertureRuntime {
   // first-seen provider to keep reading the unfiltered model list.
   private readonly firstSeenProviders = new Map<string, Provider>();
 
+  // Passthrough provider ids (`auth_mode: "passthrough"`); refreshed each
+  // sync from the gateway catalog.
+  private passthroughProviderIds = new Set<string>();
+
   async sync(deps: SyncDeps): Promise<void> {
     const config = configLoader.getConfig();
     if (!config.proxy.enabled) return;
@@ -44,23 +48,21 @@ export class ApertureRuntime {
     const baseUrl = resolveProviderBaseUrl(config);
     if (!gatewayRoot || !baseUrl) return;
 
+    // One catalog fetch per sync serves passthrough detection and model
+    // filtering.
+    const providers = await this.fetchProviders(gatewayRoot);
+    this.passthroughProviderIds = new Set(
+      providers.filter((p) => p.requires_client_auth).map((p) => p.id),
+    );
+
     const filterableIds = new Set(
       config.proxy.upstreamProviders
         .filter((p) => p.keepGatewayModelsOnly)
         .map((p) => p.id),
     );
-    let gatewayModelIds: ReadonlyMap<string, ReadonlySet<string>> | undefined;
-    if (filterableIds.size > 0) {
-      try {
-        const providers = await new ApertureClient(gatewayRoot).providers();
-        gatewayModelIds = new Map(
-          providers.map((provider) => [provider.id, new Set(provider.models)]),
-        );
-      } catch {
-        // Best effort: nothing gets filtered when the catalog is unreachable.
-        gatewayModelIds = undefined;
-      }
-    }
+    const gatewayModelIds = new Map(
+      providers.map((p) => [p.id, new Set(p.models)]),
+    );
 
     const allModels = deps.getModels();
     const providerIds = config.proxy.upstreamProviders
@@ -118,15 +120,15 @@ export class ApertureRuntime {
         this.firstSeenProviders.set(providerName, native);
       }
       const servedIds = filterableIds.has(providerName)
-        ? gatewayModelIds?.get(providerName)
+        ? gatewayModelIds.get(providerName)
         : undefined;
       if (
         servedIds !== undefined &&
         !firstSeen.getModels().some((model) => servedIds.has(model.id))
       )
         continue;
-      const baseAuth = native.auth?.apiKey;
-      const baseResolve = baseAuth?.resolve;
+      const baseAuth = firstSeen.auth?.apiKey;
+      const isPassthrough = this.passthroughProviderIds.has(providerName);
       const wrapped: Provider = {
         ...native,
         id: providerName,
@@ -154,32 +156,40 @@ export class ApertureRuntime {
             context,
             options,
           ),
-        // Override resolve so the gateway-bound request always carries a
-        // non-empty apiKey. openai-completions throws "No API key for provider"
-        // on an empty/absent key, and these providers resolve to "" when no
-        // local key is configured (anonymous mode). The gateway ignores the
-        // client Bearer token and injects its own auth, so a placeholder is
-        // safe.
+        // Override/none providers: the gateway injects the upstream credential,
+        // so a placeholder key keeps them surfaced in the model picker.
+        // Passthrough providers keep native auth so the client sends a real
+        // credential the gateway forwards.
         auth:
-          native.auth && baseAuth && baseResolve
+          firstSeen.auth && baseAuth && !isPassthrough
             ? {
-                ...native.auth,
+                ...firstSeen.auth,
                 apiKey: {
                   ...baseAuth,
-                  resolve: async (input: Parameters<typeof baseResolve>[0]) => {
-                    const result = await baseResolve(input);
-                    if (!result) return result;
-                    return {
-                      ...result,
-                      auth: { ...result.auth, apiKey: "-" },
-                      source: "aperture proxy",
-                    };
-                  },
+                  check: async () => ({
+                    type: "api_key",
+                    source: "aperture proxy",
+                  }),
+                  resolve: async () => ({
+                    auth: { apiKey: "-" },
+                    source: "aperture proxy",
+                  }),
                 },
               }
-            : native.auth,
+            : firstSeen.auth,
       };
       deps.registerNativeProvider(wrapped);
+    }
+  }
+
+  /** Fetch the gateway catalog, failing open to an empty list. */
+  private async fetchProviders(
+    gatewayRoot: string,
+  ): Promise<ApertureProvider[]> {
+    try {
+      return await new ApertureClient(gatewayRoot).providers();
+    } catch {
+      return [];
     }
   }
 
@@ -200,16 +210,9 @@ export class ApertureRuntime {
 
     let gatewayProviders = providers;
     if (!gatewayProviders) {
-      // Gateway availability is transient. This is a best-effort, warning-only
-      // check, so a network failure or gateway timeout must never propagate
-      // (the caller fires-and-forgets this promise) and crash Pi.
-      try {
-        gatewayProviders = await new ApertureClient(
-          gatewayUrl as string,
-        ).providers();
-      } catch {
-        return;
-      }
+      // Best-effort, warning-only: a gateway failure must never propagate (the
+      // caller fires-and-forgets this promise) and crash Pi.
+      gatewayProviders = await this.fetchProviders(gatewayUrl as string);
     }
     if (gatewayProviders.length === 0) return;
 
