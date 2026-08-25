@@ -21,4 +21,5 @@ export type {
   PinnedConnectorTool,
   ProxiedProviderConfig,
   ResolvedConfig,
+  RoutableApi,
 } from "./types";

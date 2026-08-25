@@ -1,10 +1,39 @@
+import type { KnownApi } from "@earendil-works/pi-ai";
+
+/**
+ * Pi APIs derivable from a gateway provider's compatibility map. Extracted
+ * from pi-ai's `KnownApi`: the JSON schema needs a closed union (the open
+ * `Api` type would degrade to a plain string), and the remaining KnownApi
+ * members can never come from a compatibility map.
+ */
+export type RoutableApi = Extract<
+  KnownApi,
+  | "openai-completions"
+  | "anthropic-messages"
+  | "openai-responses"
+  | "google-generative-ai"
+  | "google-vertex"
+  | "bedrock-converse-stream"
+>;
+
 export interface ProxiedProviderConfig {
   /** Aperture provider id (matches `/api/providers` response). */
   id: string;
+  /**
+   * Proxy this provider through Aperture (default true). Set false to
+   * keep per-provider settings without proxying the provider.
+   */
+  enabled?: boolean;
   /** Warn when configured local models are missing from the Aperture gateway. */
   shouldCheckGatewayModels?: boolean;
   /** Only register models the gateway actually serves for this provider. */
   keepGatewayModelsOnly?: boolean;
+  /**
+   * Route this provider's models through a specific Pi API instead of the
+   * auto-detected one. Validated against the gateway compatibility map on
+   * every sync; falls back to auto with a warning when not served.
+   */
+  api?: RoutableApi;
 }
 
 export interface DedicatedProviderConfig {
@@ -14,6 +43,13 @@ export interface DedicatedProviderConfig {
   name?: string;
   /** Include this provider's models in the dedicated provider. */
   enabled: boolean;
+  /**
+   * Route this provider's models through a specific Pi API instead of the
+   * one auto-picked from the compatibility map. Validated on every catalog
+   * refresh; falls back to auto with a warning when not served. Part of the
+   * catalog key, so cached catalogs under a different api are never replayed.
+   */
+  api?: RoutableApi;
 }
 
 /**
@@ -112,7 +148,10 @@ export interface ResolvedConfig {
   };
   proxy: {
     enabled: boolean;
-    upstreamProviders: Required<ProxiedProviderConfig>[];
+    upstreamProviders: (Required<
+      Omit<ProxiedProviderConfig, "api" | "enabled">
+    > &
+      Pick<ProxiedProviderConfig, "api" | "enabled">)[];
   };
   dedicated: {
     enabled: boolean;
