@@ -81,6 +81,7 @@ Configuration is saved globally to `~/.pi/agent/extensions/aperture.json`. The s
     "enabled": true,
     "providers": [
       { "id": "anthropic", "name": "Anthropic", "enabled": true },
+      { "id": "openrouter", "name": "OpenRouter", "enabled": true, "api": "anthropic-messages" },
       { "id": "google", "name": "Google", "enabled": false }
     ]
   },
@@ -97,6 +98,7 @@ Configuration is saved globally to `~/.pi/agent/extensions/aperture.json`. The s
 Notes:
 
 - `keepGatewayModelsOnly` (per provider, default `false`) hides that provider's local models the gateway doesn't serve instead of letting them fail at request time. Also editable per provider from the Proxy tab in `/aperture:settings`.
+- `api` (per provider, unset by default) routes that provider's models through a specific Pi API (`openai-completions`, `anthropic-messages`, `openai-responses`, `google-generative-ai`, `google-vertex`, `bedrock-converse-stream`) instead of the one auto-picked from the gateway's compatibility map. Useful for providers Aperture serves through more than one API. Only values the provider reports as supported are offered in `/aperture:settings`; an override the gateway stops serving falls back to auto with a warning.
 - An empty `dedicated.providers` list means all gateway providers are included.
 - Model metadata belongs in `~/.pi/agent/models.json`, not in the extension config.
 - Requests include `Referer` and `x-session-id` (the live Pi session id, injected per-request via the `before_provider_headers` hook) for grouping requests in the Aperture dashboard.
