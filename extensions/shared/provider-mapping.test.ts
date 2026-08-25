@@ -1,7 +1,7 @@
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { describe, expect, test } from "vitest";
 import type { ApertureProvider } from "../../src/api/types";
-import { mapProxyProviders } from "./provider-mapping";
+import { mapDedicatedProviders, mapProxyProviders } from "./provider-mapping";
 
 function localModel(
   provider: string,
@@ -87,5 +87,62 @@ describe("mapProxyProviders", () => {
     ]);
 
     expect(result[0].shouldCheckGatewayModels).toBe(false);
+  });
+
+  test("preserves an existing api override", () => {
+    const localModels = [localModel("openrouter", "https://openrouter.ai")];
+    const gatewayProviders = [gatewayProvider("openrouter")];
+
+    const result = mapProxyProviders(localModels, gatewayProviders, [
+      {
+        id: "openrouter",
+        shouldCheckGatewayModels: false,
+        api: "anthropic-messages",
+      },
+    ]);
+
+    expect(result[0].api).toBe("anthropic-messages");
+  });
+
+  test("existing entries are enabled unless configured with enabled: false", () => {
+    const localModels = [
+      localModel("anthropic", "https://api.anthropic.com"),
+      localModel("openai", "https://api.openai.com"),
+      localModel("groq", "https://api.groq.com"),
+    ];
+    const gatewayProviders = [
+      gatewayProvider("anthropic"),
+      gatewayProvider("openai"),
+      gatewayProvider("groq"),
+    ];
+
+    const result = mapProxyProviders(localModels, gatewayProviders, [
+      { id: "anthropic", shouldCheckGatewayModels: false },
+      {
+        id: "openai",
+        enabled: false,
+        shouldCheckGatewayModels: false,
+        api: "openai-responses",
+      },
+    ]);
+
+    expect(Object.fromEntries(result.map((p) => [p.id, p.enabled]))).toEqual({
+      anthropic: true,
+      openai: false,
+      groq: false,
+    });
+    // The disabled provider's other settings survive the round-trip.
+    expect(result.find((p) => p.id === "openai")?.api).toBe("openai-responses");
+  });
+});
+
+describe("mapDedicatedProviders", () => {
+  test("preserves an existing api override", () => {
+    const result = mapDedicatedProviders(
+      [gatewayProvider("openrouter")],
+      [{ id: "openrouter", enabled: true, api: "openai-responses" }],
+    );
+
+    expect(result[0].api).toBe("openai-responses");
   });
 });

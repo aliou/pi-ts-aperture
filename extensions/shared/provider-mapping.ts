@@ -38,13 +38,18 @@ export function mapProxyProviders(
     }, new Set<string>()),
   )
     .sort((a, b) => a.localeCompare(b))
-    .map((id) => ({
-      id,
-      name: names.get(id),
-      shouldCheckGatewayModels:
-        existing.get(id)?.shouldCheckGatewayModels ?? true,
-      keepGatewayModelsOnly: existing.get(id)?.keepGatewayModelsOnly ?? false,
-    }));
+    .map((id) => {
+      const existingEntry = existing.get(id);
+      return {
+        id,
+        name: names.get(id),
+        enabled: existingEntry?.enabled ?? existingEntry !== undefined,
+        shouldCheckGatewayModels:
+          existingEntry?.shouldCheckGatewayModels ?? true,
+        keepGatewayModelsOnly: existingEntry?.keepGatewayModelsOnly ?? false,
+        api: existingEntry?.api,
+      };
+    });
 }
 
 export function mapDedicatedProviders(
@@ -59,5 +64,6 @@ export function mapDedicatedProviders(
     id: provider.id,
     name: provider.name,
     enabled: existing.get(provider.id)?.enabled ?? true,
+    api: existing.get(provider.id)?.api,
   }));
 }

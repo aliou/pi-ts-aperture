@@ -14,9 +14,11 @@ import type {
 import { mapDedicatedProviders } from "../../shared/provider-mapping";
 import { AsyncEditor } from "./async-editor";
 import {
+  apiSelectionField,
   boolLabel,
   GLOBAL_SCOPE,
   getTabConfig,
+  providerSummary,
   SETTINGS_CONTENT_HEIGHT,
 } from "./shared";
 
@@ -25,7 +27,9 @@ import {
  *
  * Hosts the dedicated-enable toggle and the providers submenu, which
  * filters which Aperture gateway providers contribute models to the
- * standalone `aperture` provider.
+ * standalone `aperture` provider. The submenu lists one row per provider
+ * with its enabled state; each row opens a per-provider submenu holding the
+ * include toggle and the API override.
  */
 export function buildDedicatedTab(): ExtraSettingsTab<
   ApertureConfig,
@@ -58,7 +62,7 @@ export function buildDedicatedTab(): ExtraSettingsTab<
               id: "dedicated.providers",
               label: "Aperture providers",
               description:
-                "Gateway providers included in the aperture provider",
+                "Choose which gateway providers contribute to the aperture provider, with per-provider routing options",
               currentValue:
                 dedicatedProviders.length > 0
                   ? `${dedicatedProviders.filter((p) => p.enabled).length}/${dedicatedProviders.length} enabled`
@@ -77,40 +81,69 @@ export function buildDedicatedTab(): ExtraSettingsTab<
                     const gatewayProviders = await new ApertureClient(
                       baseUrl,
                     ).providers(signal);
+                    const compatibilityById = new Map(
+                      gatewayProviders.map((gp) => [gp.id, gp.compatibility]),
+                    );
                     const providers: DedicatedProviderConfig[] =
                       mapDedicatedProviders(
                         gatewayProviders,
                         dedicatedProviders,
                       );
-                    {
+                    const persistProviders = () => {
                       const updated = structuredClone(draft) as ApertureConfig;
                       updated.dedicated = {
                         ...updated.dedicated,
                         providers,
                       };
                       setDraftForScope(GLOBAL_SCOPE, updated);
-                    }
+                    };
+                    persistProviders();
                     const fields: SettingsDetailField[] = providers.map(
-                      (p: DedicatedProviderConfig, i: number) => ({
-                        type: "boolean" as const,
-                        id: `dedicated.provider.${p.id}.enabled`,
-                        label: p.name ?? p.id,
-                        getValue: () => p.enabled,
-                        setValue: (value: boolean) => {
-                          const provider = providers[i];
-                          if (provider) provider.enabled = value;
-                          const updated = structuredClone(
-                            draft,
-                          ) as ApertureConfig;
-                          updated.dedicated = {
-                            ...updated.dedicated,
-                            providers,
-                          };
-                          setDraftForScope(GLOBAL_SCOPE, updated);
-                        },
-                        trueLabel: "enabled",
-                        falseLabel: "disabled",
-                      }),
+                      (p: DedicatedProviderConfig) => {
+                        const apiField = apiSelectionField({
+                          id: `dedicated.provider.${p.id}.api`,
+                          compatibility: compatibilityById.get(p.id),
+                          getValue: () => p.api,
+                          setValue: (value) => {
+                            p.api = value;
+                            persistProviders();
+                          },
+                        });
+                        return {
+                          type: "submenu" as const,
+                          id: `dedicated.provider.${p.id}`,
+                          label: p.name ?? p.id,
+                          description: `Dedicated toggle and routing for ${p.name ?? p.id}`,
+                          getValue: () => providerSummary(p.enabled, p.api),
+                          submenu: (providerDone, providerCtx) =>
+                            new SettingsDetailEditor({
+                              title: () =>
+                                `${p.name ?? p.id} (${p.enabled ? "enabled" : "disabled"})`,
+                              fields: [
+                                {
+                                  type: "boolean" as const,
+                                  id: `dedicated.provider.${p.id}.enabled`,
+                                  label: "Include provider",
+                                  description:
+                                    "Include this provider's models in the aperture provider",
+                                  getValue: () => p.enabled,
+                                  setValue: (value: boolean) => {
+                                    p.enabled = value;
+                                    persistProviders();
+                                  },
+                                  trueLabel: "enabled",
+                                  falseLabel: "disabled",
+                                },
+                                ...(apiField ? [apiField] : []),
+                              ],
+                              theme: settingsTheme,
+                              requestRender: providerCtx.requestRender,
+                              hideHint: providerCtx.hideHint,
+                              contentHeight: SETTINGS_CONTENT_HEIGHT,
+                              onDone: () => providerDone(),
+                            }),
+                        };
+                      },
                     );
                     return new SettingsDetailEditor({
                       title: () =>

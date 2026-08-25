@@ -1,8 +1,18 @@
-import type { ExtraSettingsTabContext, Scope } from "@aliou/pi-utils-settings";
+import type {
+  ExtraSettingsTabContext,
+  Scope,
+  SettingsDetailField,
+} from "@aliou/pi-utils-settings";
+import type { ProviderCompatibility } from "../../../src/api/types";
 import { createMcpSession, type McpTool } from "../../../src/mcp-client";
+import {
+  getApiForCompatibility,
+  getSelectableApis,
+} from "../../shared/api-selection";
 import type {
   ApertureConfig,
   ResolvedConfig,
+  RoutableApi,
 } from "../../shared/config/loader";
 
 /**
@@ -30,6 +40,40 @@ export const SETTINGS_CONTENT_HEIGHT = 20;
 
 export function boolLabel(value: boolean): string {
   return value ? "enabled" : "disabled";
+}
+
+/** Enum field for a provider's api override; auto shows the API it resolves to. Null when the gateway maps no API. */
+export function apiSelectionField(options: {
+  id: string;
+  compatibility: ProviderCompatibility | undefined;
+  getValue: () => RoutableApi | undefined;
+  setValue: (value: RoutableApi | undefined) => void;
+}): SettingsDetailField | null {
+  const selectableApis = getSelectableApis(options.compatibility);
+  if (selectableApis.length === 0) return null;
+  const resolved = getApiForCompatibility(options.compatibility);
+  const autoOption = `auto (${resolved})`;
+  return {
+    type: "enum",
+    id: options.id,
+    label: "API",
+    description: `Pi API this provider's models route through. Auto picks ${resolved} from the gateway's compatibility map.`,
+    options: [autoOption, ...selectableApis],
+    getValue: () => options.getValue() ?? autoOption,
+    setValue: (value) =>
+      options.setValue(
+        value === autoOption ? undefined : (value as RoutableApi),
+      ),
+  };
+}
+
+/** Row summary for a provider entry, e.g. `enabled · anthropic-messages`. */
+export function providerSummary(
+  enabled: boolean,
+  api: RoutableApi | undefined,
+): string {
+  if (!enabled) return "disabled";
+  return api ? `enabled · ${api}` : "enabled";
 }
 
 /**

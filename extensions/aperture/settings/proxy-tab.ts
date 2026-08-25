@@ -14,9 +14,11 @@ import type {
 import { mapProxyProviders } from "../../shared/provider-mapping";
 import { AsyncEditor } from "./async-editor";
 import {
+  apiSelectionField,
   boolLabel,
   GLOBAL_SCOPE,
   getTabConfig,
+  providerSummary,
   SETTINGS_CONTENT_HEIGHT,
 } from "./shared";
 
@@ -27,8 +29,8 @@ import {
  * fetches Aperture gateway providers and lets the user toggle which Pi
  * providers get rerouted through Aperture. The submenu lists one row per
  * provider with its enabled state; each row opens a per-provider submenu
- * holding the proxy toggle and the gateway options (model check, gateway
- * models only).
+ * holding the proxy toggle, the gateway options (model check, gateway models
+ * only), and the API override.
  */
 export function buildProxyTab(
   getKnownModels: () => Model<Api>[],
@@ -80,33 +82,69 @@ export function buildProxyTab(
                     // providers, so we match local Pi providers exclusively
                     // against it. No /aperture/config fetch is needed here.
                     const gatewayProviders = await client.providers(signal);
+                    const compatibilityById = new Map(
+                      gatewayProviders.map((gp) => [gp.id, gp.compatibility]),
+                    );
                     const providers = mapProxyProviders(
                       getKnownModels(),
                       gatewayProviders,
                       upstreamProviders,
                     );
                     const enabled = new Set(
-                      upstreamProviders.map((provider) => provider.id),
+                      providers
+                        .filter((provider) => provider.enabled)
+                        .map((provider) => provider.id),
                     );
+                    // Enabled rows are persisted; a disabled row is too, with
+                    // enabled: false, when it was already configured or
+                    // carries an api override — otherwise its settings would
+                    // be silently dropped on save.
                     const persistProviders = () => {
                       const updated = structuredClone(draft) as ApertureConfig;
                       updated.proxy = {
                         ...updated.proxy,
-                        upstreamProviders: providers.filter((provider) =>
-                          enabled.has(provider.id),
-                        ),
+                        upstreamProviders: providers
+                          .filter(
+                            (provider) =>
+                              enabled.has(provider.id) ||
+                              upstreamProviders.some(
+                                (p) => p.id === provider.id,
+                              ) ||
+                              provider.api !== undefined,
+                          )
+                          .map((provider) => ({
+                            id: provider.id,
+                            name: provider.name,
+                            ...(enabled.has(provider.id)
+                              ? {}
+                              : { enabled: false }),
+                            shouldCheckGatewayModels:
+                              provider.shouldCheckGatewayModels,
+                            keepGatewayModelsOnly:
+                              provider.keepGatewayModelsOnly,
+                            api: provider.api,
+                          })),
                       };
                       setDraftForScope(GLOBAL_SCOPE, updated);
                     };
                     persistProviders();
-                    const fields: SettingsDetailField[] = providers.map(
-                      (p) => ({
+                    const fields: SettingsDetailField[] = providers.map((p) => {
+                      const apiField = apiSelectionField({
+                        id: `provider.${p.id}.api`,
+                        compatibility: compatibilityById.get(p.id),
+                        getValue: () => p.api,
+                        setValue: (value) => {
+                          p.api = value;
+                          persistProviders();
+                        },
+                      });
+                      return {
                         type: "submenu" as const,
                         id: `provider.${p.id}`,
                         label: p.name ?? p.id,
                         description: `Proxy toggle and gateway options for ${p.name ?? p.id}`,
                         getValue: () =>
-                          enabled.has(p.id) ? "enabled" : "disabled",
+                          providerSummary(enabled.has(p.id), p.api),
                         submenu: (providerDone, providerCtx) =>
                           new SettingsDetailEditor({
                             title: () =>
@@ -155,6 +193,7 @@ export function buildProxyTab(
                                 trueLabel: "on",
                                 falseLabel: "off",
                               },
+                              ...(apiField ? [apiField] : []),
                             ],
                             theme: settingsTheme,
                             requestRender: providerCtx.requestRender,
@@ -162,8 +201,8 @@ export function buildProxyTab(
                             contentHeight: SETTINGS_CONTENT_HEIGHT,
                             onDone: () => providerDone(),
                           }),
-                      }),
-                    );
+                      };
+                    });
                     return new SettingsDetailEditor({
                       title: () =>
                         `Upstream Providers (${enabled.size}/${providers.length})`,
