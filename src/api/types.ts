@@ -69,6 +69,9 @@ export const ApertureProviderSchema = Type.Object(
     description: Type.String({ default: "" }),
     models: Type.Array(Type.String(), { default: [] }),
     compatibility: ProviderCompatibilitySchema,
+    // Set by `auth_mode: "passthrough"` providers: the gateway forwards the
+    // client's own credential, so the client must send a real one.
+    requires_client_auth: Type.Optional(Type.Boolean()),
     // Populated from `/v1/models` so dedicated mode can attach pricing to
     // model configs. Not present on the raw `/api/providers` response.
     modelInfoById: Type.Optional(
