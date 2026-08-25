@@ -66,7 +66,8 @@ export default async function (pi: ExtensionAPI): Promise<void> {
   registerDedicatedProvider(pi, getRegistryModels);
   let lastProxyProviders = configLoader
     .getConfig()
-    .proxy.upstreamProviders.map((p) => p.id);
+    .proxy.upstreamProviders.filter((p) => p.enabled !== false)
+    .map((p) => p.id);
 
   const loadedFeatures = new Set<string>();
 

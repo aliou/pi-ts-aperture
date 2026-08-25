@@ -2,6 +2,7 @@ import { ApertureClient } from "../../../src/api/client";
 import type { ApertureProvider } from "../../../src/api/types";
 import { getBaseUrlForApi } from "../../../src/base-url-routing";
 import { resolveGatewayUrl, resolveProviderBaseUrl } from "../../../src/url";
+import { isSelectableApi } from "../../shared/api-selection";
 import { configLoader } from "../../shared/config/loader";
 import type { ResolvedConfig } from "../../shared/config/types";
 import type {
@@ -42,7 +43,10 @@ export class ApertureRuntime {
   async sync(deps: SyncDeps): Promise<void> {
     const config = configLoader.getConfig();
     if (!config.proxy.enabled) return;
-    if (!config.baseUrl || config.proxy.upstreamProviders.length === 0) return;
+    const upstreamProviders = config.proxy.upstreamProviders.filter(
+      (p) => p.enabled !== false,
+    );
+    if (!config.baseUrl || upstreamProviders.length === 0) return;
 
     const gatewayRoot = resolveGatewayUrl(config);
     const baseUrl = resolveProviderBaseUrl(config);
@@ -56,16 +60,18 @@ export class ApertureRuntime {
     );
 
     const filterableIds = new Set(
-      config.proxy.upstreamProviders
-        .filter((p) => p.keepGatewayModelsOnly)
-        .map((p) => p.id),
+      upstreamProviders.filter((p) => p.keepGatewayModelsOnly).map((p) => p.id),
     );
+    const configByProvider = new Map(upstreamProviders.map((p) => [p.id, p]));
     const gatewayModelIds = new Map(
       providers.map((p) => [p.id, new Set(p.models)]),
     );
+    const compatibilityByProvider = new Map(
+      providers.map((p) => [p.id, p.compatibility]),
+    );
 
     const allModels = deps.getModels();
-    const providerIds = config.proxy.upstreamProviders
+    const providerIds = upstreamProviders
       .map((p) => p.id)
       .filter((id) => id !== "aperture");
 
@@ -76,7 +82,6 @@ export class ApertureRuntime {
       if (providerModels.length === 0) continue;
 
       const sourceModel = providerModels[0];
-      const api = sourceModel.api ?? "openai-completions";
 
       // If the live model URL is already the gateway itself, the upstream
       // shape was overwritten by a prior sync; reuse the cached upstream URL
@@ -90,13 +95,6 @@ export class ApertureRuntime {
       if (!isAlreadyGateway && upstreamBaseUrl) {
         this.upstreamBaseUrls.set(providerName, upstreamBaseUrl);
       }
-
-      const providerBaseUrl = getBaseUrlForApi(
-        api,
-        gatewayRoot,
-        baseUrl,
-        upstreamBaseUrl,
-      );
 
       // Referer and x-session-id are injected per-request via the
       // `before_provider_headers` hook registered in the extension entry
@@ -119,6 +117,33 @@ export class ApertureRuntime {
         firstSeen = native;
         this.firstSeenProviders.set(providerName, native);
       }
+
+      const sourceApi =
+        firstSeen.getModels()[0]?.api ??
+        sourceModel.api ??
+        "openai-completions";
+      const override = configByProvider.get(providerName)?.api;
+      const compatibility = compatibilityByProvider.get(providerName);
+      let apiOverride: Api | undefined;
+      if (override && compatibility !== undefined) {
+        if (isSelectableApi(override, compatibility)) {
+          apiOverride = override;
+        } else {
+          deps.notify?.(
+            `[aperture] api override "${override}" for proxied provider ${providerName} is not served by the gateway; falling back to the provider's own api (${sourceApi}).`,
+            "warning",
+          );
+        }
+      }
+      const api = apiOverride ?? sourceApi;
+
+      const providerBaseUrl = getBaseUrlForApi(
+        api,
+        gatewayRoot,
+        baseUrl,
+        upstreamBaseUrl,
+      );
+
       const servedIds = filterableIds.has(providerName)
         ? gatewayModelIds.get(providerName)
         : undefined;
@@ -138,6 +163,7 @@ export class ApertureRuntime {
             : firstSeen.getModels().filter((model) => servedIds.has(model.id))
           ).map((model) => ({
             ...model,
+            ...(apiOverride ? { api: apiOverride } : {}),
             baseUrl: providerBaseUrl,
           })),
         // Delegate through `firstSeen`, not `native`: from the second sync
@@ -201,6 +227,7 @@ export class ApertureRuntime {
     if (!config.proxy.enabled) return;
 
     const checkedProviderIds = config.proxy.upstreamProviders
+      .filter((p) => p.enabled !== false)
       .filter((p) => p.shouldCheckGatewayModels)
       .map((p) => p.id);
     if (checkedProviderIds.length === 0) return;
@@ -285,7 +312,9 @@ export class ApertureRuntime {
     if (!config.proxy.enabled) {
       return { next: lastProxyProviders, unregister: [] };
     }
-    const next = config.proxy.upstreamProviders.map((p) => p.id);
+    const next = config.proxy.upstreamProviders
+      .filter((p) => p.enabled !== false)
+      .map((p) => p.id);
     return {
       next,
       unregister: this.getProvidersToUnregister(lastProxyProviders, next),

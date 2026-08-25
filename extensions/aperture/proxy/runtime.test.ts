@@ -75,6 +75,7 @@ function proxyConfig(
     id: string;
     shouldCheckGatewayModels: boolean;
     keepGatewayModelsOnly?: boolean;
+    api?: string;
   }[],
 ) {
   return {
@@ -562,7 +563,7 @@ describe("ApertureRuntime.resolveProxyProviderSync", () => {
 
   function config(
     enabled: boolean,
-    upstreamProviders: string[],
+    upstreamProviders: (string | { id: string; enabled: boolean })[],
   ): ResolvedConfig {
     return {
       baseUrl: "http://gateway.test",
@@ -570,9 +571,9 @@ describe("ApertureRuntime.resolveProxyProviderSync", () => {
       onboarding: { enabled: false },
       proxy: {
         enabled,
-        upstreamProviders: upstreamProviders.map((id) => ({
-          id,
+        upstreamProviders: upstreamProviders.map((p) => ({
           shouldCheckGatewayModels: false,
+          ...(typeof p === "string" ? { id: p } : p),
         })),
       },
       dedicated: { enabled: false, providers: [] },
@@ -598,6 +599,16 @@ describe("ApertureRuntime.resolveProxyProviderSync", () => {
 
     expect(result.next).toEqual(["openai", "openrouter"]);
     expect(result.unregister).toEqual([]);
+  });
+
+  test("unregisters providers configured with enabled: false", () => {
+    const result = runtime.resolveProxyProviderSync(
+      config(true, ["openai", { id: "anthropic", enabled: false }]),
+      ["openai", "anthropic"],
+    );
+
+    expect(result.next).toEqual(["openai"]);
+    expect(result.unregister).toEqual(["anthropic"]);
   });
 
   test("does not unregister providers when proxy is disabled, even if they remain configured", () => {
@@ -779,6 +790,163 @@ describe("ApertureRuntime.sync gateway model filtering", () => {
     expect(
       lastRegisteredModels(registerNativeProvider, "openai").map((m) => m.id),
     ).toEqual(["gpt-5.5", "gpt-4o"]);
+  });
+});
+
+describe("ApertureRuntime.sync api overrides", () => {
+  function mockGatewayCompatibility(
+    list: { id: string; compatibility: Record<string, boolean> }[],
+  ) {
+    vi.mocked(ApertureClient).mockImplementation(function (this: {
+      providers: ReturnType<typeof vi.fn>;
+    }) {
+      this.providers = vi.fn().mockResolvedValue(
+        list.map((gp) => ({
+          id: gp.id,
+          name: gp.id,
+          models: ["m-1"],
+          compatibility: gp.compatibility,
+        })),
+      );
+      return this;
+    } as unknown as typeof ApertureClient);
+  }
+
+  function lastRegistered(
+    mock: ReturnType<typeof vi.fn>,
+    providerId: string,
+  ): Model<Api>[] {
+    const call = mock.mock.calls
+      .filter(([p]: unknown[]) => (p as { id?: string }).id === providerId)
+      .at(-1);
+    return (
+      (call?.[0] as { getModels?: () => Model<Api>[] })?.getModels?.() ?? []
+    );
+  }
+
+  const neuralwattModels = () => [
+    model(
+      "neuralwatt",
+      "kimi-k3",
+      "openai-completions",
+      "https://api.neuralwatt.com/v1",
+    ),
+  ];
+
+  beforeEach(() => {
+    getConfig.mockReturnValue(
+      proxyConfig([
+        {
+          id: "neuralwatt",
+          shouldCheckGatewayModels: false,
+          api: "anthropic-messages",
+        },
+      ]),
+    );
+    mockGatewayCompatibility([
+      {
+        id: "neuralwatt",
+        compatibility: { openai_chat: true, anthropic_messages: true },
+      },
+    ]);
+  });
+
+  test("the override wins over the provider's own api and drives the base url", async () => {
+    const { deps, registerNativeProvider } = syncDeps(neuralwattModels);
+
+    await new ApertureRuntime().sync(deps);
+
+    const models = lastRegistered(registerNativeProvider, "neuralwatt");
+    expect(models[0]?.api).toBe("anthropic-messages");
+    expect(models[0]?.baseUrl).toBe("http://gateway.test");
+  });
+
+  test("an unserved override warns and falls back to the provider's api", async () => {
+    mockGatewayCompatibility([
+      { id: "neuralwatt", compatibility: { openai_chat: true } },
+    ]);
+    const notify = vi.fn();
+    const { deps, registerNativeProvider } = syncDeps(neuralwattModels);
+
+    await new ApertureRuntime().sync({ ...deps, notify });
+
+    const models = lastRegistered(registerNativeProvider, "neuralwatt");
+    expect(models[0]?.api).toBe("openai-completions");
+    expect(models[0]?.baseUrl).toBe("http://gateway.test/v1");
+    expect(notify).toHaveBeenCalledOnce();
+    const message = notify.mock.calls[0][0];
+    expect(message).toContain("anthropic-messages");
+    expect(message).toContain("neuralwatt");
+    expect(message).toContain("provider's own api (openai-completions)");
+  });
+
+  test("removing the override restores the original api across re-syncs", async () => {
+    const { deps, registerNativeProvider } = syncDeps(neuralwattModels);
+    const runtime = new ApertureRuntime();
+
+    await runtime.sync(deps);
+    expect(lastRegistered(registerNativeProvider, "neuralwatt")[0]?.api).toBe(
+      "anthropic-messages",
+    );
+
+    getConfig.mockReturnValue(
+      proxyConfig([{ id: "neuralwatt", shouldCheckGatewayModels: false }]),
+    );
+    await runtime.sync({
+      ...deps,
+      getModels: () => [
+        model(
+          "neuralwatt",
+          "kimi-k3",
+          "anthropic-messages",
+          "http://gateway.test",
+        ),
+      ],
+    });
+
+    const models = lastRegistered(registerNativeProvider, "neuralwatt");
+    expect(models[0]?.api).toBe("openai-completions");
+    expect(models[0]?.baseUrl).toBe("http://gateway.test/v1");
+  });
+
+  test("overrides stay inert when the gateway catalog is unreachable", async () => {
+    vi.mocked(ApertureClient).mockImplementation(function (this: {
+      providers: ReturnType<typeof vi.fn>;
+    }) {
+      this.providers = vi.fn().mockRejectedValue(new Error("gateway down"));
+      return this;
+    } as unknown as typeof ApertureClient);
+    const notify = vi.fn();
+    const { deps, registerNativeProvider } = syncDeps(neuralwattModels);
+
+    await new ApertureRuntime().sync({ ...deps, notify });
+
+    const models = lastRegistered(registerNativeProvider, "neuralwatt");
+    expect(models[0]?.api).toBe("openai-completions");
+    expect(models[0]?.baseUrl).toBe("http://gateway.test/v1");
+    expect(notify).not.toHaveBeenCalled();
+  });
+
+  test("a provider with enabled: false is not proxied", async () => {
+    getConfig.mockReturnValue(
+      proxyConfig([
+        {
+          id: "neuralwatt",
+          enabled: false,
+          shouldCheckGatewayModels: false,
+          api: "anthropic-messages",
+        },
+      ]),
+    );
+    const { deps, registerNativeProvider } = syncDeps(neuralwattModels);
+
+    await new ApertureRuntime().sync(deps);
+
+    expect(
+      registerNativeProvider.mock.calls.some(
+        ([p]: unknown[]) => (p as { id?: string }).id === "neuralwatt",
+      ),
+    ).toBe(false);
   });
 });
 
