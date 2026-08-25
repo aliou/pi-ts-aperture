@@ -84,6 +84,10 @@
           "type": "string",
           "description": "Aperture provider id (matches `/api/providers` response)."
         },
+        "enabled": {
+          "type": "boolean",
+          "description": "Proxy this provider through Aperture (default true). Set false to keep per-provider settings without proxying the provider."
+        },
         "shouldCheckGatewayModels": {
           "type": "boolean",
           "description": "Warn when configured local models are missing from the Aperture gateway."
@@ -91,12 +95,28 @@
         "keepGatewayModelsOnly": {
           "type": "boolean",
           "description": "Only register models the gateway actually serves for this provider."
+        },
+        "api": {
+          "$ref": "#/definitions/RoutableApi",
+          "description": "Route this provider's models through a specific Pi API instead of the auto-detected one. Validated against the gateway compatibility map on every sync; falls back to auto with a warning when not served."
         }
       },
       "required": [
         "id"
       ],
       "additionalProperties": false
+    },
+    "RoutableApi": {
+      "type": "string",
+      "enum": [
+        "openai-completions",
+        "openai-responses",
+        "anthropic-messages",
+        "bedrock-converse-stream",
+        "google-generative-ai",
+        "google-vertex"
+      ],
+      "description": "Pi APIs derivable from a gateway provider's compatibility map. Extracted from pi-ai's `KnownApi`: the JSON schema needs a closed union (the open `Api` type would degrade to a plain string), and the remaining KnownApi members can never come from a compatibility map."
     },
     "DedicatedProviderConfig": {
       "type": "object",
@@ -112,6 +132,10 @@
         "enabled": {
           "type": "boolean",
           "description": "Include this provider's models in the dedicated provider."
+        },
+        "api": {
+          "$ref": "#/definitions/RoutableApi",
+          "description": "Route this provider's models through a specific Pi API instead of the one auto-picked from the compatibility map. Validated on every catalog refresh; falls back to auto with a warning when not served. Part of the catalog key, so cached catalogs under a different api are never replayed."
         }
       },
       "required": [
