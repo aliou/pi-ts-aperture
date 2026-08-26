@@ -1,5 +1,13 @@
 # @aliou/pi-ts-aperture
 
+## 0.14.0
+
+### Minor Changes
+
+- b163e5e: Add an optional per-provider `api` override for dedicated and proxy modes (`extensions/shared/config/types.ts`, editable per provider in `/aperture:settings`). A gateway provider that serves more than one compatibility surface (e.g. `openai_chat` + `anthropic_messages`) can now route its models through the chosen Pi API instead of the auto-selected one. Overrides are validated against the provider's compatibility map on every sync/refresh and fall back to auto with a warning when the gateway no longer serves them. Dedicated catalog cache keys now include the override, so catalogs built under a different API are never replayed. In `/aperture:settings`, the Dedicated tab's provider list now opens per-provider submenus (matching the Proxy tab) that hold the include toggle and the API selector.
+- 6062d22: Route requests with provider-qualified model ids (`provider/model-id`), which the gateway forwards verbatim, instead of relying on its bare-id resolution. Proxy mode rewrites the id at stream dispatch (the model picker still shows bare ids); dedicated mode prefixes ids when building the catalog and bumps the catalog cache key so stale bare-id snapshots are not restored.
+- 8437245: Restructure the Proxy tab's upstream-providers menu in `/aperture:settings`: the list now shows one row per provider with its enabled state, and each row opens a per-provider submenu holding the proxy toggle, the gateway model check, and the gateway-only model filter, instead of interleaving every provider's options in one flat list.
+
 ## 0.13.0
 
 ### Minor Changes
