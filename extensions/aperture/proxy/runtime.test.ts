@@ -33,27 +33,30 @@ function model(
 // on the wrapped provider's rewritten getModels() baseUrl.
 function syncDeps(models: () => Model<Api>[]) {
   const registerNativeProvider = vi.fn();
+  const registerProviderConfig = vi.fn();
   const store = new Map<string, { getModels: () => Model<Api>[] }>();
   const deps = {
-    getProvider: (id: string) => {
-      if (!store.has(id)) {
-        store.set(id, {
-          getModels: () => models().filter((m) => m.provider === id),
-        });
-      }
-      return store.get(id);
+    native: {
+      getProvider: (id: string) => {
+        if (!store.has(id)) {
+          store.set(id, {
+            getModels: () => models().filter((m) => m.provider === id),
+          });
+        }
+        return store.get(id);
+      },
+      registerNativeProvider: (p: {
+        id: string;
+        getModels: () => Model<Api>[];
+      }) => {
+        registerNativeProvider(p);
+        store.set(p.id, p);
+      },
     },
-    registerNativeProvider: (p: {
-      id: string;
-      getModels: () => Model<Api>[];
-    }) => {
-      registerNativeProvider(p);
-      store.set(p.id, p);
-    },
-    registerProviderConfig: vi.fn(),
+    registerProviderConfig,
     getModels: models,
   };
-  return { deps, registerNativeProvider };
+  return { deps, registerNativeProvider, registerProviderConfig };
 }
 
 function wrappedBaseUrl(
@@ -359,10 +362,13 @@ describe("ApertureRuntime.sync provider-qualified model ids", () => {
       streamSimple,
     };
     const registerNativeProvider = vi.fn();
+    const registerProviderConfig = vi.fn();
     const deps = {
-      getProvider: vi.fn().mockReturnValue(native),
-      registerNativeProvider,
-      registerProviderConfig: vi.fn(),
+      native: {
+        getProvider: vi.fn().mockReturnValue(native),
+        registerNativeProvider,
+      },
+      registerProviderConfig,
       getModels: () => [model("synthetic", "foo")],
     };
 
@@ -372,6 +378,10 @@ describe("ApertureRuntime.sync provider-qualified model ids", () => {
       registerNativeProvider.mock.calls[0] as [typeof native]
     )[0];
     const bareModel = model("synthetic", "foo");
+    // Branch exclusivity: a config registration on a native host deletes the
+    // extension-native provider entry, so requests would keep their baked
+    // upstream URL and bypass the gateway entirely.
+    expect(registerProviderConfig).not.toHaveBeenCalled();
     expect(wrapped.getModels().map((m) => m.id)).toEqual(["foo"]);
 
     const context = {} as never;
@@ -410,8 +420,10 @@ describe("ApertureRuntime.sync provider-qualified model ids", () => {
       streamSimple,
     });
     const deps = {
-      getProvider: (id: string) => store.get(id),
-      registerNativeProvider: (p: { id: string }) => void store.set(p.id, p),
+      native: {
+        getProvider: (id: string) => store.get(id),
+        registerNativeProvider: (p: { id: string }) => void store.set(p.id, p),
+      },
       registerProviderConfig: vi.fn(),
       getModels: () => [model("synthetic", "foo")],
     };
@@ -993,8 +1005,10 @@ describe("ApertureRuntime.sync passthrough auth", () => {
       Object.values(natives).flatMap((n) => n.getModels());
     return {
       deps: {
-        getProvider: (id: string) => natives[id],
-        registerNativeProvider,
+        native: {
+          getProvider: (id: string) => natives[id],
+          registerNativeProvider,
+        },
         registerProviderConfig: vi.fn(),
         getModels: allModels,
       },
@@ -1119,8 +1133,10 @@ describe("ApertureRuntime.sync passthrough auth", () => {
       current = p;
     });
     const deps = {
-      getProvider: () => current,
-      registerNativeProvider,
+      native: {
+        getProvider: () => current,
+        registerNativeProvider,
+      },
       registerProviderConfig: vi.fn(),
       getModels: () => native.getModels(),
     };
@@ -1214,16 +1230,19 @@ describe("ApertureRuntime.sync config-registration hosts", () => {
     } as unknown as typeof ApertureClient);
   }
 
-  /** SyncDeps without native provider access, as omp's registry exposes. */
+  /** SyncDeps without native provider access, as a config-only host exposes. */
   function configDeps(models: () => Model<Api>[]) {
     const registerProviderConfig = vi.fn();
+    const notify = vi.fn();
     return {
       deps: {
         registerProviderConfig,
         getModels: models,
         headers: { Referer: "https://pi.dev", "x-session-id": "s-1" },
+        notify,
       },
       registerProviderConfig,
+      notify,
     };
   }
 
@@ -1288,7 +1307,12 @@ describe("ApertureRuntime.sync config-registration hosts", () => {
     expect(config.models?.[0]?.api).toBe("anthropic-messages");
   });
 
-  test("omits the placeholder key for a passthrough provider", async () => {
+  // Regression: emitting a config with `models` and no `apiKey`/`oauth` is
+  // rejected by the host ('"apiKey" or "oauth" is required when defining
+  // models'), which threw out of sync() and took the session with it. A
+  // passthrough credential cannot be expressed in a provider config at all,
+  // so the provider is left un-proxied and the user is told.
+  test("skips a passthrough provider instead of emitting a keyless config", async () => {
     mockGateway([
       {
         id: "openai",
@@ -1296,12 +1320,50 @@ describe("ApertureRuntime.sync config-registration hosts", () => {
         requires_client_auth: true,
       },
     ]);
-    const { deps, registerProviderConfig } = configDeps(openAiModels);
+    const { deps, registerProviderConfig, notify } = configDeps(openAiModels);
 
     await new ApertureRuntime().sync(deps);
 
-    expect(lastConfig(registerProviderConfig, "openai")).not.toHaveProperty(
-      "apiKey",
+    expect(registerProviderConfig).not.toHaveBeenCalled();
+    expect(notify).toHaveBeenCalledWith(
+      expect.stringContaining("passthrough"),
+      "warning",
+    );
+  });
+
+  test("keeps registering later providers when one registration throws", async () => {
+    getConfig.mockReturnValue(
+      proxyConfig([
+        { id: "openai", shouldCheckGatewayModels: false },
+        { id: "groq", shouldCheckGatewayModels: false },
+      ]),
+    );
+    mockGateway([
+      { id: "openai", models: ["gpt-5.5"] },
+      { id: "groq", models: ["llama-4"] },
+    ]);
+    const { deps, registerProviderConfig, notify } = configDeps(() => [
+      ...openAiModels(),
+      model(
+        "groq",
+        "llama-4",
+        "openai-completions",
+        "https://api.groq.com/openai/v1",
+      ),
+    ]);
+    registerProviderConfig.mockImplementationOnce(() => {
+      throw new Error("host refused");
+    });
+
+    await new ApertureRuntime().sync(deps);
+
+    expect(registerProviderConfig.mock.calls.map(([name]) => name)).toEqual([
+      "openai",
+      "groq",
+    ]);
+    expect(notify).toHaveBeenCalledWith(
+      expect.stringContaining("host refused"),
+      "warning",
     );
   });
 
@@ -1329,9 +1391,14 @@ describe("ApertureRuntime.sync config-registration hosts", () => {
 
     await new ApertureRuntime().sync(deps);
 
-    expect(
-      lastConfig(registerProviderConfig, "openai").models?.map((m) => m.id),
-    ).toEqual(["gpt-5.5"]);
+    const { models } = lastConfig(registerProviderConfig, "openai");
+    expect(models?.map((m) => m.id)).toEqual(["gpt-5.5"]);
+    // Merge-by-id cannot delete the models left out, so the filter is only
+    // half-honoured here and must say so.
+    expect(deps.notify).toHaveBeenCalledWith(
+      expect.stringContaining("keepGatewayModelsOnly cannot hide models"),
+      "warning",
+    );
   });
 
   test("skips a provider whose every model is filtered out", async () => {
@@ -1372,5 +1439,127 @@ describe("ApertureRuntime.sync config-registration hosts", () => {
     const second = lastConfig(registerProviderConfig, "openai");
     expect(second.models?.map((m) => m.id)).toEqual(["gpt-5.5", "gpt-4o"]);
     expect(second.baseUrl).toBe(first.baseUrl);
+  });
+
+  // The config branch is the only place a model is hand-projected, so every
+  // field has to survive: a dropped contextWindow or cost silently breaks
+  // token budgeting, compaction and cost display on that host.
+  test("round-trips every projected model field", async () => {
+    mockGateway([{ id: "openai", models: ["gpt-5.5"] }]);
+    const source = {
+      provider: "openai",
+      id: "gpt-5.5",
+      name: "GPT-5.5",
+      api: "openai-responses",
+      baseUrl: "https://api.openai.com/v1",
+      reasoning: true,
+      thinkingLevelMap: { low: "low", medium: "medium", high: "high" },
+      input: ["text", "image"],
+      cost: { input: 1.25, output: 10, cacheRead: 0.125, cacheWrite: 0 },
+      contextWindow: 400_000,
+      maxTokens: 128_000,
+      headers: { "x-model": "1" },
+      compat: { noTemperature: true },
+    } as unknown as Model<Api>;
+    const { deps, registerProviderConfig } = configDeps(() => [source]);
+
+    await new ApertureRuntime().sync(deps);
+
+    const registered = lastConfig(registerProviderConfig, "openai").models?.[0];
+    expect(registered).toMatchObject({
+      id: "gpt-5.5",
+      name: "GPT-5.5",
+      reasoning: true,
+      thinkingLevelMap: source.thinkingLevelMap,
+      input: ["text", "image"],
+      cost: source.cost,
+      contextWindow: 400_000,
+      maxTokens: 128_000,
+      headers: { "x-model": "1" },
+      compat: source.compat,
+    });
+  });
+
+  // The native branch has the same test; without it the config branch could
+  // drop the upstream-URL inference and send Z.ai to `${gateway}/v1`, which
+  // doubles the version segment on every request.
+  test("routes a non-/v1 upstream to the gateway root", async () => {
+    getConfig.mockReturnValue(
+      proxyConfig([{ id: "zai", shouldCheckGatewayModels: false }]),
+    );
+    mockGateway([{ id: "zai", models: ["glm-4.5-air"] }]);
+    const { deps, registerProviderConfig } = configDeps(() => [
+      model(
+        "zai",
+        "glm-4.5-air",
+        "openai-completions",
+        "https://api.z.ai/api/coding/paas/v4",
+      ),
+    ]);
+
+    await new ApertureRuntime().sync(deps);
+
+    const config = lastConfig(registerProviderConfig, "zai");
+    expect(config.baseUrl).toBe("http://gateway.test");
+    expect(config.models?.[0]?.baseUrl).toBe("http://gateway.test");
+  });
+
+  test("applies a per-provider api override and its base url", async () => {
+    getConfig.mockReturnValue(
+      proxyConfig([
+        {
+          id: "openai",
+          shouldCheckGatewayModels: false,
+          api: "anthropic-messages",
+        },
+      ]),
+    );
+    mockGateway([
+      {
+        id: "openai",
+        models: ["gpt-5.5", "gpt-4o"],
+        compatibility: { anthropic_messages: true },
+      },
+    ]);
+    const { deps, registerProviderConfig } = configDeps(openAiModels);
+
+    await new ApertureRuntime().sync(deps);
+
+    const config = lastConfig(registerProviderConfig, "openai");
+    expect(config.models?.map((m) => m.api)).toEqual([
+      "anthropic-messages",
+      "anthropic-messages",
+    ]);
+    // Base URL and api must agree, or the request is mis-routed.
+    expect(config.baseUrl).toBe("http://gateway.test");
+    expect(
+      config.models?.every((m) => m.baseUrl === "http://gateway.test"),
+    ).toBe(true);
+  });
+
+  // A provider can span APIs; the native branch preserves each model's own
+  // `api`, so the config branch must not stamp the first model's onto all.
+  test("preserves each model's own api", async () => {
+    mockGateway([{ id: "openai", models: ["gpt-5.5", "gpt-3.5-turbo"] }]);
+    const { deps, registerProviderConfig } = configDeps(() => [
+      model(
+        "openai",
+        "gpt-5.5",
+        "openai-responses",
+        "https://api.openai.com/v1",
+      ),
+      model(
+        "openai",
+        "gpt-3.5-turbo",
+        "openai-completions",
+        "https://api.openai.com/v1",
+      ),
+    ]);
+
+    await new ApertureRuntime().sync(deps);
+
+    expect(
+      lastConfig(registerProviderConfig, "openai").models?.map((m) => m.api),
+    ).toEqual(["openai-responses", "openai-completions"]);
   });
 });

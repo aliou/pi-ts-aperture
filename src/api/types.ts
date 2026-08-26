@@ -18,7 +18,10 @@ export interface ProviderCompatibility {
   bedrock_model_invoke?: boolean;
   bedrock_converse?: boolean;
   experimental_gemini_cli_vertex_compat?: boolean;
-  [key: string]: unknown;
+  // No index signature: the deleted `Static<>` types were closed too, and an
+  // open one degenerates `keyof ProviderCompatibility` to `string`, silently
+  // voiding the flag-name guard in `extensions/shared/api-selection.ts`.
+  // Unknown keys still survive at runtime through the parser's spread.
 }
 
 const COMPATIBILITY_FLAGS = [
@@ -68,7 +71,6 @@ export interface ApertureProvider {
   requires_client_auth?: boolean;
   /** Populated from `/v1/models` by the client; never present on the raw `/api/providers` response. */
   modelInfoById?: Record<string, ApertureModelInfo>;
-  [key: string]: unknown;
 }
 
 export interface ConnectorInfo {
@@ -79,7 +81,6 @@ export interface ConnectorInfo {
   category: string;
   status: string;
   auth_type?: string;
-  [key: string]: unknown;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -111,8 +112,13 @@ export function parseApertureProvider(
   if (!id) return null;
   if (record.id !== undefined && typeof record.id !== "string") return null;
 
-  if (record.name !== undefined && typeof record.name !== "string") return null;
-  const name = typeof record.name === "string" ? record.name : id;
+  // `null` counts as absent here, matching the replaced `name: record.name ?? id`
+  // preprocessing: an unset optional string is `null` on the wire for most
+  // server languages, and rejecting the whole provider over it would drop it
+  // from the catalog silently.
+  const rawName = record.name ?? id;
+  if (typeof rawName !== "string") return null;
+  const name = rawName;
 
   const description = stringOrDefault(record.description);
   if (description === null) return null;

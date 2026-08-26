@@ -1,4 +1,4 @@
-import type { ModelsRefreshResult, Provider } from "@earendil-works/pi-ai";
+import type { Provider } from "@earendil-works/pi-ai";
 import type {
   ExtensionAPI,
   ExtensionContext,
@@ -21,11 +21,18 @@ import { ApertureRuntime } from "./proxy/runtime";
 import { registerApertureSettings } from "./settings";
 
 /**
- * Registry surface across hosts. pi forces a refresh with an options object;
- * hosts that cache dynamic catalogs per provider expose `refreshProvider`
- * instead, and have no `getProvider` because they have no native providers.
+ * Registry surface across hosts. pi refreshes every provider through one
+ * `refresh()`; hosts that cache dynamic catalogs per provider expose
+ * `refreshProvider(id, mode)`, the only call that bypasses that cache, and
+ * have no `getProvider` because they have no native providers. `getProvider`
+ * is re-declared optional so the capability check below is a real narrowing
+ * rather than an always-true test.
  */
-type HostModelRegistry = ExtensionContext["modelRegistry"] & {
+type HostModelRegistry = Omit<
+  ExtensionContext["modelRegistry"],
+  "getProvider"
+> & {
+  getProvider?: ExtensionContext["modelRegistry"]["getProvider"];
   refreshProvider?: (
     provider: string,
     mode?: "online" | "offline" | "online-if-uncached",
@@ -33,9 +40,29 @@ type HostModelRegistry = ExtensionContext["modelRegistry"] & {
 };
 
 /**
- * Provenance headers. pi also sets these per request from
- * `before_provider_headers`; hosts without that event get them baked into the
- * provider registrations that `onSync` refreshes on every session start.
+ * Pull this provider's refresh error out of whatever the host's refresh
+ * resolved to. pi resolves a `ModelsRefreshResult` whose `errors` is a `Map`;
+ * `refreshProvider` is another host's API with an unpinned shape, so accept a
+ * plain record too and stay quiet on anything else rather than throwing a
+ * client bug into the gateway's error channel.
+ */
+function refreshErrorFor(result: unknown, id: string): Error | undefined {
+  const errors = (result as { errors?: unknown } | undefined)?.errors;
+  if (errors instanceof Map) return errors.get(id) as Error | undefined;
+  if (errors && typeof errors === "object") {
+    const entry = (errors as Record<string, unknown>)[id];
+    if (!entry) return undefined;
+    return entry instanceof Error ? entry : new Error(String(entry));
+  }
+  return undefined;
+}
+
+/**
+ * Provenance headers. `x-session-id` cannot be baked in once at load time
+ * because it changes on `/fork`, `/new` and `/resume`; pi's per-request
+ * `before_provider_headers` hook means it never needs to be, and hosts
+ * without that event re-bake it here on every `session_start`, which is what
+ * covers those same transitions.
  */
 function provenanceHeaders(ctx: ExtensionContext): Record<string, string> {
   return {
@@ -125,14 +152,16 @@ export default async function (pi: ExtensionAPI): Promise<void> {
     }
     lastProxyProviders = nextProxyProviders;
 
-    const hasNativeProviders = typeof registry.getProvider === "function";
+    const getProvider = registry.getProvider?.bind(registry);
     void proxyRuntime
       .sync({
-        ...(hasNativeProviders
+        ...(getProvider
           ? {
-              getProvider: (id: string) => registry.getProvider(id),
-              registerNativeProvider: (provider: Provider) =>
-                pi.registerProvider(provider),
+              native: {
+                getProvider,
+                registerNativeProvider: (provider: Provider) =>
+                  pi.registerProvider(provider),
+              },
             }
           : {}),
         registerProviderConfig: (name, providerConfig) =>
@@ -148,6 +177,14 @@ export default async function (pi: ExtensionAPI): Promise<void> {
         if (updated && nextProxyProviders.includes(active.provider)) {
           void pi.setModel(updated);
         }
+      })
+      .catch((error: unknown) => {
+        // A host that refuses one registration must not take the session with
+        // it: without this the rejection is unhandled and the run aborts.
+        ctx.ui.notify(
+          `[aperture] proxy provider sync failed: ${error instanceof Error ? error.message : String(error)}`,
+          "warning",
+        );
       });
 
     void proxyRuntime.checkMissingModels({
@@ -173,25 +210,38 @@ export default async function (pi: ExtensionAPI): Promise<void> {
       : registry.refresh();
     void Promise.resolve(refresh)
       .then((result) => {
+        // Re-pick first. It must not be skippable by a surprise in the
+        // refresh result's shape below, and on hosts that bake registration
+        // headers into model configs it is what makes the current session's
+        // `x-session-id` ship. Idempotent where the per-request header hook
+        // exists, so it runs unconditionally.
+        //
+        // `ctx` accessors throw once the runner is invalidated (session
+        // replacement or reload). A refresh that outlives its session has
+        // nothing left to re-pick, so treat that as done, not as an error --
+        // reporting it would touch the same dead `ctx`.
+        try {
+          const active = ctx.model;
+          if (active?.provider === DEDICATED_PROVIDER_ID) {
+            const updated = registry.find(active.provider, active.id);
+            if (updated) {
+              void pi.setModel(updated).catch(() => {});
+            }
+          }
+        } catch {
+          return;
+        }
+
         // Per-provider refresh errors resolve rather than reject; relay them.
-        const error = (result as ModelsRefreshResult | undefined)?.errors?.get(
-          DEDICATED_PROVIDER_ID,
-        );
+        // The result shape is the host's, not ours, so narrow it instead of
+        // asserting pi's `ModelsRefreshResult` onto an unknown.
+        const error = refreshErrorFor(result, DEDICATED_PROVIDER_ID);
         if (error) {
           ctx.ui.notify(
             `[aperture] model refresh failed: ${error.message}`,
             "warning",
           );
         }
-
-        // Hosts without `before_provider_headers` bake the registration's
-        // headers into each model config, so the session headers only reach
-        // models this refresh rebuilt. Re-pick the active dedicated model so
-        // the current session's `x-session-id` is the one that ships.
-        const active = ctx.model;
-        if (active?.provider !== DEDICATED_PROVIDER_ID) return;
-        const updated = registry.find(active.provider, active.id);
-        if (updated) void pi.setModel(updated);
       })
       .catch((error: unknown) => {
         ctx.ui.notify(

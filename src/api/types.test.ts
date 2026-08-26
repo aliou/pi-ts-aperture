@@ -26,12 +26,23 @@ describe("parseApertureProvider", () => {
     expect(parseApertureProvider({ id: "openai" })?.name).toBe("openai");
   });
 
+  // Parity with the replaced `name: record.name ?? id` preprocessing: an
+  // unset optional string is `null` on the wire for most server languages,
+  // and rejecting the provider over it would drop it from the catalog.
+  test("treats a null name as absent", () => {
+    expect(parseApertureProvider({ id: "openai", name: null })?.name).toBe(
+      "openai",
+    );
+  });
+
+  // Unknown-key survival is a runtime property of the parser's spread; the
+  // declared type stays closed, so read them through a record view.
   test("preserves unknown keys", () => {
     const parsed = parseApertureProvider({
       id: "openai",
       auth_mode: "override",
       quota: { limit: 10 },
-    });
+    }) as Record<string, unknown> | null;
 
     expect(parsed?.auth_mode).toBe("override");
     expect(parsed?.quota).toEqual({ limit: 10 });
@@ -119,7 +130,12 @@ describe("parseConnectorInfo", () => {
   });
 
   test("preserves unknown keys", () => {
-    expect(parseConnectorInfo({ id: "github", tools: 12 })?.tools).toBe(12);
+    const parsed = parseConnectorInfo({ id: "github", tools: 12 }) as Record<
+      string,
+      unknown
+    > | null;
+
+    expect(parsed?.tools).toBe(12);
   });
 
   test("rejects a missing or non-string id", () => {

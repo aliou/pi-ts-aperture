@@ -411,6 +411,38 @@ describe("fetchDynamicModels", () => {
 
     await expect(config?.fetchDynamicModels?.()).resolves.toEqual([]);
   });
+
+  // Regression: a refresh used to read config twice — once for the catalog
+  // key, once inside the fetch. A settings change landing between the two
+  // persisted one configuration's models under the other's key, so the
+  // snapshot either replayed the wrong provider selection or was unreachable.
+  test("labels the persisted catalog with the config it was built from", async () => {
+    providersMock.mockImplementation(async () => {
+      // The user saves new settings while the gateway request is in flight.
+      getConfig.mockReturnValue(
+        dedicatedConfig(true, [{ id: "anthropic", enabled: true }]),
+      );
+      return [
+        gatewayProvider("openai", ["gpt-5"]),
+        gatewayProvider("anthropic", ["claude-x"]),
+      ];
+    });
+    const config = register();
+    const store = memoryStore();
+
+    const models = await refresh(config, store, true);
+
+    // Built under the original (unfiltered) config, so both providers are in
+    // the catalog and the stored key must be the unfiltered one.
+    expect(models.map((m) => m.id)).toEqual([
+      "openai/gpt-5",
+      "anthropic/claude-x",
+    ]);
+
+    // Restoring under the config the entry was actually built from works...
+    getConfig.mockReturnValue(dedicatedConfig());
+    await expect(refresh(config, store, false)).resolves.toHaveLength(2);
+  });
 });
 
 describe("refreshModels / networked refresh", () => {

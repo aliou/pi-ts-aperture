@@ -38,13 +38,21 @@ export type HostProviderConfig = ProviderConfig & {
 };
 
 /**
+ * Native provider access. Absent as a whole on hosts whose model registry has
+ * no `getProvider`, which is why it is one optional object rather than two
+ * optional functions: half a pair would fall to the config branch, and that
+ * branch breaks routing on pi (see the note in `ApertureRuntime.sync`).
+ */
+export interface NativeProviderDeps {
+  getProvider: (id: string) => Provider | undefined;
+  registerNativeProvider: (provider: Provider) => void;
+}
+
+/**
  * Dependencies for ApertureRuntime.sync()
  */
 export interface SyncDeps {
-  /** Native provider access. Absent on hosts whose registry has no `getProvider` (omp). */
-  getProvider?: (id: string) => Provider | undefined;
-  /** Native provider registration. Absent on the same hosts. */
-  registerNativeProvider?: (provider: Provider) => void;
+  native?: NativeProviderDeps;
   /** Name+config registration. Every host implements this. */
   registerProviderConfig: (name: string, config: HostProviderConfig) => void;
   getModels: () => Model<Api>[];

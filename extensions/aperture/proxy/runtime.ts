@@ -39,6 +39,7 @@ function toProviderModelConfig(model: Model<Api>): ProviderModelConfig {
     cost: model.cost,
     contextWindow: model.contextWindow,
     maxTokens: model.maxTokens,
+    ...(model.headers ? { headers: model.headers } : {}),
     ...(model.compat ? { compat: model.compat } : {}),
   };
 }
@@ -57,9 +58,10 @@ export class ApertureRuntime {
   // first-seen provider to keep reading the unfiltered model list.
   private readonly firstSeenProviders = new Map<string, Provider>();
 
-  // Provider models as seen at the first sync, before id qualification. Same
+  // Provider models as seen at the first sync, before rerouting. Same
   // rationale as firstSeenProviders: from the second sync on, getModels()
-  // returns our own rewritten models.
+  // returns our own registrations, whose baseUrl is the gateway and whose api
+  // may already be an override, so the upstream shape has to come from here.
   private readonly firstSeenModels = new Map<string, readonly Model<Api>[]>();
 
   // Passthrough provider ids (`auth_mode: "passthrough"`); refreshed each
@@ -78,15 +80,7 @@ export class ApertureRuntime {
     const baseUrl = resolveProviderBaseUrl(config);
     if (!gatewayRoot || !baseUrl) return;
 
-    // Native provider access is optional: hosts whose registry has no
-    // getProvider register by name + config instead.
-    const nativeDeps =
-      deps.getProvider && deps.registerNativeProvider
-        ? {
-            getProvider: deps.getProvider,
-            registerNativeProvider: deps.registerNativeProvider,
-          }
-        : undefined;
+    const nativeDeps = deps.native;
 
     // One catalog fetch per sync serves passthrough detection and model
     // filtering.
@@ -194,7 +188,13 @@ export class ApertureRuntime {
         servedIds === undefined
           ? seenModels
           : seenModels.filter((model) => servedIds.has(model.id));
-      if (selected.length === 0) continue;
+      // The native branch skips only on an empty *filtered* list, exactly as
+      // before: an unfiltered provider whose live getModels() is momentarily
+      // empty must still be re-registered, or a dynamic provider loses its
+      // gateway routing. The config branch has nothing to register with an
+      // empty list, so it skips either way.
+      if (servedIds !== undefined && selected.length === 0) continue;
+      if (!nativeDeps && selected.length === 0) continue;
 
       const isPassthrough = this.passthroughProviderIds.has(providerName);
 
@@ -264,17 +264,62 @@ export class ApertureRuntime {
       // duplicate registrations), which is the price of rerouting a provider
       // on a host with no per-provider stream hook to rewrite ids at request
       // time.
-      deps.registerProviderConfig(providerName, {
-        baseUrl: providerBaseUrl,
-        // Passthrough providers must keep sending the client's own credential.
-        ...(isPassthrough ? {} : { apiKey: "-" }),
-        ...(deps.headers ? { headers: deps.headers } : {}),
-        models: selected.map((model) => ({
-          ...toProviderModelConfig(model),
-          api,
+      //
+      // A passthrough provider cannot be expressed here at all. Its whole
+      // point is that the client sends its own credential, and a config
+      // registration can only carry a literal/env/command `apiKey` - there is
+      // no way to say "resolve this provider's native auth". Hosts reject a
+      // registration that defines models with neither `apiKey` nor `oauth`
+      // ("apiKey" or "oauth" is required when defining models), so emitting
+      // one throws and aborts the whole sync. Skip it, loudly: the provider
+      // keeps its own upstream registration.
+      if (isPassthrough) {
+        deps.notify?.(
+          `[aperture] ${providerName} needs the client's own credential (passthrough), which this host cannot express in a provider config; leaving it un-proxied.`,
+          "warning",
+        );
+        continue;
+      }
+
+      // `keepGatewayModelsOnly` cannot hide anything here: config registration
+      // merges, so the models we leave out keep their upstream definitions
+      // instead of disappearing. Say so rather than pretending it filtered.
+      if (servedIds !== undefined && selected.length < seenModels.length) {
+        deps.notify?.(
+          `[aperture] keepGatewayModelsOnly cannot hide models on this host; ${seenModels.length - selected.length} ${providerName} model(s) the gateway does not serve stay registered upstream.`,
+          "warning",
+        );
+      }
+
+      try {
+        deps.registerProviderConfig(providerName, {
           baseUrl: providerBaseUrl,
-        })),
-      });
+          apiKey: "-",
+          ...(deps.headers ? { headers: deps.headers } : {}),
+          models: selected.map((model) => {
+            // Per model, not per provider: a provider can span APIs (pi's own
+            // `openai` provider carries both completions and responses
+            // models), and the native branch preserves each model's own api.
+            const modelApi = apiOverride ?? model.api ?? sourceApi;
+            return {
+              ...toProviderModelConfig(model),
+              api: modelApi,
+              baseUrl: getBaseUrlForApi(
+                modelApi,
+                gatewayRoot,
+                baseUrl,
+                upstreamBaseUrl,
+              ),
+            };
+          }),
+        });
+      } catch (error) {
+        // One provider the host refuses must not cost the rest of the list.
+        deps.notify?.(
+          `[aperture] could not reroute ${providerName} through the gateway: ${error instanceof Error ? error.message : String(error)}`,
+          "warning",
+        );
+      }
     }
   }
 

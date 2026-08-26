@@ -195,25 +195,19 @@ function storedCatalogModels(
 }
 
 /**
- * Fetch the gateway catalog and build the model list. No store interaction,
- * so it serves hosts that cache the catalog themselves (omp's
- * `fetchDynamicModels`) as well as the networked half of
- * {@link refreshDedicatedCatalog}.
- *
- * Reads config live at call time so settings changes (gateway URL, provider
- * filter) apply on the next fetch without re-registering.
+ * Build the catalog from one already-resolved config snapshot. Split out so a
+ * refresh reads config exactly once: the catalog key and the models it labels
+ * must come from the same snapshot, or a settings change landing mid-refresh
+ * persists one configuration's models under another's key.
  */
-export async function fetchDedicatedCatalog(
+async function buildCatalogFor(
+  config: ResolvedConfig,
+  gatewayUrl: string,
+  baseUrl: string,
   getModels: GetRegistryModels,
   notify?: (warning: string) => void,
   signal?: AbortSignal,
 ): Promise<Model<Api>[]> {
-  const config = configLoader.getConfig();
-  if (!config.dedicated.enabled) return [];
-  const gatewayUrl = resolveGatewayUrl(config);
-  const baseUrl = resolveProviderBaseUrl(config);
-  if (!gatewayUrl || !baseUrl) return [];
-
   const client = new ApertureClient(gatewayUrl);
   const [gatewayProviders, modelsDev] = await Promise.all([
     client.providers(signal),
@@ -237,6 +231,35 @@ export async function fetchDedicatedCatalog(
 }
 
 /**
+ * Fetch the gateway catalog and build the model list. No store interaction,
+ * so it serves hosts that cache the catalog themselves (`fetchDynamicModels`)
+ * as well as the networked half of {@link refreshDedicatedCatalog}.
+ *
+ * Reads config live at call time so settings changes (gateway URL, provider
+ * filter) apply on the next fetch without re-registering.
+ */
+export async function fetchDedicatedCatalog(
+  getModels: GetRegistryModels,
+  notify?: (warning: string) => void,
+  signal?: AbortSignal,
+): Promise<Model<Api>[]> {
+  const config = configLoader.getConfig();
+  if (!config.dedicated.enabled) return [];
+  const gatewayUrl = resolveGatewayUrl(config);
+  const baseUrl = resolveProviderBaseUrl(config);
+  if (!gatewayUrl || !baseUrl) return [];
+
+  return buildCatalogFor(
+    config,
+    gatewayUrl,
+    baseUrl,
+    getModels,
+    notify,
+    signal,
+  );
+}
+
+/**
  * Refresh the dedicated model list. Called by Pi with `allowNetwork: false`
  * right after registration (cache-only restore, before scope validation) and
  * with network access when `ctx.modelRegistry.refresh()` runs.
@@ -248,8 +271,9 @@ export async function fetchDedicatedCatalog(
  * them through ModelsRefreshResult.errors; the caller retains the previous
  * model list.
  *
- * Reads config live at call time so settings changes (gateway URL, provider
- * filter) apply on the next refresh without re-registering.
+ * Reads config once, at call time, so settings changes apply on the next
+ * refresh without re-registering and cannot split this one across two
+ * configurations.
  */
 export async function refreshDedicatedCatalog(
   context: RefreshModelsContext,
@@ -259,7 +283,8 @@ export async function refreshDedicatedCatalog(
   const config = configLoader.getConfig();
   if (!config.dedicated.enabled) return [];
   const gatewayUrl = resolveGatewayUrl(config);
-  if (!gatewayUrl || !resolveProviderBaseUrl(config)) return [];
+  const baseUrl = resolveProviderBaseUrl(config);
+  if (!gatewayUrl || !baseUrl) return [];
 
   const catalogKey = buildCatalogKey(gatewayUrl, config);
 
@@ -267,7 +292,10 @@ export async function refreshDedicatedCatalog(
     return storedCatalogModels(context.stored, catalogKey);
   }
 
-  const catalog = await fetchDedicatedCatalog(
+  const catalog = await buildCatalogFor(
+    config,
+    gatewayUrl,
+    baseUrl,
     getModels,
     notify,
     context.signal,
