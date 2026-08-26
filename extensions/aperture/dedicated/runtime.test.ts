@@ -2,13 +2,13 @@ import type {
   Api,
   Model,
   ModelsStoreEntry,
-  Provider,
   ProviderModelsStore,
   RefreshModelsContext,
 } from "@earendil-works/pi-ai";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import type { ApertureProvider } from "../../../src/api/types";
 import type { ModelsDevCatalog } from "../../../src/model-metadata";
+import type { HostProviderConfig } from "../../shared/types";
 
 // vi.hoisted gives access to the mock fns inside hoisted vi.mock factories
 // (which run before top-level bindings are initialized).
@@ -130,30 +130,28 @@ interface DedicatedPublication {
   update?: () => void;
 }
 
-/** Register the provider against a fake pi and return the native Provider. */
+/** Register the provider against a fake pi and return the registered config. */
 function register(
   getModels: () => Model<Api>[] = () => [],
   notify?: (warning: string) => void,
-): Provider | null {
+): HostProviderConfig | null {
   const registerProvider = vi.fn();
   registerDedicatedProvider({ registerProvider }, getModels, notify);
-  const provider = registerProvider.mock.calls.at(-1)?.[0] as
-    | Provider
-    | undefined;
-  return provider ?? null;
+  const call = registerProvider.mock.calls.at(-1);
+  return call ? (call[1] as HostProviderConfig) : null;
 }
 
 /**
  * Drive refreshModels the way Pi does: a refresh context whose publish
- * applies the persist entry to the memory store and runs update hooks, so the
- * provider's live list reflects the catalog after the call.
+ * applies the persist entry to the memory store, and whose resolved value is
+ * the catalog the host adopts.
  */
 async function refresh(
-  provider: Provider | null,
+  config: HostProviderConfig | null,
   store: ProviderModelsStore,
   allowNetwork: boolean,
 ): Promise<readonly Model<Api>[]> {
-  if (!provider?.refreshModels) throw new Error("no refreshModels on provider");
+  if (!config?.refreshModels) throw new Error("no refreshModels on config");
   const tracked = store as ProviderModelsStore & {
     entry: ModelsStoreEntry | undefined;
   };
@@ -169,8 +167,8 @@ async function refresh(
       return true;
     },
   } as unknown as RefreshModelsContext;
-  await provider.refreshModels(context);
-  return provider.getModels();
+  const models = await config.refreshModels(context);
+  return models as Model<Api>[];
 }
 
 beforeEach(() => {
@@ -185,35 +183,26 @@ beforeEach(() => {
 });
 
 describe("registerDedicatedProvider", () => {
-  test("registers the provider as a native Provider", async () => {
-    const provider = register();
+  test("registers the provider by name + config", () => {
+    const registerProvider = vi.fn();
 
-    expect(provider).not.toBeNull();
-    expect(provider?.id).toBe("aperture");
-    expect(provider?.baseUrl).toBe(`${GATEWAY}/v1`);
-    expect(provider?.getModels()).toEqual([]);
-    expect(provider?.stream).toBeTypeOf("function");
-    expect(provider?.streamSimple).toBeTypeOf("function");
-    expect(provider?.refreshModels).toBeTypeOf("function");
-  });
+    registerDedicatedProvider({ registerProvider }, () => []);
 
-  test("owns gateway auth: always configured, placeholder api key", async () => {
-    const input = {
-      ctx: { env: async () => undefined, fileExists: async () => false },
-      signal: new AbortController().signal,
-    };
-    const auth = register()?.auth.apiKey;
-
-    expect(auth).toBeDefined();
-    // No user key exists for the gateway provider, so check always passes.
-    await expect(auth?.check?.(input)).resolves.toMatchObject({
-      type: "api_key",
+    expect(registerProvider).toHaveBeenCalledOnce();
+    const [name, config] = registerProvider.mock.calls[0];
+    expect(name).toBe("aperture");
+    expect(config).toMatchObject({
+      name: "Aperture",
+      baseUrl: `${GATEWAY}/v1`,
+      // The gateway injects the upstream credential; the literal key is what
+      // makes the provider count as configured.
+      apiKey: "-",
     });
-    await expect(auth?.resolve(input)).resolves.toMatchObject({
-      auth: { apiKey: "-" },
-    });
-    // Ambient-only: no interactive login for a gateway-authenticated provider.
-    expect(auth?.login).toBeUndefined();
+    // No `models` key: a re-registration must merge over the previous
+    // catalog rather than blank it.
+    expect(config).not.toHaveProperty("models");
+    expect(config.refreshModels).toBeTypeOf("function");
+    expect(config.fetchDynamicModels).toBeTypeOf("function");
   });
 
   test("no-ops when dedicated is disabled", () => {
@@ -252,12 +241,30 @@ describe("reconcileDedicatedProvider", () => {
     );
 
     expect(registerProvider).toHaveBeenCalledOnce();
-    const provider = registerProvider.mock.calls[0][0];
-    expect(provider).toMatchObject({
-      id: "aperture",
-      baseUrl: `${GATEWAY}/v1`,
-    });
+    expect(registerProvider).toHaveBeenCalledWith(
+      "aperture",
+      expect.objectContaining({
+        name: "Aperture",
+        baseUrl: `${GATEWAY}/v1`,
+      }),
+    );
     expect(unregisterProvider).not.toHaveBeenCalled();
+  });
+
+  test("bakes provenance headers into the registration when given", () => {
+    const registerProvider = vi.fn();
+
+    reconcileDedicatedProvider(
+      { registerProvider, unregisterProvider: vi.fn() },
+      () => [],
+      undefined,
+      { Referer: "https://pi.dev", "x-session-id": "s-1" },
+    );
+
+    expect(registerProvider.mock.calls[0][1].headers).toEqual({
+      Referer: "https://pi.dev",
+      "x-session-id": "s-1",
+    });
   });
 });
 
@@ -370,6 +377,39 @@ describe("refreshModels / cache-only restore", () => {
 
     const models = await refresh(provider, store, false);
     expect(models).toEqual([]);
+  });
+});
+
+describe("fetchDynamicModels", () => {
+  test("returns the networked catalog without touching the store", async () => {
+    providersMock.mockResolvedValue([
+      gatewayProvider("openai", ["gpt-5", "gpt-4"]),
+    ]);
+    const config = register();
+    const store = memoryStore();
+
+    const viaFetch = await config?.fetchDynamicModels?.();
+    expect(store.entry).toBeUndefined();
+
+    const viaRefresh = await refresh(config, store, true);
+    expect(store.entry).toBeDefined();
+
+    expect(viaFetch).toEqual(viaRefresh);
+    expect(viaFetch?.map((m) => m.id)).toEqual([
+      "openai/gpt-5",
+      "openai/gpt-4",
+    ]);
+    // Only the refreshModels call persists; fetchDynamicModels is cached by
+    // the host, not by us.
+    expect(providersMock).toHaveBeenCalledTimes(2);
+  });
+
+  test("returns [] when dedicated is disabled after registration", async () => {
+    providersMock.mockResolvedValue([gatewayProvider("openai", ["gpt-5"])]);
+    const config = register();
+    getConfig.mockReturnValue(dedicatedConfig(false));
+
+    await expect(config?.fetchDynamicModels?.()).resolves.toEqual([]);
   });
 });
 

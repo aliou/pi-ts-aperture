@@ -23,7 +23,10 @@ import {
 } from "../../shared/api-selection";
 import { configLoader, type ResolvedConfig } from "../../shared/config/loader";
 import { buildDefaultModelConfig } from "./model-defaults";
-import { createDedicatedProvider, DEDICATED_PROVIDER_ID } from "./provider";
+import {
+  buildDedicatedProviderConfig,
+  DEDICATED_PROVIDER_ID,
+} from "./provider";
 
 const PROVIDER_NAME = DEDICATED_PROVIDER_ID;
 
@@ -192,6 +195,48 @@ function storedCatalogModels(
 }
 
 /**
+ * Fetch the gateway catalog and build the model list. No store interaction,
+ * so it serves hosts that cache the catalog themselves (omp's
+ * `fetchDynamicModels`) as well as the networked half of
+ * {@link refreshDedicatedCatalog}.
+ *
+ * Reads config live at call time so settings changes (gateway URL, provider
+ * filter) apply on the next fetch without re-registering.
+ */
+export async function fetchDedicatedCatalog(
+  getModels: GetRegistryModels,
+  notify?: (warning: string) => void,
+  signal?: AbortSignal,
+): Promise<Model<Api>[]> {
+  const config = configLoader.getConfig();
+  if (!config.dedicated.enabled) return [];
+  const gatewayUrl = resolveGatewayUrl(config);
+  const baseUrl = resolveProviderBaseUrl(config);
+  if (!gatewayUrl || !baseUrl) return [];
+
+  const client = new ApertureClient(gatewayUrl);
+  const [gatewayProviders, modelsDev] = await Promise.all([
+    client.providers(signal),
+    fetchModelsDevCatalog({ signal }),
+  ]);
+  const providers = filterProviders(gatewayProviders, config);
+  const apiOverrides = new Map(
+    config.dedicated.providers
+      .filter((p) => p.enabled && p.api)
+      .map((p) => [p.id, p.api as Api]),
+  );
+  return buildModels(
+    providers,
+    gatewayUrl,
+    baseUrl,
+    getModels(),
+    modelsDev,
+    apiOverrides,
+    notify,
+  );
+}
+
+/**
  * Refresh the dedicated model list. Called by Pi with `allowNetwork: false`
  * right after registration (cache-only restore, before scope validation) and
  * with network access when `ctx.modelRegistry.refresh()` runs.
@@ -214,54 +259,40 @@ export async function refreshDedicatedCatalog(
   const config = configLoader.getConfig();
   if (!config.dedicated.enabled) return [];
   const gatewayUrl = resolveGatewayUrl(config);
-  const baseUrl = resolveProviderBaseUrl(config);
-  if (!gatewayUrl || !baseUrl) return [];
+  if (!gatewayUrl || !resolveProviderBaseUrl(config)) return [];
 
   const catalogKey = buildCatalogKey(gatewayUrl, config);
 
   if (!context.allowNetwork) {
-    return storedCatalogModels(context.stored, catalogKey) as Model<Api>[];
+    return storedCatalogModels(context.stored, catalogKey);
   }
 
-  const client = new ApertureClient(gatewayUrl);
-  const [gatewayProviders, modelsDev] = await Promise.all([
-    client.providers(context.signal),
-    fetchModelsDevCatalog({ signal: context.signal }),
-  ]);
-  const providers = filterProviders(gatewayProviders, config);
-  const apiOverrides = new Map(
-    config.dedicated.providers
-      .filter((p) => p.enabled && p.api)
-      .map((p) => [p.id, p.api as Api]),
-  );
-  const catalog = buildModels(
-    providers,
-    gatewayUrl,
-    baseUrl,
-    getModels(),
-    modelsDev,
-    apiOverrides,
+  const catalog = await fetchDedicatedCatalog(
+    getModels,
     notify,
+    context.signal,
   );
 
   context.signal?.throwIfAborted();
 
   const entry: DedicatedStoreEntry = {
-    models: catalog as unknown as Model<Api>[],
+    models: catalog,
     checkedAt: Date.now(),
     catalogKey,
   };
   await context.publish({ persist: entry });
-  return catalog as unknown as Model<Api>[];
+  return catalog;
 }
 
 /**
- * Register the dedicated `aperture` provider with a `refreshModels` hook.
+ * Register the dedicated `aperture` provider by name + config.
  *
- * Pi immediately fires a cache-only refresh after registration, restoring the
- * previous catalog from `models-store.json` so scoped models validate during
- * startup. The networked revalidation happens when `session_start` calls
- * `ctx.modelRegistry.refresh()`.
+ * pi drives the catalog through `refreshModels`: it fires a cache-only
+ * refresh right after registration, restoring the previous catalog from
+ * `models-store.json` so scoped models validate during startup, then
+ * `session_start` triggers the networked revalidation. Hosts without
+ * `refreshModels` (omp) call `fetchDynamicModels` and cache the result
+ * themselves.
  *
  * No-ops when dedicated is disabled or the gateway URL is unset.
  */
@@ -269,6 +300,7 @@ export function registerDedicatedProvider(
   pi: Pick<ExtensionAPI, "registerProvider">,
   getModels: GetRegistryModels,
   notify?: (warning: string) => void,
+  headers?: Record<string, string>,
 ): void {
   const config = configLoader.getConfig();
   if (!config.dedicated.enabled) return;
@@ -277,9 +309,14 @@ export function registerDedicatedProvider(
   if (!baseUrl) return;
 
   pi.registerProvider(
-    createDedicatedProvider(baseUrl, (context) =>
-      refreshDedicatedCatalog(context, getModels, notify),
-    ),
+    PROVIDER_NAME,
+    buildDedicatedProviderConfig({
+      baseUrl,
+      headers,
+      refreshModels: (context) =>
+        refreshDedicatedCatalog(context, getModels, notify),
+      fetchCatalog: () => fetchDedicatedCatalog(getModels, notify),
+    }),
   );
 }
 
@@ -292,11 +329,12 @@ export function reconcileDedicatedProvider(
   pi: Pick<ExtensionAPI, "registerProvider" | "unregisterProvider">,
   getModels: GetRegistryModels,
   notify?: (warning: string) => void,
+  headers?: Record<string, string>,
 ): void {
   const config = configLoader.getConfig();
   if (!config.dedicated.enabled || !resolveProviderBaseUrl(config)) {
     pi.unregisterProvider(PROVIDER_NAME);
     return;
   }
-  registerDedicatedProvider(pi, getModels, notify);
+  registerDedicatedProvider(pi, getModels, notify, headers);
 }

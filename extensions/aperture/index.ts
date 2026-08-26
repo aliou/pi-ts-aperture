@@ -1,3 +1,4 @@
+import type { ModelsRefreshResult, Provider } from "@earendil-works/pi-ai";
 import type {
   ExtensionAPI,
   ExtensionContext,
@@ -10,6 +11,7 @@ import {
   createFeatureRequestPayload,
 } from "../shared/events";
 import { emitConfigSync } from "../shared/sync-bus";
+import { DEDICATED_PROVIDER_ID } from "./dedicated/provider";
 import {
   reconcileDedicatedProvider,
   registerDedicatedProvider,
@@ -17,6 +19,30 @@ import {
 import { registerOnboarding } from "./onboarding";
 import { ApertureRuntime } from "./proxy/runtime";
 import { registerApertureSettings } from "./settings";
+
+/**
+ * Registry surface across hosts. pi forces a refresh with an options object;
+ * hosts that cache dynamic catalogs per provider expose `refreshProvider`
+ * instead, and have no `getProvider` because they have no native providers.
+ */
+type HostModelRegistry = ExtensionContext["modelRegistry"] & {
+  refreshProvider?: (
+    provider: string,
+    mode?: "online" | "offline" | "online-if-uncached",
+  ) => Promise<unknown>;
+};
+
+/**
+ * Provenance headers. pi also sets these per request from
+ * `before_provider_headers`; hosts without that event get them baked into the
+ * provider registrations that `onSync` refreshes on every session start.
+ */
+function provenanceHeaders(ctx: ExtensionContext): Record<string, string> {
+  return {
+    Referer: "https://pi.dev",
+    "x-session-id": ctx.sessionManager.getSessionId(),
+  };
+}
 
 export default async function (pi: ExtensionAPI): Promise<void> {
   await configLoader.load();
@@ -38,6 +64,10 @@ export default async function (pi: ExtensionAPI): Promise<void> {
   // request. `x-session-id` must reflect the current session (it changes on
   // /fork, /new, /resume), so it cannot be baked into provider registration.
   // The hook fires per request, after Pi assembles the outgoing headers.
+  //
+  // Hosts without a `before_provider_headers` event store the handler and
+  // never fire it; there the same headers come from `provenanceHeaders`,
+  // baked into the registrations `onSync` refreshes each session start.
   pi.on("before_provider_headers", (event, ctx) => {
     event.headers.Referer = "https://pi.dev";
     event.headers["x-session-id"] = ctx.sessionManager.getSessionId();
@@ -84,6 +114,8 @@ export default async function (pi: ExtensionAPI): Promise<void> {
     updateKnownModels(ctx);
     emitConfigSync();
     const config = configLoader.getConfig();
+    const registry = ctx.modelRegistry as HostModelRegistry;
+    const headers = provenanceHeaders(ctx);
 
     const { next: nextProxyProviders, unregister } =
       proxyRuntime.resolveProxyProviderSync(config, lastProxyProviders);
@@ -93,46 +125,73 @@ export default async function (pi: ExtensionAPI): Promise<void> {
     }
     lastProxyProviders = nextProxyProviders;
 
+    const hasNativeProviders = typeof registry.getProvider === "function";
     void proxyRuntime
       .sync({
-        getProvider: (id) => ctx.modelRegistry.getProvider(id),
-        registerNativeProvider: (provider) => pi.registerProvider(provider),
-        getModels: () => ctx.modelRegistry.getAll(),
+        ...(hasNativeProviders
+          ? {
+              getProvider: (id: string) => registry.getProvider(id),
+              registerNativeProvider: (provider: Provider) =>
+                pi.registerProvider(provider),
+            }
+          : {}),
+        registerProviderConfig: (name, providerConfig) =>
+          pi.registerProvider(name, providerConfig),
+        getModels: () => registry.getAll(),
+        headers,
         notify: (msg, type) => ctx.ui.notify(msg, type),
       })
       .then(() => {
         const active = ctx.model;
         if (!active) return;
-        const updated = ctx.modelRegistry.find(active.provider, active.id);
+        const updated = registry.find(active.provider, active.id);
         if (updated && nextProxyProviders.includes(active.provider)) {
           void pi.setModel(updated);
         }
       });
 
     void proxyRuntime.checkMissingModels({
-      getModels: () => ctx.modelRegistry.getAll(),
+      getModels: () => registry.getAll(),
       notify: (msg, type) => ctx.ui.notify(msg, type),
     });
 
-    reconcileDedicatedProvider(pi, getRegistryModels, (msg) =>
-      ctx.ui.notify(msg, "warning"),
+    reconcileDedicatedProvider(
+      pi,
+      getRegistryModels,
+      (msg) => ctx.ui.notify(msg, "warning"),
+      headers,
     );
 
     // Trigger the networked model refresh: Pi's own startup refresh runs
     // before extensions load, so the dedicated provider never sees it.
     // Built-in providers self-throttle, so this costs about one gateway
     // fetch. Refresh failures fall back to the stored catalog inside Pi.
-    void ctx.modelRegistry
-      .refresh()
+    // Hosts that cache dynamic catalogs per provider need the forcing
+    // per-provider call, or the refresh is served from that cache.
+    const refresh = registry.refreshProvider
+      ? registry.refreshProvider(DEDICATED_PROVIDER_ID, "online")
+      : registry.refresh();
+    void Promise.resolve(refresh)
       .then((result) => {
         // Per-provider refresh errors resolve rather than reject; relay them.
-        const error = result?.errors?.get("aperture");
+        const error = (result as ModelsRefreshResult | undefined)?.errors?.get(
+          DEDICATED_PROVIDER_ID,
+        );
         if (error) {
           ctx.ui.notify(
             `[aperture] model refresh failed: ${error.message}`,
             "warning",
           );
         }
+
+        // Hosts without `before_provider_headers` bake the registration's
+        // headers into each model config, so the session headers only reach
+        // models this refresh rebuilt. Re-pick the active dedicated model so
+        // the current session's `x-session-id` is the one that ships.
+        const active = ctx.model;
+        if (active?.provider !== DEDICATED_PROVIDER_ID) return;
+        const updated = registry.find(active.provider, active.id);
+        if (updated) void pi.setModel(updated);
       })
       .catch((error: unknown) => {
         ctx.ui.notify(

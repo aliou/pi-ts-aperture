@@ -42,7 +42,7 @@ Aperture only reports model ids and pricing, so capabilities (context window, vi
 
 [![Proxy providers walkthrough](https://assets.aliou.me/pi-extensions/demos/aperture/v0.8.0/proxy-providers.gif)](https://assets.aliou.me/pi-extensions/demos/aperture/v0.8.0/proxy-providers.mp4)
 
-Reroutes existing Pi providers through Aperture. Each provider keeps its own model definitions and settings; only the base URL, API key, and headers are overridden. Use this when you want Pi's native per-provider model configuration but want requests to go through Aperture for server-side credentials. Requests carry the provider-qualified model id as in dedicated mode; the model picker still shows bare ids.
+Reroutes existing Pi providers through Aperture. Each provider keeps its own model definitions and settings; only the base URL, API key, and headers are overridden. Use this when you want Pi's native per-provider model configuration but want requests to go through Aperture for server-side credentials. On Pi, requests carry the provider-qualified model id as in dedicated mode and the model picker still shows bare ids. On forks without native providers, the models are re-registered in place and the bare id goes to the gateway, which resolves it itself.
 
 Provider selection matches your local Pi providers against the providers enabled on the gateway. Optional per-provider verification warns when configured local models are missing from the gateway. Set `keepGatewayModelsOnly: true` on a provider to go further and filter those models out of the registered provider entirely, so the model picker only shows models the gateway can actually serve.
 
@@ -101,7 +101,7 @@ Notes:
 - `api` (per provider, unset by default) routes that provider's models through a specific Pi API (`openai-completions`, `anthropic-messages`, `openai-responses`, `google-generative-ai`, `google-vertex`, `bedrock-converse-stream`) instead of the one auto-picked from the gateway's compatibility map. Useful for providers Aperture serves through more than one API. Only values the provider reports as supported are offered in `/aperture:settings`; an override the gateway stops serving falls back to auto with a warning.
 - An empty `dedicated.providers` list means all gateway providers are included.
 - Model metadata belongs in `~/.pi/agent/models.json`, not in the extension config.
-- Requests include `Referer` and `x-session-id` (the live Pi session id, injected per-request via the `before_provider_headers` hook) for grouping requests in the Aperture dashboard.
+- Requests include `Referer` and `x-session-id` (the live Pi session id) for grouping requests in the Aperture dashboard. On Pi they are injected per request via the `before_provider_headers` hook; forks without that event get them from the provider registration instead.
 - No API keys are stored: Aperture injects upstream credentials server-side. Pi OAuth credentials still take precedence when available.
 
 ## Requirements

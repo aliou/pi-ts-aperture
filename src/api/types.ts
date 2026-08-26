@@ -1,21 +1,37 @@
-import { type Static, Type } from "typebox";
+/**
+ * Aperture API response types and their parsers.
+ *
+ * Parsing is hand-written rather than schema-driven on purpose: the extension
+ * host may rewrite the bare `typebox` specifier onto its own bundled adapter
+ * while leaving `typebox/value` pointing at the real package, so a schema
+ * built here would not be a schema `Value.Check` understands. Plain functions
+ * behave identically on every host.
+ */
 
-export const ProviderCompatibilitySchema = Type.Object(
-  {
-    openai_chat: Type.Optional(Type.Boolean()),
-    openai_responses: Type.Optional(Type.Boolean()),
-    anthropic_messages: Type.Optional(Type.Boolean()),
-    gemini_generate_content: Type.Optional(Type.Boolean()),
-    google_generate_content: Type.Optional(Type.Boolean()),
-    google_raw_predict: Type.Optional(Type.Boolean()),
-    bedrock_model_invoke: Type.Optional(Type.Boolean()),
-    bedrock_converse: Type.Optional(Type.Boolean()),
-    experimental_gemini_cli_vertex_compat: Type.Optional(Type.Boolean()),
-  },
-  { additionalProperties: true, default: {} },
-);
+export interface ProviderCompatibility {
+  openai_chat?: boolean;
+  openai_responses?: boolean;
+  anthropic_messages?: boolean;
+  gemini_generate_content?: boolean;
+  google_generate_content?: boolean;
+  google_raw_predict?: boolean;
+  bedrock_model_invoke?: boolean;
+  bedrock_converse?: boolean;
+  experimental_gemini_cli_vertex_compat?: boolean;
+  [key: string]: unknown;
+}
 
-export type ProviderCompatibility = Static<typeof ProviderCompatibilitySchema>;
+const COMPATIBILITY_FLAGS = [
+  "openai_chat",
+  "openai_responses",
+  "anthropic_messages",
+  "gemini_generate_content",
+  "google_generate_content",
+  "google_raw_predict",
+  "bedrock_model_invoke",
+  "bedrock_converse",
+  "experimental_gemini_cli_vertex_compat",
+] as const;
 
 /**
  * Per-token USD pricing for a model, as reported by Aperture's `/v1/models`.
@@ -42,58 +58,134 @@ export interface ApertureModelInfo {
   pricing?: ApertureModelPricing;
 }
 
-export const ApertureModelInfoSchema = Type.Object(
-  {
-    id: Type.String(),
-    pricing: Type.Optional(
-      Type.Object(
-        {
-          input: Type.Optional(Type.String()),
-          input_cache_read: Type.Optional(Type.String()),
-          input_cache_write: Type.Optional(Type.String()),
-          input_cache_write_1h: Type.Optional(Type.String()),
-          output: Type.Optional(Type.String()),
-          web_search: Type.Optional(Type.String()),
-        },
-        { additionalProperties: true },
-      ),
-    ),
-  },
-  { additionalProperties: true },
-);
+export interface ApertureProvider {
+  id: string;
+  name: string;
+  description: string;
+  models: string[];
+  compatibility: ProviderCompatibility;
+  /** Set by `auth_mode: "passthrough"` providers: the gateway forwards the client's own credential. */
+  requires_client_auth?: boolean;
+  /** Populated from `/v1/models` by the client; never present on the raw `/api/providers` response. */
+  modelInfoById?: Record<string, ApertureModelInfo>;
+  [key: string]: unknown;
+}
 
-export const ApertureProviderSchema = Type.Object(
-  {
-    id: Type.String(),
-    name: Type.String(),
-    description: Type.String({ default: "" }),
-    models: Type.Array(Type.String(), { default: [] }),
-    compatibility: ProviderCompatibilitySchema,
-    // Set by `auth_mode: "passthrough"` providers: the gateway forwards the
-    // client's own credential, so the client must send a real one.
-    requires_client_auth: Type.Optional(Type.Boolean()),
-    // Populated from `/v1/models` so dedicated mode can attach pricing to
-    // model configs. Not present on the raw `/api/providers` response.
-    modelInfoById: Type.Optional(
-      Type.Record(Type.String(), ApertureModelInfoSchema),
-    ),
-  },
-  { additionalProperties: true },
-);
+export interface ConnectorInfo {
+  id: string;
+  description: string;
+  protocol: string;
+  provider: string;
+  category: string;
+  status: string;
+  auth_type?: string;
+  [key: string]: unknown;
+}
 
-export type ApertureProvider = Static<typeof ApertureProviderSchema>;
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
 
-export const ConnectorInfoSchema = Type.Object(
-  {
-    id: Type.String(),
-    description: Type.String({ default: "" }),
-    protocol: Type.String({ default: "" }),
-    provider: Type.String({ default: "" }),
-    category: Type.String({ default: "" }),
-    status: Type.String({ default: "" }),
-    auth_type: Type.Optional(Type.String()),
-  },
-  { additionalProperties: true },
-);
+/** `""` when absent, the string when present, `null` (reject) when wrong-typed. */
+function stringOrDefault(value: unknown): string | null {
+  if (value === undefined) return "";
+  return typeof value === "string" ? value : null;
+}
 
-export type ConnectorInfo = Static<typeof ConnectorInfoSchema>;
+/**
+ * Parses one `/api/providers` entry.
+ *
+ * Absent `description` defaults to `""`, absent `models` to `[]`, absent
+ * `compatibility` to `{}`; unknown keys are preserved. A declared field with
+ * the wrong type rejects the whole entry rather than being coerced.
+ */
+export function parseApertureProvider(
+  value: unknown,
+  fallbackId?: string,
+): ApertureProvider | null {
+  const record = asRecord(value);
+  if (!record) return null;
+
+  const id = typeof record.id === "string" ? record.id : fallbackId;
+  if (!id) return null;
+  if (record.id !== undefined && typeof record.id !== "string") return null;
+
+  if (record.name !== undefined && typeof record.name !== "string") return null;
+  const name = typeof record.name === "string" ? record.name : id;
+
+  const description = stringOrDefault(record.description);
+  if (description === null) return null;
+
+  let models: string[];
+  if (record.models === undefined) {
+    models = [];
+  } else if (
+    Array.isArray(record.models) &&
+    record.models.every((m) => typeof m === "string")
+  ) {
+    models = record.models as string[];
+  } else {
+    return null;
+  }
+
+  let compatibility: ProviderCompatibility;
+  if (record.compatibility === undefined) {
+    compatibility = {};
+  } else {
+    const compat = asRecord(record.compatibility);
+    if (!compat) return null;
+    for (const flag of COMPATIBILITY_FLAGS) {
+      const value = compat[flag];
+      if (value !== undefined && typeof value !== "boolean") return null;
+    }
+    compatibility = compat as ProviderCompatibility;
+  }
+
+  if (
+    record.requires_client_auth !== undefined &&
+    typeof record.requires_client_auth !== "boolean"
+  ) {
+    return null;
+  }
+
+  return { ...record, id, name, description, models, compatibility };
+}
+
+/**
+ * Parses one `/api/connectors` entry. Absent string fields default to `""`;
+ * a wrong-typed declared field rejects the entry.
+ */
+export function parseConnectorInfo(value: unknown): ConnectorInfo | null {
+  const record = asRecord(value);
+  if (!record) return null;
+  if (typeof record.id !== "string") return null;
+  if (record.auth_type !== undefined && typeof record.auth_type !== "string") {
+    return null;
+  }
+
+  const description = stringOrDefault(record.description);
+  const protocol = stringOrDefault(record.protocol);
+  const provider = stringOrDefault(record.provider);
+  const category = stringOrDefault(record.category);
+  const status = stringOrDefault(record.status);
+  if (
+    description === null ||
+    protocol === null ||
+    provider === null ||
+    category === null ||
+    status === null
+  ) {
+    return null;
+  }
+
+  return {
+    ...record,
+    id: record.id,
+    description,
+    protocol,
+    provider,
+    category,
+    status,
+  };
+}

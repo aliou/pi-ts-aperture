@@ -1,64 +1,41 @@
-import type {
-  Api,
-  Model,
-  Provider,
-  RefreshModelsContext,
-} from "@earendil-works/pi-ai";
-import { buildStream, buildStreamSimple } from "./api-routing";
+import type { RefreshModelsContext } from "@earendil-works/pi-ai";
+import type { ProviderModelConfig } from "@earendil-works/pi-coding-agent";
+import type { HostProviderConfig } from "../../shared/types";
 
 export const DEDICATED_PROVIDER_ID = "aperture";
 
-/**
- * Fetch/build the dedicated catalog. Returns the models to adopt, or
- * undefined when nothing should change (network refresh failures propagate so
- * Pi reports them; cache-only restore returns [] for an unusable snapshot).
- */
-export type RefreshDedicatedCatalog = (
-  context: RefreshModelsContext,
-) => Promise<Model<Api>[] | undefined>;
+export interface DedicatedProviderConfigInput {
+  baseUrl: string;
+  headers?: Record<string, string>;
+  /** pi >= 0.84: cache-only restore + networked revalidation, driven by the host. */
+  refreshModels: (
+    context: RefreshModelsContext,
+  ) => Promise<ProviderModelConfig[]>;
+  /** omp: no `refreshModels`; the host fetches the catalog and caches it itself. */
+  fetchCatalog: () => Promise<ProviderModelConfig[]>;
+}
 
 /**
- * Assemble the dedicated `aperture` provider as a native pi-ai Provider.
+ * Build the dedicated `aperture` provider as a name+config registration.
  *
- * Native registration (`pi.registerProvider(provider)`) replaces the former
- * name-plus-config form: the Provider owns its auth (gateway-authenticated,
- * resolve never throws and returns a placeholder apiKey the gateway ignores),
- * a live model list adopted through context.publish, and stream delegation
- * that routes each model through the upstream Pi API stamped on it.
+ * The config form rather than a native pi-ai `Provider` because every host
+ * implements it, and pi's config path composes an equivalent native provider:
+ * same `refreshModels` contract, same `context.publish`, and stream dispatch
+ * through each model's own `api`. That last part is why there is no custom
+ * `stream`/`streamSimple` here — the host already routes by `model.api`.
  */
-export function createDedicatedProvider(
-  baseUrl: string,
-  refresh: RefreshDedicatedCatalog,
-): Provider {
-  let liveModels: Model<Api>[] = [];
-
+export function buildDedicatedProviderConfig(
+  input: DedicatedProviderConfigInput,
+): HostProviderConfig {
   return {
-    id: DEDICATED_PROVIDER_ID,
     name: "Aperture",
-    baseUrl,
-    auth: {
-      apiKey: {
-        name: "Aperture",
-        // The gateway injects the real credential; there is no user key to
-        // check for, so the provider always counts as configured.
-        check: async () => ({ type: "api_key", source: "aperture gateway" }),
-        resolve: async () => ({
-          auth: { apiKey: "-" },
-          source: "aperture gateway",
-        }),
-      },
-    },
-    getModels: () => liveModels,
-    refreshModels: async (context) => {
-      const models = await refresh(context);
-      if (models === undefined) return;
-      await context.publish({
-        update: () => {
-          liveModels = models;
-        },
-      });
-    },
-    stream: buildStream(),
-    streamSimple: buildStreamSimple(),
+    baseUrl: input.baseUrl,
+    // The gateway injects the upstream credential; a literal key is what makes
+    // the provider count as configured on both hosts (pi:
+    // configuredRequestAuthStatus, omp: ModelRegistry config api keys).
+    apiKey: "-",
+    ...(input.headers ? { headers: input.headers } : {}),
+    refreshModels: input.refreshModels,
+    fetchDynamicModels: input.fetchCatalog,
   };
 }
