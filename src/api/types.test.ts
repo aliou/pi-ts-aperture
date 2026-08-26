@@ -68,6 +68,19 @@ describe("parseApertureProvider", () => {
   });
 
   // No key to fall back to, so a wrong-typed id leaves nothing usable.
+  // Client-internal: populated after parsing, never on the wire. An inbound
+  // copy under server-version skew would carry unvalidated pricing into
+  // dedicated model construction.
+  test("drops an inbound modelInfoById", () => {
+    const parsed = parseApertureProvider({
+      id: "openai",
+      modelInfoById: { "gpt-5": { id: "gpt-5", pricing: { input: true } } },
+    });
+
+    expect(parsed).not.toBeNull();
+    expect(parsed?.modelInfoById).toBeUndefined();
+  });
+
   test("rejects a non-string id in an array-shaped response", () => {
     expect(parseApertureProvider({ id: 42, name: "OpenAI" })).toBeNull();
   });

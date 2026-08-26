@@ -78,6 +78,7 @@ function fakeHost(options: {
   refreshRejects?: unknown;
   activeModel?: Model<Api>;
   found?: Model<Api>;
+  findThrows?: unknown;
   setModelRejects?: unknown;
 }): FakeHost {
   const handlers = new Map<string, Handler>();
@@ -98,7 +99,10 @@ function fakeHost(options: {
 
   const registry = {
     getAll: () => [],
-    find: () => options.found,
+    find: () => {
+      if (options.findThrows) throw options.findThrows;
+      return options.found;
+    },
     refresh: resolveRefresh,
     ...(options.native
       ? { getProvider: () => undefined }
@@ -250,6 +254,77 @@ describe("refresh error relay", () => {
     );
   });
 
+  // Untested until round 3: an array element that nests the real failure
+  // serialises to `{}`, because Error properties are not enumerable.
+  test("unwraps a nested Error in an array-shaped errors list", async () => {
+    const host = fakeHost({
+      native: false,
+      refreshResult: {
+        errors: [
+          { provider: "other", error: new Error("not this one") },
+          { provider: "aperture", error: new Error("gateway 502") },
+        ],
+      },
+    });
+    await start(host);
+    host.handlers.get("session_start")?.({}, host.ctx);
+
+    await settle();
+    expect(host.notify).toHaveBeenCalledWith(
+      expect.stringContaining("gateway 502"),
+      "warning",
+    );
+  });
+
+  // `toError` must be total: a throw here would suppress the relay it sits in
+  // and skip the re-pick that follows it.
+  test("survives an error value JSON.stringify cannot serialise", async () => {
+    const cyclic: Record<string, unknown> = { code: 17n };
+    cyclic.self = cyclic;
+    const host = fakeHost({
+      native: false,
+      refreshResult: { errors: { aperture: cyclic } },
+      activeModel: model("aperture", "openai/gpt-5"),
+      found: model("aperture", "openai/gpt-5"),
+    });
+    await start(host);
+    host.handlers.get("session_start")?.({}, host.ctx);
+
+    await settle();
+    expect(host.notify).toHaveBeenCalledWith(
+      expect.stringContaining("model refresh failed"),
+      "warning",
+    );
+    // The re-pick still ran, which is the point of the relay being total.
+    expect(host.setModel).toHaveBeenCalled();
+  });
+
+  // Two session transitions can overlap: `onSync` returns immediately while
+  // its refresh continues. An older sync finishing last must not re-select a
+  // model or relay an error for a session that has moved on.
+  test("an overtaken sync does not act on what it finds", async () => {
+    const host = fakeHost({
+      native: false,
+      refreshResult: { errors: new Map([["aperture", new Error("stale")]]) },
+      activeModel: model("aperture", "openai/gpt-5"),
+      found: model("aperture", "openai/gpt-5"),
+    });
+    await start(host);
+
+    // Two transitions back to back, before either refresh settles.
+    host.handlers.get("session_start")?.({}, host.ctx);
+    host.handlers.get("session_switch")?.({}, host.ctx);
+
+    await settle();
+    // Only the newer sync acted: one relay, one re-pick, not two.
+    expect(
+      host.notify.mock.calls.filter(([msg]) =>
+        String(msg).includes("model refresh failed"),
+      ),
+    ).toHaveLength(1);
+    expect(host.setModel).toHaveBeenCalledTimes(1);
+  });
+
   test("stays quiet when the host resolves nothing", async () => {
     const host = fakeHost({ native: false, refreshResult: undefined });
     await start(host);
@@ -319,6 +394,50 @@ describe("settling after session replacement", () => {
   });
 });
 
+// Regression: this is the only notify closure the host retains and invokes on
+// its own schedule (inside `refreshModels` / `fetchDynamicModels`), so it
+// outlives the session by longer than any other. A raw `ctx.ui.notify` here
+// turns a cosmetic api-override warning into a rejected catalog fetch, which
+// empties the model picker rather than losing one message.
+describe("the notify closure handed to the dedicated provider", () => {
+  test("does not throw once the session is gone", async () => {
+    const host = fakeHost({
+      native: false,
+      refreshResult: { errors: new Map() },
+    });
+    await start(host);
+    host.handlers.get("session_start")?.({}, host.ctx);
+
+    const notifyArg = mocks.reconcileDedicatedProvider.mock.calls.at(-1)?.[2] as
+      | ((msg: string) => void)
+      | undefined;
+    expect(notifyArg).toBeTypeOf("function");
+
+    host.invalidate();
+    expect(() => notifyArg?.("api override not served")).not.toThrow();
+  });
+});
+
+describe("proxy model re-pick", () => {
+  test("reports a rejected re-pick rather than leaking the rejection", async () => {
+    const host = fakeHost({
+      native: false,
+      refreshResult: { errors: new Map() },
+      activeModel: model("openai", "gpt-5"),
+      found: model("openai", "gpt-5"),
+      setModelRejects: new Error("No API key for openai/gpt-5"),
+    });
+    await start(host);
+    host.handlers.get("session_start")?.({}, host.ctx);
+
+    await settle();
+    expect(host.notify).toHaveBeenCalledWith(
+      expect.stringContaining("could not re-select openai/gpt-5"),
+      "warning",
+    );
+  });
+});
+
 describe("dedicated model re-pick", () => {
   test("re-picks the active dedicated model after a refresh", async () => {
     const updated = model("aperture", "openai/gpt-5");
@@ -333,6 +452,33 @@ describe("dedicated model re-pick", () => {
 
     await settle();
     expect(host.setModel).toHaveBeenCalledWith(updated);
+  });
+
+  // Regression (round 2): the whole re-pick used to sit in one try/catch whose
+  // `return` ran before the relay, so a re-pick failure suppressed the
+  // gateway's own error report. The relay now runs first and `registry.find`
+  // is outside the guard, so its failure reaches the terminal handler.
+  test("relays the gateway error even when the re-pick throws", async () => {
+    const host = fakeHost({
+      native: false,
+      refreshResult: {
+        errors: new Map([["aperture", new Error("gateway 503")]]),
+      },
+      activeModel: model("aperture", "openai/gpt-5"),
+      findThrows: new Error("registry exploded"),
+    });
+    await start(host);
+    host.handlers.get("session_start")?.({}, host.ctx);
+
+    await settle();
+    expect(host.notify).toHaveBeenCalledWith(
+      expect.stringContaining("gateway 503"),
+      "warning",
+    );
+    expect(host.notify).toHaveBeenCalledWith(
+      expect.stringContaining("registry exploded"),
+      "warning",
+    );
   });
 
   test("leaves a non-dedicated active model alone", async () => {

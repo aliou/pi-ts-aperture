@@ -159,7 +159,12 @@ export function parseApertureProvider(
     return null;
   }
 
-  return { ...record, id, name, description, models, compatibility };
+  // `modelInfoById` is populated by the client after parsing and is never on
+  // the wire. Dropping any inbound copy keeps a server-version skew from
+  // slipping unvalidated pricing into dedicated model construction, where a
+  // non-string rate would be coerced into a wildly wrong cost.
+  const { modelInfoById: _ignored, ...rest } = record;
+  return { ...rest, id, name, description, models, compatibility };
 }
 
 /**

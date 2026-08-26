@@ -996,7 +996,7 @@ describe("ApertureRuntime.sync api overrides", () => {
       "warning",
     );
     expect(notify).toHaveBeenCalledWith(
-      expect.stringContaining("could not reach the gateway catalog"),
+      expect.stringContaining("could not read the gateway catalog"),
       "warning",
     );
   });
@@ -1754,6 +1754,103 @@ describe("ApertureRuntime.sync config-registration hosts", () => {
     );
   });
 
+  // Regression: the bookkeeping used to be committed before the host call, so
+  // a refused unregister left the runtime believing it had restored a
+  // provider the host was still routing through the gateway — and nothing
+  // ever retried, because only a successful registration re-adds the entry.
+  test("retries the unregister when the host refuses it", async () => {
+    mockGateway([{ id: "openai", models: ["gpt-5.5", "gpt-4o"] }]);
+    const { deps, unregisterProvider, notify } = configDeps(openAiModels);
+    const runtime = new ApertureRuntime();
+
+    await runtime.sync(deps);
+
+    mockGateway([
+      {
+        id: "openai",
+        models: ["gpt-5.5", "gpt-4o"],
+        requires_client_auth: true,
+      },
+    ]);
+    unregisterProvider.mockImplementationOnce(() => {
+      throw new Error("host refused");
+    });
+
+    await runtime.sync(deps);
+    expect(notify).toHaveBeenCalledWith(
+      expect.stringContaining("refused to undo"),
+      "warning",
+    );
+
+    // The entry survived the failure, so the next sync tries again.
+    await runtime.sync(deps);
+    expect(unregisterProvider).toHaveBeenCalledTimes(2);
+  });
+
+  // Refusing a new registration is not enough: the previous sync's
+  // registration is still installed and still sending a placeholder key.
+  test("restores a rerouted provider when the catalog becomes unreachable", async () => {
+    mockGateway([{ id: "openai", models: ["gpt-5.5", "gpt-4o"] }]);
+    const { deps, unregisterProvider } = configDeps(openAiModels);
+    const runtime = new ApertureRuntime();
+
+    await runtime.sync(deps);
+    expect(unregisterProvider).not.toHaveBeenCalled();
+
+    mockGateway(new Error("gateway down"));
+    await runtime.sync(deps);
+
+    expect(unregisterProvider).toHaveBeenCalledWith("openai");
+  });
+
+  // Rerouting needs positive evidence the provider is served and is not
+  // passthrough. A catalog that simply does not list it is as much a lack of
+  // evidence as no catalog at all.
+  test("does not reroute a provider the gateway does not list", async () => {
+    mockGateway([{ id: "groq", models: ["llama-4"] }]);
+    const { deps, registerProviderConfig, notify } = configDeps(openAiModels);
+
+    await new ApertureRuntime().sync(deps);
+
+    expect(registerProviderConfig).not.toHaveBeenCalled();
+    expect(notify).toHaveBeenCalledWith(
+      expect.stringContaining("does not list openai"),
+      "warning",
+    );
+  });
+
+  test("restores a rerouted provider that drops out of the catalog", async () => {
+    mockGateway([{ id: "openai", models: ["gpt-5.5", "gpt-4o"] }]);
+    const { deps, unregisterProvider, notify } = configDeps(openAiModels);
+    const runtime = new ApertureRuntime();
+
+    await runtime.sync(deps);
+    expect(unregisterProvider).not.toHaveBeenCalled();
+
+    mockGateway([{ id: "groq", models: ["llama-4"] }]);
+    await runtime.sync(deps);
+
+    expect(unregisterProvider).toHaveBeenCalledWith("openai");
+    expect(notify).toHaveBeenCalledWith(
+      expect.stringContaining("no longer confirms it is served"),
+      "warning",
+    );
+  });
+
+  test("names the cause when the catalog fetch fails", async () => {
+    mockGateway(
+      new Error("[Aperture] GET /api/providers: -> 401 Unauthorized"),
+    );
+    const { deps, notify } = configDeps(openAiModels);
+
+    await new ApertureRuntime().sync(deps);
+
+    expect(notify).toHaveBeenCalledWith(
+      expect.stringContaining("401 Unauthorized"),
+      "warning",
+    );
+  });
+
   // Without a catalog there is no evidence a provider is not passthrough, and
   // guessing wrong sends `Bearer -` where the user's own credential belongs.
   test("registers nothing when the gateway catalog is unreachable", async () => {
@@ -1764,7 +1861,7 @@ describe("ApertureRuntime.sync config-registration hosts", () => {
 
     expect(registerProviderConfig).not.toHaveBeenCalled();
     expect(notify).toHaveBeenCalledWith(
-      expect.stringContaining("could not reach the gateway catalog"),
+      expect.stringContaining("could not read the gateway catalog"),
       "warning",
     );
   });

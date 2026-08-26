@@ -39,18 +39,39 @@ type HostModelRegistry = Omit<
   ) => Promise<unknown>;
 };
 
-/** Coerce whatever a host stored as an error into something with a message. */
+/**
+ * Coerce whatever a host stored as an error into something with a message.
+ *
+ * Total by construction. The relay below runs before the model re-pick
+ * specifically so nothing can suppress the gateway's error report, and a
+ * throw here would suppress both: `JSON.stringify` alone throws on a cyclic
+ * structure, on a `BigInt`, and on a getter that throws.
+ */
 function toError(value: unknown): Error | undefined {
   if (value === undefined || value === null || value === "") return undefined;
   if (value instanceof Error) return value;
   if (typeof value === "string") return new Error(value);
-  if (
-    typeof value === "object" &&
-    typeof (value as { message?: unknown }).message === "string"
-  ) {
-    return new Error((value as { message: string }).message);
+  if (typeof value === "object") {
+    const message = (value as { message?: unknown }).message;
+    if (typeof message === "string") return new Error(message);
+    // Host entries commonly nest the real failure, and an `Error` value
+    // serialises to `{}` because its properties are not enumerable, so
+    // unwrap before falling back to stringification.
+    for (const key of ["error", "cause", "reason"]) {
+      const nested: unknown = (value as Record<string, unknown>)[key];
+      if (nested !== undefined && nested !== value) {
+        const unwrapped = toError(nested);
+        if (unwrapped) return unwrapped;
+      }
+    }
   }
-  return new Error(JSON.stringify(value));
+  let described: string;
+  try {
+    described = JSON.stringify(value) ?? String(value);
+  } catch {
+    described = String(value);
+  }
+  return new Error(described || `unserialisable ${typeof value} error`);
 }
 
 /**
@@ -62,15 +83,21 @@ function toError(value: unknown): Error | undefined {
  * the gateway's error channel.
  */
 function refreshErrorFor(result: unknown, id: string): Error | undefined {
-  const errors = (result as { errors?: unknown } | undefined)?.errors;
-  if (!errors || typeof errors !== "object") return undefined;
-  if (errors instanceof Map) return toError(errors.get(id));
-  if (Array.isArray(errors)) {
-    return toError(
-      errors.find((e) => (e as { provider?: unknown })?.provider === id),
-    );
+  // Property reads on a host-supplied object can themselves throw (a getter,
+  // a proxy bound to a dead context), and this runs ahead of the re-pick.
+  try {
+    const errors = (result as { errors?: unknown } | undefined)?.errors;
+    if (!errors || typeof errors !== "object") return undefined;
+    if (errors instanceof Map) return toError(errors.get(id));
+    if (Array.isArray(errors)) {
+      return toError(
+        errors.find((e) => (e as { provider?: unknown })?.provider === id),
+      );
+    }
+    return toError((errors as Record<string, unknown>)[id]);
+  } catch {
+    return undefined;
   }
-  return toError((errors as Record<string, unknown>)[id]);
 }
 
 /**
@@ -154,7 +181,16 @@ export default async function (pi: ExtensionAPI): Promise<void> {
     knownModels = ctx.modelRegistry.getAll();
   };
 
+  // Session transitions and settings saves both call `onSync`, and its work
+  // continues asynchronously after it returns, so two can overlap. Only the
+  // newest may act on what it finds: an older one finishing last would
+  // re-select a model or relay an error for a session that has moved on.
+  let syncGeneration = 0;
+
   const onSync = (ctx: ExtensionContext): void => {
+    syncGeneration += 1;
+    const generation = syncGeneration;
+    const isCurrent = (): boolean => generation === syncGeneration;
     updateKnownModels(ctx);
     emitConfigSync();
     const config = configLoader.getConfig();
@@ -202,6 +238,7 @@ export default async function (pi: ExtensionAPI): Promise<void> {
         notify: notifyIfLive,
       })
       .then(() => {
+        if (!isCurrent()) return;
         const active = ctx.model;
         if (!active) return;
         const updated = registry.find(active.provider, active.id);
@@ -210,12 +247,14 @@ export default async function (pi: ExtensionAPI): Promise<void> {
           // provider it cannot express), in which case the host still holds
           // the upstream definition and `setModel` can reject on its
           // credential. Report it rather than leaking a rejection.
-          void pi.setModel(updated).catch((error: unknown) => {
-            notifyIfLive(
-              `[aperture] could not re-select ${active.provider}/${active.id}: ${error instanceof Error ? error.message : String(error)}`,
-              "warning",
-            );
-          });
+          void Promise.resolve()
+            .then(() => pi.setModel(updated))
+            .catch((error: unknown) => {
+              notifyIfLive(
+                `[aperture] could not re-select ${active.provider}/${active.id}: ${error instanceof Error ? error.message : String(error)}`,
+                "warning",
+              );
+            });
         }
       })
       .catch((error: unknown) => {
@@ -234,15 +273,25 @@ export default async function (pi: ExtensionAPI): Promise<void> {
         getModels: () => registry.getAll(),
         notify: notifyIfLive,
       })
-      .catch(() => {
-        // Warning-only path; a failure here must never surface as an
-        // unhandled rejection.
+      .catch((error: unknown) => {
+        // Gateway failures never reach here (`fetchProviders` absorbs them),
+        // so anything that does is a client or host-contract bug. Report it
+        // rather than leaving the check silently not running.
+        notifyIfLive(
+          `[aperture] could not check which models the gateway serves: ${error instanceof Error ? error.message : String(error)}`,
+          "warning",
+        );
       });
 
+    // `notifyIfLive`, not a raw `ctx.ui.notify`: the host retains this closure
+    // inside `refreshModels` and `fetchDynamicModels` and calls it on its own
+    // schedule, so it outlives the session by longer than any other handler
+    // here. A dead-context throw from a cosmetic warning would reject the
+    // catalog fetch and empty the model picker.
     reconcileDedicatedProvider(
       pi,
       getRegistryModels,
-      (msg) => ctx.ui.notify(msg, "warning"),
+      (msg) => notifyIfLive(msg, "warning"),
       headers,
     );
 
@@ -257,6 +306,8 @@ export default async function (pi: ExtensionAPI): Promise<void> {
       : registry.refresh();
     void Promise.resolve(refresh)
       .then((result) => {
+        if (!isCurrent()) return;
+
         // Relay first, in its own scope. `refreshErrorFor` is total and
         // `notifyIfLive` cannot throw, so nothing below can suppress the
         // gateway's own error report -- the only channel this wires for it.
@@ -287,12 +338,17 @@ export default async function (pi: ExtensionAPI): Promise<void> {
         if (active?.provider !== DEDICATED_PROVIDER_ID) return;
         const updated = registry.find(active.provider, active.id);
         if (!updated) return;
-        void pi.setModel(updated).catch((rejection: unknown) => {
-          notifyIfLive(
-            `[aperture] could not re-select ${active?.provider}/${active?.id}: ${rejection instanceof Error ? rejection.message : String(rejection)}`,
-            "warning",
-          );
-        });
+        // `Promise.resolve().then(...)` so a host that validates eagerly and
+        // throws synchronously reaches this handler, which names the re-pick,
+        // rather than the enclosing one, which would blame the refresh.
+        void Promise.resolve()
+          .then(() => pi.setModel(updated))
+          .catch((rejection: unknown) => {
+            notifyIfLive(
+              `[aperture] could not re-select ${active?.provider}/${active?.id}: ${rejection instanceof Error ? rejection.message : String(rejection)}`,
+              "warning",
+            );
+          });
       })
       .catch((error: unknown) => {
         notifyIfLive(
