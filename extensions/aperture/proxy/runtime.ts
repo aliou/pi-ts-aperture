@@ -68,6 +68,11 @@ export class ApertureRuntime {
   // sync from the gateway catalog.
   private passthroughProviderIds = new Set<string>();
 
+  // Providers this runtime registered through the config path. A config
+  // registration outlives the sync that made it, so a provider that later
+  // turns out to be passthrough has to be actively undone, not just skipped.
+  private readonly configRegistered = new Set<string>();
+
   async sync(deps: SyncDeps): Promise<void> {
     const config = configLoader.getConfig();
     if (!config.proxy.enabled) return;
@@ -83,8 +88,17 @@ export class ApertureRuntime {
     const nativeDeps = deps.native;
 
     // One catalog fetch per sync serves passthrough detection and model
-    // filtering.
-    const providers = await this.fetchProviders(gatewayRoot);
+    // filtering. `undefined` means the fetch failed, which is not the same
+    // as a gateway that serves nothing: the difference decides whether the
+    // config branch may register at all.
+    const fetched = await this.fetchProviders(gatewayRoot);
+    if (fetched === undefined) {
+      deps.notify?.(
+        `[aperture] could not reach the gateway catalog at ${gatewayRoot}; passthrough detection, gateway-model filtering and api overrides are unavailable this sync.`,
+        "warning",
+      );
+    }
+    const providers = fetched ?? [];
     this.passthroughProviderIds = new Set(
       providers.filter((p) => p.requires_client_auth).map((p) => p.id),
     );
@@ -188,17 +202,15 @@ export class ApertureRuntime {
         servedIds === undefined
           ? seenModels
           : seenModels.filter((model) => servedIds.has(model.id));
-      // The native branch skips only on an empty *filtered* list, exactly as
-      // before: an unfiltered provider whose live getModels() is momentarily
-      // empty must still be re-registered, or a dynamic provider loses its
-      // gateway routing. The config branch has nothing to register with an
-      // empty list, so it skips either way.
-      if (servedIds !== undefined && selected.length === 0) continue;
-      if (!nativeDeps && selected.length === 0) continue;
-
       const isPassthrough = this.passthroughProviderIds.has(providerName);
 
       if (nativeDeps && native && firstSeen) {
+        // Exactly the pre-change guard: skip only on an empty *filtered*
+        // list. An unfiltered provider whose live getModels() is momentarily
+        // empty must still be re-registered, or a dynamic provider loses its
+        // gateway routing.
+        if (servedIds !== undefined && selected.length === 0) continue;
+
         const baseAuth = firstSeen.auth?.apiKey;
         const wrapped: Provider = {
           ...native,
@@ -268,18 +280,28 @@ export class ApertureRuntime {
       // A passthrough provider cannot be expressed here at all. Its whole
       // point is that the client sends its own credential, and a config
       // registration can only carry a literal/env/command `apiKey` - there is
-      // no way to say "resolve this provider's native auth". Hosts reject a
-      // registration that defines models with neither `apiKey` nor `oauth`
-      // ("apiKey" or "oauth" is required when defining models), so emitting
-      // one throws and aborts the whole sync. Skip it, loudly: the provider
-      // keeps its own upstream registration.
+      // no way to say "resolve this provider's native auth". A host rejects a
+      // registration that defines models with neither `apiKey` nor `oauth`,
+      // so attempting one only produces a contained warning for a case we
+      // already know cannot work. Skipping is not enough on its own either: a
+      // config registration outlives the sync that made it, so a provider we
+      // already rerouted (or misclassified while the catalog was unreachable)
+      // must be actively unregistered, restoring its own model definitions.
       if (isPassthrough) {
+        const wasRerouted = this.configRegistered.delete(providerName);
+        if (wasRerouted) deps.unregisterProvider(providerName);
         deps.notify?.(
-          `[aperture] ${providerName} needs the client's own credential (passthrough), which this host cannot express in a provider config; leaving it un-proxied.`,
+          `[aperture] ${providerName} needs the client's own credential (passthrough), which this host cannot express in a provider config; ${wasRerouted ? "restored its own routing" : "leaving it un-proxied"}.`,
           "warning",
         );
         continue;
       }
+
+      // Without a catalog there is no evidence this provider is not
+      // passthrough, and guessing wrong sends `Bearer -` where the user's own
+      // credential belongs. Leave it on its upstream routing for this sync;
+      // the warning above already said the catalog was unreachable.
+      if (fetched === undefined) continue;
 
       // `keepGatewayModelsOnly` cannot hide anything here: config registration
       // merges, so the models we leave out keep their upstream definitions
@@ -290,6 +312,10 @@ export class ApertureRuntime {
           "warning",
         );
       }
+
+      // Nothing left to register, but only after the warnings above: a fully
+      // filtered provider is exactly the case a user most needs told.
+      if (selected.length === 0) continue;
 
       try {
         deps.registerProviderConfig(providerName, {
@@ -313,24 +339,32 @@ export class ApertureRuntime {
             };
           }),
         });
+        this.configRegistered.add(providerName);
       } catch (error) {
         // One provider the host refuses must not cost the rest of the list.
+        // The host owns whether a refused registration left anything behind,
+        // so do not promise a clean rollback here.
         deps.notify?.(
-          `[aperture] could not reroute ${providerName} through the gateway: ${error instanceof Error ? error.message : String(error)}`,
+          `[aperture] the host refused the gateway registration for ${providerName}: ${error instanceof Error ? error.message : String(error)}. It may be left partly registered; reload if its models misbehave.`,
           "warning",
         );
       }
     }
   }
 
-  /** Fetch the gateway catalog, failing open to an empty list. */
+  /**
+   * Fetch the gateway catalog. `undefined` distinguishes "could not fetch"
+   * from "the gateway lists nothing", which the callers treat differently:
+   * the native branch keeps its historical fail-open, the config branch
+   * refuses to guess a provider's auth mode without the catalog.
+   */
   private async fetchProviders(
     gatewayRoot: string,
-  ): Promise<ApertureProvider[]> {
+  ): Promise<ApertureProvider[] | undefined> {
     try {
       return await new ApertureClient(gatewayRoot).providers();
     } catch {
-      return [];
+      return undefined;
     }
   }
 
@@ -356,7 +390,7 @@ export class ApertureRuntime {
       // caller fires-and-forgets this promise) and crash Pi.
       gatewayProviders = await this.fetchProviders(gatewayUrl as string);
     }
-    if (gatewayProviders.length === 0) return;
+    if (!gatewayProviders || gatewayProviders.length === 0) return;
 
     const modelIdsByProvider = new Map(
       gatewayProviders.map((provider) => [

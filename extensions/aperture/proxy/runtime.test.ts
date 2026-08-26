@@ -54,6 +54,7 @@ function syncDeps(models: () => Model<Api>[]) {
       },
     },
     registerProviderConfig,
+    unregisterProvider: vi.fn(),
     getModels: models,
   };
   return { deps, registerNativeProvider, registerProviderConfig };
@@ -425,6 +426,7 @@ describe("ApertureRuntime.sync provider-qualified model ids", () => {
         registerNativeProvider: (p: { id: string }) => void store.set(p.id, p),
       },
       registerProviderConfig: vi.fn(),
+      unregisterProvider: vi.fn(),
       getModels: () => [model("synthetic", "foo")],
     };
 
@@ -806,6 +808,53 @@ describe("ApertureRuntime.sync gateway model filtering", () => {
       lastRegisteredModels(registerNativeProvider, "openai").map((m) => m.id),
     ).toEqual(["gpt-5.5", "gpt-4o"]);
   });
+
+  // Regression: the guard is "skip only when filtering left nothing", not
+  // "skip whenever the list is empty". A dynamic native provider whose
+  // getModels() is momentarily empty must still be re-registered, or it
+  // loses its gateway routing for the rest of the session. An unfiltered
+  // provider therefore reaches registration even with no models.
+  test("re-registers an unfiltered native provider whose model list is empty", async () => {
+    mockGateway({ openai: ["gpt-5.5"] });
+    getConfig.mockReturnValue(
+      proxyConfig([{ id: "openai", shouldCheckGatewayModels: false }]),
+    );
+    // The registry still reports a model for the provider (so the loop does
+    // not skip earlier), but the provider object itself lists none.
+    const registerNativeProvider = vi.fn();
+    const deps = {
+      native: {
+        getProvider: () => ({ id: "openai", getModels: () => [] }),
+        registerNativeProvider,
+      },
+      registerProviderConfig: vi.fn(),
+      unregisterProvider: vi.fn(),
+      getModels: openAiModels,
+    };
+
+    await new ApertureRuntime().sync(deps as never);
+
+    expect(registerNativeProvider).toHaveBeenCalledTimes(1);
+  });
+
+  // The other arm: with filtering on and nothing served, it must skip.
+  test("skips a filtered native provider when the gateway serves none of it", async () => {
+    mockGateway({ openai: ["something-else"] });
+    getConfig.mockReturnValue(
+      proxyConfig([
+        {
+          id: "openai",
+          shouldCheckGatewayModels: false,
+          keepGatewayModelsOnly: true,
+        },
+      ]),
+    );
+    const { deps, registerNativeProvider } = syncDeps(openAiModels);
+
+    await new ApertureRuntime().sync(deps);
+
+    expect(registerNativeProvider).not.toHaveBeenCalled();
+  });
 });
 
 describe("ApertureRuntime.sync api overrides", () => {
@@ -939,7 +988,17 @@ describe("ApertureRuntime.sync api overrides", () => {
     const models = lastRegistered(registerNativeProvider, "neuralwatt");
     expect(models[0]?.api).toBe("openai-completions");
     expect(models[0]?.baseUrl).toBe("http://gateway.test/v1");
-    expect(notify).not.toHaveBeenCalled();
+    // The override falls back without its own "not served by the gateway"
+    // warning — the catalog never said that. What the user does get told is
+    // that the catalog was unreachable, which is the actual cause.
+    expect(notify).not.toHaveBeenCalledWith(
+      expect.stringContaining("is not served by the gateway"),
+      "warning",
+    );
+    expect(notify).toHaveBeenCalledWith(
+      expect.stringContaining("could not reach the gateway catalog"),
+      "warning",
+    );
   });
 
   test("a provider with enabled: false is not proxied", async () => {
@@ -1010,6 +1069,7 @@ describe("ApertureRuntime.sync passthrough auth", () => {
           registerNativeProvider,
         },
         registerProviderConfig: vi.fn(),
+        unregisterProvider: vi.fn(),
         getModels: allModels,
       },
       registerNativeProvider,
@@ -1138,6 +1198,7 @@ describe("ApertureRuntime.sync passthrough auth", () => {
         registerNativeProvider,
       },
       registerProviderConfig: vi.fn(),
+      unregisterProvider: vi.fn(),
       getModels: () => native.getModels(),
     };
 
@@ -1207,25 +1268,32 @@ interface RegisteredProviderConfig {
 // Provider; sync must fall back to name+config registration.
 describe("ApertureRuntime.sync config-registration hosts", () => {
   function mockGateway(
-    providers: {
-      id: string;
-      models: string[];
-      requires_client_auth?: boolean;
-      compatibility?: Record<string, boolean>;
-    }[],
+    providers:
+      | {
+          id: string;
+          models: string[];
+          requires_client_auth?: boolean;
+          compatibility?: Record<string, boolean>;
+        }[]
+      | Error,
   ) {
     vi.mocked(ApertureClient).mockImplementation(function (this: {
       providers: ReturnType<typeof vi.fn>;
     }) {
-      this.providers = vi.fn().mockResolvedValue(
-        providers.map((p) => ({
-          id: p.id,
-          name: p.id,
-          models: p.models,
-          compatibility: p.compatibility ?? {},
-          ...(p.requires_client_auth ? { requires_client_auth: true } : {}),
-        })),
-      );
+      this.providers =
+        providers instanceof Error
+          ? vi.fn().mockRejectedValue(providers)
+          : vi.fn().mockResolvedValue(
+              providers.map((p) => ({
+                id: p.id,
+                name: p.id,
+                models: p.models,
+                compatibility: p.compatibility ?? {},
+                ...(p.requires_client_auth
+                  ? { requires_client_auth: true }
+                  : {}),
+              })),
+            );
       return this;
     } as unknown as typeof ApertureClient);
   }
@@ -1233,15 +1301,18 @@ describe("ApertureRuntime.sync config-registration hosts", () => {
   /** SyncDeps without native provider access, as a config-only host exposes. */
   function configDeps(models: () => Model<Api>[]) {
     const registerProviderConfig = vi.fn();
+    const unregisterProvider = vi.fn();
     const notify = vi.fn();
     return {
       deps: {
         registerProviderConfig,
+        unregisterProvider,
         getModels: models,
         headers: { Referer: "https://pi.dev", "x-session-id": "s-1" },
         notify,
       },
       registerProviderConfig,
+      unregisterProvider,
       notify,
     };
   }
@@ -1401,7 +1472,10 @@ describe("ApertureRuntime.sync config-registration hosts", () => {
     );
   });
 
-  test("skips a provider whose every model is filtered out", async () => {
+  // Regression: the empty-selection guard used to run before both config-host
+  // warnings, so the case a user most needs told about — every model filtered
+  // out — was the one case that said nothing.
+  test("warns before skipping a provider whose every model is filtered out", async () => {
     getConfig.mockReturnValue(
       proxyConfig([
         {
@@ -1412,11 +1486,45 @@ describe("ApertureRuntime.sync config-registration hosts", () => {
       ]),
     );
     mockGateway([{ id: "openai", models: ["something-else"] }]);
-    const { deps, registerProviderConfig } = configDeps(openAiModels);
+    const { deps, registerProviderConfig, notify } = configDeps(openAiModels);
 
     await new ApertureRuntime().sync(deps);
 
     expect(registerProviderConfig).not.toHaveBeenCalled();
+    expect(notify).toHaveBeenCalledWith(
+      expect.stringContaining("keepGatewayModelsOnly cannot hide models"),
+      "warning",
+    );
+  });
+
+  // Same ordering bug: a fully filtered passthrough provider skipped silently
+  // instead of reporting that it cannot be proxied on this host.
+  test("warns about a passthrough provider even when every model is filtered out", async () => {
+    getConfig.mockReturnValue(
+      proxyConfig([
+        {
+          id: "openai",
+          shouldCheckGatewayModels: false,
+          keepGatewayModelsOnly: true,
+        },
+      ]),
+    );
+    mockGateway([
+      {
+        id: "openai",
+        models: ["something-else"],
+        requires_client_auth: true,
+      },
+    ]);
+    const { deps, registerProviderConfig, notify } = configDeps(openAiModels);
+
+    await new ApertureRuntime().sync(deps);
+
+    expect(registerProviderConfig).not.toHaveBeenCalled();
+    expect(notify).toHaveBeenCalledWith(
+      expect.stringContaining("passthrough"),
+      "warning",
+    );
   });
 
   // Regression: from the second sync on, getModels() returns the models we
@@ -1561,5 +1669,103 @@ describe("ApertureRuntime.sync config-registration hosts", () => {
     expect(
       lastConfig(registerProviderConfig, "openai").models?.map((m) => m.api),
     ).toEqual(["openai-responses", "openai-completions"]);
+  });
+
+  // Mutation cover: without this, `api: modelApi` could keep the per-model
+  // api while `baseUrl` reverted to the provider-wide one and every test
+  // still passed, because the two only disagree across API families.
+  test("derives each model's base url from that model's own api", async () => {
+    mockGateway([{ id: "openai", models: ["gpt-5.5", "claude-ish"] }]);
+    const { deps, registerProviderConfig } = configDeps(() => [
+      model(
+        "openai",
+        "gpt-5.5",
+        "openai-responses",
+        "https://api.openai.com/v1",
+      ),
+      model(
+        "openai",
+        "claude-ish",
+        "anthropic-messages",
+        "https://api.openai.com/v1",
+      ),
+    ]);
+
+    await new ApertureRuntime().sync(deps);
+
+    // `openai-responses` keeps `/v1`; `anthropic-messages` needs the root
+    // because the Anthropic SDK appends `/v1/messages` itself.
+    expect(
+      lastConfig(registerProviderConfig, "openai").models?.map(
+        (m) => m.baseUrl,
+      ),
+    ).toEqual(["http://gateway.test/v1", "http://gateway.test"]);
+  });
+
+  // Mutation cover: the warning must be conditional, not unconditional.
+  test("stays quiet when keepGatewayModelsOnly filters nothing", async () => {
+    getConfig.mockReturnValue(
+      proxyConfig([
+        {
+          id: "openai",
+          shouldCheckGatewayModels: false,
+          keepGatewayModelsOnly: true,
+        },
+      ]),
+    );
+    mockGateway([{ id: "openai", models: ["gpt-5.5", "gpt-4o"] }]);
+    const { deps, registerProviderConfig, notify } = configDeps(openAiModels);
+
+    await new ApertureRuntime().sync(deps);
+
+    expect(lastConfig(registerProviderConfig, "openai").models).toHaveLength(2);
+    expect(notify).not.toHaveBeenCalled();
+  });
+
+  // Regression: a config registration outlives the sync that made it, so a
+  // provider that becomes passthrough later has to be actively undone. Merely
+  // skipping it leaves the gateway registration installed with `apiKey: "-"`
+  // and every request failing the upstream's own auth.
+  test("unregisters a provider that becomes passthrough after being rerouted", async () => {
+    mockGateway([{ id: "openai", models: ["gpt-5.5", "gpt-4o"] }]);
+    const { deps, registerProviderConfig, unregisterProvider, notify } =
+      configDeps(openAiModels);
+    const runtime = new ApertureRuntime();
+
+    await runtime.sync(deps);
+    expect(registerProviderConfig).toHaveBeenCalledTimes(1);
+    expect(unregisterProvider).not.toHaveBeenCalled();
+
+    // The gateway flips the provider to passthrough.
+    mockGateway([
+      {
+        id: "openai",
+        models: ["gpt-5.5", "gpt-4o"],
+        requires_client_auth: true,
+      },
+    ]);
+    await runtime.sync(deps);
+
+    expect(unregisterProvider).toHaveBeenCalledWith("openai");
+    expect(registerProviderConfig).toHaveBeenCalledTimes(1);
+    expect(notify).toHaveBeenCalledWith(
+      expect.stringContaining("restored its own routing"),
+      "warning",
+    );
+  });
+
+  // Without a catalog there is no evidence a provider is not passthrough, and
+  // guessing wrong sends `Bearer -` where the user's own credential belongs.
+  test("registers nothing when the gateway catalog is unreachable", async () => {
+    mockGateway(new Error("gateway down"));
+    const { deps, registerProviderConfig, notify } = configDeps(openAiModels);
+
+    await new ApertureRuntime().sync(deps);
+
+    expect(registerProviderConfig).not.toHaveBeenCalled();
+    expect(notify).toHaveBeenCalledWith(
+      expect.stringContaining("could not reach the gateway catalog"),
+      "warning",
+    );
   });
 });

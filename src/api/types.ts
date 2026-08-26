@@ -108,9 +108,13 @@ export function parseApertureProvider(
   const record = asRecord(value);
   if (!record) return null;
 
+  // A map-keyed response supplies the id as the key, and the replaced
+  // preprocessing overwrote whatever `record.id` held with it before
+  // validating. Keep that: `providers: { openai: { id: null } }` is a real
+  // shape under server-version skew, and rejecting it drops the provider
+  // from discovery silently. Without a key there is nothing to fall back to.
   const id = typeof record.id === "string" ? record.id : fallbackId;
   if (!id) return null;
-  if (record.id !== undefined && typeof record.id !== "string") return null;
 
   // `null` counts as absent here, matching the replaced `name: record.name ?? id`
   // preprocessing: an unset optional string is `null` on the wire for most

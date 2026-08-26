@@ -413,33 +413,43 @@ describe("fetchDynamicModels", () => {
   });
 
   // Regression: a refresh used to read config twice — once for the catalog
-  // key, once inside the fetch. A settings change landing between the two
-  // persisted one configuration's models under the other's key, so the
-  // snapshot either replayed the wrong provider selection or was unreachable.
-  test("labels the persisted catalog with the config it was built from", async () => {
-    providersMock.mockImplementation(async () => {
-      // The user saves new settings while the gateway request is in flight.
-      getConfig.mockReturnValue(
-        dedicatedConfig(true, [{ id: "anthropic", enabled: true }]),
-      );
-      return [
-        gatewayProvider("openai", ["gpt-5"]),
-        gatewayProvider("anthropic", ["claude-x"]),
-      ];
-    });
+  // key, once inside the fetch — so a settings change landing between the two
+  // reads persisted one configuration's models under the other's key.
+  //
+  // The mock changes what `getConfig` returns from the SECOND call onwards,
+  // which is precisely what discriminates: the fixed implementation reads
+  // once and never sees the change, the two-read implementation builds the
+  // filtered catalog for config B and stores it under config A's key.
+  test("keys the persisted catalog with the same config it built from", async () => {
+    providersMock.mockResolvedValue([
+      gatewayProvider("openai", ["gpt-5"]),
+      gatewayProvider("anthropic", ["claude-x"]),
+    ]);
+    getConfig.mockReturnValueOnce(dedicatedConfig());
+    getConfig.mockReturnValue(
+      dedicatedConfig(true, [{ id: "anthropic", enabled: true }]),
+    );
     const config = register();
+    // `register()` consumed the one-shot, so re-arm for the refresh itself.
+    getConfig.mockReset();
+    getConfig.mockReturnValueOnce(dedicatedConfig());
+    getConfig.mockReturnValue(
+      dedicatedConfig(true, [{ id: "anthropic", enabled: true }]),
+    );
     const store = memoryStore();
 
     const models = await refresh(config, store, true);
 
-    // Built under the original (unfiltered) config, so both providers are in
-    // the catalog and the stored key must be the unfiltered one.
+    // One read means the unfiltered config built the catalog: both providers.
+    // A second read would have filtered this to anthropic alone.
     expect(models.map((m) => m.id)).toEqual([
       "openai/gpt-5",
       "anthropic/claude-x",
     ]);
 
-    // Restoring under the config the entry was actually built from works...
+    // ...and the key it was stored under is the unfiltered one, so the
+    // unfiltered config restores it.
+    getConfig.mockReset();
     getConfig.mockReturnValue(dedicatedConfig());
     await expect(refresh(config, store, false)).resolves.toHaveLength(2);
   });

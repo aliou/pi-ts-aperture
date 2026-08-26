@@ -55,6 +55,12 @@ export interface SyncDeps {
   native?: NativeProviderDeps;
   /** Name+config registration. Every host implements this. */
   registerProviderConfig: (name: string, config: HostProviderConfig) => void;
+  /**
+   * Undo a previous config registration, restoring the provider's own model
+   * definitions. Needed when a provider we rerouted turns out to need the
+   * client's own credential after all.
+   */
+  unregisterProvider: (name: string) => void;
   getModels: () => Model<Api>[];
   /** Provenance headers to bake into config registrations. */
   headers?: Record<string, string>;

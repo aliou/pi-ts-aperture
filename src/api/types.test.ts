@@ -67,12 +67,16 @@ describe("parseApertureProvider", () => {
     ).toBe(true);
   });
 
-  test("rejects a non-string id", () => {
+  // No key to fall back to, so a wrong-typed id leaves nothing usable.
+  test("rejects a non-string id in an array-shaped response", () => {
     expect(parseApertureProvider({ id: 42, name: "OpenAI" })).toBeNull();
   });
 
-  test("rejects a non-string id even when a fallbackId is available", () => {
-    expect(parseApertureProvider({ id: 42 }, "openai")).toBeNull();
+  // Parity with the replaced preprocessing, which overwrote `record.id` with
+  // the map key before validating.
+  test("falls back to the map key when id is not a string", () => {
+    expect(parseApertureProvider({ id: null }, "openai")?.id).toBe("openai");
+    expect(parseApertureProvider({ id: 42 }, "openai")?.id).toBe("openai");
   });
 
   test("rejects a non-string name", () => {
