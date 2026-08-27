@@ -10,6 +10,7 @@ import type {
   ApertureConfig,
   ResolvedConfig,
 } from "../../shared/config/loader";
+import { isProvenanceTelemetryAllowed } from "../../shared/provenance";
 import { SETTINGS_CONTENT_HEIGHT } from "./shared";
 
 interface GlobalTabContext {
@@ -33,6 +34,8 @@ export function buildGlobalSections(
   const onboardingDone = draft.onboardingDone ?? resolved.onboardingDone;
   const onboardingEnabled =
     draft.onboarding?.enabled ?? resolved.onboarding.enabled;
+  const shouldSendProvenanceHeaders =
+    draft.shouldSendProvenanceHeaders ?? resolved.shouldSendProvenanceHeaders;
 
   const baseConnectionItem: SettingsSection = {
     label: "Connection",
@@ -77,6 +80,31 @@ export function buildGlobalSections(
     ],
   };
 
+  // pi-utils-settings has no `disabled` item flag; an item without
+  // `values` (or a submenu) is read-only, so the telemetry-off case is
+  // rendered as a plain display item.
+  const telemetryAllowed = isProvenanceTelemetryAllowed();
+  const provenanceItem: SettingsSection["items"][number] = telemetryAllowed
+    ? {
+        id: "shouldSendProvenanceHeaders",
+        label: "Provenance headers",
+        description: "Referer + session id on provider requests",
+        currentValue: shouldSendProvenanceHeaders ? "enabled" : "disabled",
+        values: ["enabled", "disabled"],
+      }
+    : {
+        id: "shouldSendProvenanceHeaders",
+        label: "Provenance headers",
+        description:
+          "Referer + session id on provider requests; forced off because pi telemetry is disabled (PI_TELEMETRY or enableInstallTelemetry).",
+        currentValue: "disabled (pi telemetry off)",
+      };
+
+  const requestsItem: SettingsSection = {
+    label: "Provider requests",
+    items: [provenanceItem],
+  };
+
   const setupItem: SettingsSection = {
     label: "Setup",
     items: [
@@ -97,5 +125,5 @@ export function buildGlobalSections(
     ],
   };
 
-  return [baseConnectionItem, setupItem];
+  return [baseConnectionItem, requestsItem, setupItem];
 }
