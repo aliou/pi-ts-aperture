@@ -123,6 +123,16 @@ export interface ApertureConfig {
   baseUrl?: string;
   /** Whether onboarding has been completed. */
   onboardingDone?: boolean;
+  /**
+   * Inject provenance headers (`Referer: https://pi.dev`, `x-session-id`)
+   * on provider requests routed through Aperture. Defaults to `true`.
+   *
+   * Independent of this flag, headers are skipped when the user opted out
+   * of pi telemetry (`PI_TELEMETRY` env override or the
+   * `enableInstallTelemetry` setting), mirroring the gate pi core uses for
+   * its own provider attribution headers.
+   */
+  shouldSendProvenanceHeaders?: boolean;
   onboarding?: {
     /** Whether the onboarding extension affordances are active. */
     enabled?: boolean;
@@ -143,6 +153,7 @@ export interface ApertureConfig {
 export interface ResolvedConfig {
   baseUrl: string;
   onboardingDone: boolean;
+  shouldSendProvenanceHeaders: boolean;
   onboarding: {
     enabled: boolean;
   };
