@@ -29,6 +29,10 @@
           "type": "boolean",
           "description": "Whether onboarding has been completed."
         },
+        "shouldSendProvenanceHeaders": {
+          "type": "boolean",
+          "description": "Inject provenance headers (`Referer: https://pi.dev`, `x-session-id`) on provider requests routed through Aperture. Defaults to `true`.\n\nIndependent of this flag, headers are skipped when the user opted out of pi telemetry (`PI_TELEMETRY` env override or the `enableInstallTelemetry` setting), mirroring the gate pi core uses for its own provider attribution headers."
+        },
         "onboarding": {
           "type": "object",
           "properties": {

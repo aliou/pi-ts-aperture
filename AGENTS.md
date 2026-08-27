@@ -6,7 +6,7 @@ Pi extension that routes LLM traffic through [Tailscale Aperture](https://tailsc
 
 - `extensions/aperture/` - Main extension: proxy mode (`proxy/`), the dedicated `aperture` provider (`dedicated/`), onboarding wizard (`onboarding/`), settings UI (`settings/`).
 - `extensions/connectors/` - Registers MCP tools discovered from Aperture's `/v1/mcp` endpoint.
-- `extensions/shared/` - Config (types, defaults, loader, migrations), sync bus between the two extensions, provider mapping, Pi API selection.
+- `extensions/shared/` - Config (types, defaults, loader, migrations), sync bus between the two extensions, provider mapping, Pi API selection, provenance (telemetry-gated header injection in `provenance.ts`).
 - `src/` - Pi-agnostic code: Aperture API client, gateway base-URL routing, model metadata resolution, retryable-error tagging, MCP client.
 
 Config types and defaults: `extensions/shared/config/types.ts` and `defaults.ts`. Read those instead of trusting any restated shape.
@@ -41,7 +41,7 @@ These are not obvious from reading the code. The code shows what happens; these 
 - **Model metadata belongs in `~/.pi/agent/models.json`, not in extension config.** No gateway model cache is persisted in the extension config file.
 - **Retryable errors are tagged, not classified.** Pi's retry classifier is hardcoded, so a `message_end` handler appends ` (service unavailable)` to transient Aperture errors. New patterns go in `TRANSIENT_APERTURE_ERROR_PATTERNS` in `src/retryable-errors.ts`.
 - **Config migrations are mandatory on format change.** Migrations live in `extensions/shared/config/migration/`; existing user config must keep working across releases.
-- **Headers are injected per-request.** `Referer` and `x-session-id` go through the `before_provider_headers` hook so the session id stays current across `/fork`, `/new`, `/resume`. Do not bake headers into provider registration.
+- **Headers are injected per-request.** `Referer` and `x-session-id` go through the `before_provider_headers` hook so the session id stays current across `/fork`, `/new`, `/resume`. Do not bake headers into provider registration. Injection is gated per request on the `shouldSendProvenanceHeaders` config option (default `true`, toggleable in `/aperture:settings`) and on Pi's telemetry gate — a memoized read-only mirror of `PI_TELEMETRY` / `enableInstallTelemetry` in `extensions/shared/provenance.ts`.
 
 ## Testing
 
