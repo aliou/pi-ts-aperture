@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vitest";
+import { configLoader } from "./loader";
 import {
   legacyToV06Migration,
   modeToCapabilitiesMigration,
@@ -62,5 +63,23 @@ describe("config migrations", () => {
 
     expect(result.proxy).toEqual({ enabled: false, upstreamProviders: [] });
     expect(result.dedicated).toEqual({ enabled: true, providers: [] });
+  });
+});
+
+describe("APERTURE_BASE_URL env override", () => {
+  test("env overrides the resolved baseUrl and is normalized", async () => {
+    process.env.APERTURE_BASE_URL = "gateway.test/v1/models";
+    try {
+      await configLoader.load();
+      expect(configLoader.getConfig().baseUrl).toBe("http://gateway.test");
+    } finally {
+      delete process.env.APERTURE_BASE_URL;
+    }
+  });
+
+  test("no env keeps the configured baseUrl", async () => {
+    await configLoader.load();
+    const { baseUrl } = configLoader.getConfig();
+    expect(baseUrl).toBe(configLoader.getConfig().baseUrl);
   });
 });

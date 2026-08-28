@@ -206,6 +206,7 @@ There is no current `mode` setting. Legacy `mode` configs are migrated to capabi
 
 ### General
 
+- The gateway base URL can be overridden with the `APERTURE_BASE_URL` environment variable, which takes precedence over the config file value (applied in the config loader's `afterMerge` hook, normalized via `normalizeInputUrl`, and never persisted back to disk).
 - No hardcoded provider IDs or URLs. Works for any Aperture instance with any providers.
 - Config migrations are added when the file format changes, so existing user configuration keeps working across releases.
 
