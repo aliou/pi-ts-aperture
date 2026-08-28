@@ -49,6 +49,7 @@ These are not obvious from reading the code. The code shows what happens; these 
 - Unit tests live next to source as `*.test.ts`.
 - Integration tests in `src/api/*.integration.test.ts` hit a live Aperture instance and are skipped without credentials.
 - CI runs lint + typecheck + tests on push/PR; publish runs after CI succeeds on `main`.
+- **Example URLs in tests.** Always use `ai.pango-lin.ts.net` (the same placeholder the onboarding wizard shows) as the example Aperture hostname in tests and fixtures — never a real tailnet URL. Other clearly-fake hosts like `aperture.example.ts.net` or `ai.host.ts.net` are fine for cases where a generic hostname is more readable.
 
 ## Documentation update triggers
 
