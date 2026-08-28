@@ -66,7 +66,7 @@ Enable connectors in `/aperture:settings`. Pin changes take effect on the next P
 
 ## Configuration
 
-Configuration is saved globally to `~/.pi/agent/extensions/aperture.json`. The settings UI covers everything, but you can also edit the file directly:
+Configuration is saved globally to `~/.pi/agent/extensions/aperture.json`. The settings UI covers everything, but you can also edit the file directly. The `APERTURE_BASE_URL` environment variable, when set, overrides the configured `baseUrl` (it is not written back to the config file):
 
 ```json
 {
