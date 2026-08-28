@@ -33,6 +33,7 @@ User-facing commands: `/aperture:onboarding` (visible only while onboarding is p
 These are not obvious from reading the code. The code shows what happens; these say why and what not to break.
 
 - **Global-only config.** Aperture is a network concern, so config lives at `~/.pi/agent/extensions/aperture.json` and has no per-project scope.
+- **Base URL override.** The gateway base URL can be overridden with the `APERTURE_BASE_URL` environment variable, which takes precedence over the config file value (applied in the config loader's `afterMerge` hook, normalized via `normalizeInputUrl`, and never persisted back to disk).
 - **No secrets, no hardcoded IDs.** `apiKey` is `"-"` because the gateway injects credentials server-side. Never hardcode provider IDs, URLs, or keys; the extension must work against any Aperture instance with any providers. Pi OAuth credentials still take precedence when present.
 - **Tool registration is one-way.** Pi cannot unregister tools at runtime. Pinning connector tools or changing `connectors.discoveryTools` only takes effect after a full Pi restart.
 - **Fail open on gateway fetches.** Catalog fetches (auth reconciliation, model filtering, api-override validation) that fail must leave behavior unchanged rather than break the session.
