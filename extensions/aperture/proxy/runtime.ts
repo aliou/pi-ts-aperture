@@ -1,6 +1,9 @@
 import { ApertureClient } from "../../../src/api/client";
 import type { ApertureProvider } from "../../../src/api/types";
-import { getBaseUrlForApi } from "../../../src/base-url-routing";
+import {
+  embedsModelIdInPath,
+  getBaseUrlForApi,
+} from "../../../src/base-url-routing";
 import { resolveGatewayUrl, resolveProviderBaseUrl } from "../../../src/url";
 import { isSelectableApi } from "../../shared/api-selection";
 import { configLoader } from "../../shared/config/loader";
@@ -19,6 +22,10 @@ function qualifyModelId<T extends Api>(
   providerName: string,
   model: Model<T>,
 ): Model<T> {
+  // Path-embedding APIs (Gemini/Vertex/Bedrock) put the model id in the URL,
+  // which the gateway forwards verbatim upstream; qualifying it 404s. Body
+  // APIs keep the qualified id so the gateway can disambiguate duplicates.
+  if (embedsModelIdInPath(model.api)) return model;
   return { ...model, id: `${providerName}/${model.id}` };
 }
 

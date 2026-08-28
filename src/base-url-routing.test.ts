@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { getBaseUrlForApi } from "./base-url-routing";
+import { embedsModelIdInPath, getBaseUrlForApi } from "./base-url-routing";
 
 const GATEWAY = "https://aperture.example.ts.net";
 const BASE_URL = `${GATEWAY}/v1`;
@@ -89,5 +89,21 @@ describe("getBaseUrlForApi", () => {
     expect(getBaseUrlForApi("openai-responses", GATEWAY, BASE_URL)).toBe(
       BASE_URL,
     );
+  });
+});
+
+describe("embedsModelIdInPath", () => {
+  test("true for Gemini, Vertex, and Bedrock Converse", () => {
+    expect(embedsModelIdInPath("google-generative-ai")).toBe(true);
+    expect(embedsModelIdInPath("google-vertex")).toBe(true);
+    expect(embedsModelIdInPath("bedrock-converse-stream")).toBe(true);
+  });
+
+  test("false for body-carried model APIs", () => {
+    expect(embedsModelIdInPath("openai-completions")).toBe(false);
+    expect(embedsModelIdInPath("openai-responses")).toBe(false);
+    expect(embedsModelIdInPath("openai-codex-responses")).toBe(false);
+    expect(embedsModelIdInPath("anthropic-messages")).toBe(false);
+    expect(embedsModelIdInPath("mistral-conversations")).toBe(false);
   });
 });
