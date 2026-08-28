@@ -392,6 +392,57 @@ describe("ApertureRuntime.sync provider-qualified model ids", () => {
     expect(bareModel.id).toBe("foo");
   });
 
+  // Path-embedding APIs (Gemini/Vertex/Bedrock) put the model id in the
+  // URL, which the gateway forwards verbatim upstream; qualifying it 404s.
+  // Stream dispatch must keep the bare id for those APIs.
+  test("stream dispatch keeps bare ids for path-embedding APIs", async () => {
+    const stream = vi.fn().mockReturnValue("stream-result");
+    const streamSimple = vi.fn().mockReturnValue("stream-simple-result");
+    const native = {
+      id: "google",
+      getModels: () => [
+        model("google", "gemini-2.5-pro", "google-generative-ai"),
+      ],
+      stream,
+      streamSimple,
+    };
+    const registerNativeProvider = vi.fn();
+    getConfig.mockReturnValue(
+      proxyConfig([{ id: "google", shouldCheckGatewayModels: false }]),
+    );
+    const deps = {
+      getProvider: vi.fn().mockReturnValue(native),
+      registerNativeProvider,
+      getModels: () => [
+        model("google", "gemini-2.5-pro", "google-generative-ai"),
+      ],
+    };
+
+    await new ApertureRuntime().sync(deps);
+
+    const wrapped = (
+      registerNativeProvider.mock.calls[0] as [typeof native]
+    )[0];
+    const context = {} as never;
+    const geminiModel = model(
+      "google",
+      "gemini-2.5-pro",
+      "google-generative-ai",
+    );
+
+    wrapped.stream(geminiModel, context, undefined);
+    expect(stream.mock.calls[0]?.[0]).toMatchObject({
+      provider: "google",
+      id: "gemini-2.5-pro",
+    });
+
+    wrapped.streamSimple(geminiModel, context, undefined);
+    expect(streamSimple.mock.calls[0]?.[0]).toMatchObject({
+      provider: "google",
+      id: "gemini-2.5-pro",
+    });
+  });
+
   // Regression: from the second sync onwards, deps.getProvider returns our own
   // previous wrapper. Routing stream/streamSimple through `native` (the
   // wrapper) double-qualifies; delegate through the first-seen provider.

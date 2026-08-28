@@ -80,6 +80,29 @@ export function shouldUseGatewayRoot(
 }
 
 /**
+ * Whether the given Pi API embeds the model id in the request URL path
+ * (Gemini `/v1beta/models/{id}:...`, Vertex, Bedrock `/model/{id}/...`)
+ * instead of the JSON body.
+ *
+ * Aperture strips the `provider/` routing prefix from body-carried model
+ * fields but only accepts bare ids in URL paths (a qualified id gets
+ * `GenerateContentRequest.model: unexpected model name format` or a verbatim
+ * upstream 404 like `/v1beta/models/google/gemini-...`). Both modes
+ * therefore send the bare id on path-embedding APIs and keep the qualified
+ * form everywhere else.
+ */
+export function embedsModelIdInPath(api: Api): boolean {
+  switch (api) {
+    case "google-generative-ai":
+    case "google-vertex":
+    case "bedrock-converse-stream":
+      return true;
+    default:
+      return false;
+  }
+}
+
+/**
  * Per-API gateway base URL shared by proxy and dedicated modes.
  *
  * `gatewayUrl` is the bare gateway origin (no path); `baseUrl` is the
