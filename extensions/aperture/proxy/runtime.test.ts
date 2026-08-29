@@ -1,10 +1,11 @@
 import { readFileSync } from "node:fs";
+import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { ApertureClient } from "../../../src/api/client";
 import { shouldUseGatewayRoot } from "../../../src/base-url-routing";
 import { configLoader } from "../../shared/config/loader";
 import type { ResolvedConfig } from "../../shared/config/types";
-import type { Api, Model } from "../../shared/types";
+import type { Api, Model, SyncDeps } from "../../shared/types";
 import { ApertureRuntime } from "./runtime";
 
 vi.mock("../../shared/config/loader", () => ({
@@ -17,6 +18,7 @@ vi.mock("../../../src/api/client", () => ({
   ApertureClient: vi.fn(),
 }));
 
+const gatewayUrl = "http://gateway.test";
 const getConfig = vi.mocked(configLoader.getConfig);
 
 function model(
@@ -79,7 +81,7 @@ function proxyConfig(
   }[],
 ) {
   return {
-    baseUrl: "http://gateway.test",
+    baseUrl: gatewayUrl,
     onboardingDone: true,
     onboarding: { enabled: false },
     proxy: { enabled: true, upstreamProviders },
@@ -144,13 +146,13 @@ describe("ApertureRuntime.sync", () => {
     await runtime.sync(deps);
 
     expect(wrappedBaseUrl(registerNativeProvider, "anthropic")).toBe(
-      "http://gateway.test",
+      gatewayUrl,
     );
     expect(wrappedBaseUrl(registerNativeProvider, "openai")).toBe(
-      "http://gateway.test/v1",
+      `${gatewayUrl}/v1`,
     );
     expect(wrappedBaseUrl(registerNativeProvider, "openai-codex")).toBe(
-      "http://gateway.test",
+      gatewayUrl,
     );
   });
 });
@@ -245,14 +247,12 @@ describe("ApertureRuntime.sync OpenAI SDK inference", () => {
 
     await runtime.sync(deps);
 
-    expect(wrappedBaseUrl(registerNativeProvider, "zai")).toBe(
-      "http://gateway.test",
-    );
+    expect(wrappedBaseUrl(registerNativeProvider, "zai")).toBe(gatewayUrl);
     expect(wrappedBaseUrl(registerNativeProvider, "openai")).toBe(
-      "http://gateway.test/v1",
+      `${gatewayUrl}/v1`,
     );
     expect(wrappedBaseUrl(registerNativeProvider, "groq")).toBe(
-      "http://gateway.test/v1",
+      `${gatewayUrl}/v1`,
     );
   });
 
@@ -275,12 +275,7 @@ describe("ApertureRuntime.sync OpenAI SDK inference", () => {
     await runtime.sync({
       ...deps,
       getModels: () => [
-        model(
-          "zai",
-          "glm-4.5-air",
-          "openai-completions",
-          "http://gateway.test",
-        ),
+        model("zai", "glm-4.5-air", "openai-completions", gatewayUrl),
       ],
     });
 
@@ -291,7 +286,7 @@ describe("ApertureRuntime.sync OpenAI SDK inference", () => {
     for (const [p] of zaiCalls) {
       expect(
         (p as { getModels: () => Model<Api>[] }).getModels()[0].baseUrl,
-      ).toBe("http://gateway.test");
+      ).toBe(gatewayUrl);
     }
   });
 });
@@ -482,6 +477,78 @@ describe("ApertureRuntime.sync provider-qualified model ids", () => {
     expect(streamSimple.mock.calls[0]?.[0]).toMatchObject({
       id: "synthetic/foo",
     });
+  });
+
+  // `/reload` re-runs the factory with a fresh ApertureRuntime but keeps Pi's
+  // ModelRuntime (and the wrapper in it), so the fresh runtime wraps the stale
+  // wrapper. Spy the real openai-codex provider's stream and assert the model
+  // id it receives gains no extra prefix across reloads.
+  test("stream stays single-prefixed across reloads", async () => {
+    const providerId = "openai-codex";
+    getConfig.mockReturnValue(
+      proxyConfig([{ id: providerId, shouldCheckGatewayModels: false }]),
+    );
+    const registry = await ModelRuntime.create({
+      refreshOnCreate: false,
+      allowModelNetwork: false,
+    });
+    const deps: SyncDeps = {
+      getProvider: (id) => registry.getProvider(id),
+      registerNativeProvider: (p) => registry.registerNativeProvider(p),
+      getModels: () => [...registry.getModels()],
+    };
+
+    const codex = () => {
+      const provider = registry.getProvider(providerId);
+      if (!provider) {
+        throw "Missing provider";
+      }
+      return provider;
+    };
+
+    const upstream = codex().getModels()[0].baseUrl;
+    const initialModel = { ...codex().getModels()[0] };
+
+    const spy = vi.spyOn(codex(), "stream");
+
+    // First stream call: replaces the base url and the prefixes the modelId.
+    await new ApertureRuntime().sync(deps);
+    codex().stream(codex().getModels()[0], {} as never, {} as never);
+
+    expect(codex().getModels()[0].baseUrl).toBe(gatewayUrl);
+    expect(codex().getModels()[0].baseUrl).not.toBe(upstream);
+    expect(spy).toHaveBeenCalledWith(
+      expect.objectContaining({ id: `${providerId}/${initialModel.id}` }),
+      {},
+      {},
+    );
+
+    spy.mockClear();
+
+    // Following stream calls: doesn't re-apply the prefixes to the modelId.
+    await new ApertureRuntime().sync(deps);
+    codex().stream(codex().getModels()[0], {} as never, {} as never);
+
+    expect(codex().getModels()[0].baseUrl).toBe(gatewayUrl);
+    expect(codex().getModels()[0].baseUrl).not.toBe(upstream);
+    expect(spy).toHaveBeenCalledWith(
+      expect.objectContaining({ id: `${providerId}/${initialModel.id}` }),
+      {},
+      {},
+    );
+
+    spy.mockClear();
+
+    await new ApertureRuntime().sync(deps);
+    codex().stream(codex().getModels()[0], {} as never, {} as never);
+
+    expect(codex().getModels()[0].baseUrl).toBe(gatewayUrl);
+    expect(codex().getModels()[0].baseUrl).not.toBe(upstream);
+    expect(spy).toHaveBeenCalledWith(
+      expect.objectContaining({ id: `${providerId}/${initialModel.id}` }),
+      {},
+      {},
+    );
   });
 });
 
