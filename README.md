@@ -99,6 +99,7 @@ Notes:
 
 - `keepGatewayModelsOnly` (per provider, default `false`) hides that provider's local models the gateway doesn't serve instead of letting them fail at request time. Also editable per provider from the Proxy tab in `/aperture:settings`.
 - `api` (per provider, unset by default) routes that provider's models through a specific Pi API (`openai-completions`, `anthropic-messages`, `openai-responses`, `google-generative-ai`, `google-vertex`, `bedrock-converse-stream`) instead of the one auto-picked from the gateway's compatibility map. Useful for providers Aperture serves through more than one API. Only values the provider reports as supported are offered in `/aperture:settings`; an override the gateway stops serving falls back to auto with a warning.
+- `openaiRoute` controls the public route prefix for OpenAI-compatible models. It defaults to `"v1"` for standard Aperture deployments; set it to `"root"` when the gateway exposes `/chat/completions` and `/responses` directly at its origin. Other API families keep their fixed routes.
 - An empty `dedicated.providers` list means all gateway providers are included.
 - Model metadata belongs in `~/.pi/agent/models.json`, not in the extension config.
 - Requests include `Referer` and `x-session-id` (the live Pi session id) for grouping requests in the Aperture dashboard. On Pi they are injected per request via the `before_provider_headers` hook; forks without that event get them from the provider registration instead.

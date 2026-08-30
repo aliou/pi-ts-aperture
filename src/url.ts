@@ -4,6 +4,7 @@
 
 interface UrlConfig {
   baseUrl?: string;
+  openaiRoute?: "v1" | "root";
 }
 
 /**
@@ -42,11 +43,13 @@ export function resolveGatewayUrl(config: UrlConfig): string | null {
 
 /**
  * Returns the Aperture provider base URL used for provider registration.
- * Appends /v1 to the gateway URL.
+ *
+ * The standard public route is `${gateway}/v1`. Deployments that expose
+ * OpenAI-compatible routes directly at the gateway root can opt into `root`.
  * Returns null when gateway URL cannot be resolved.
  */
 export function resolveProviderBaseUrl(config: UrlConfig): string | null {
   const gateway = resolveGatewayUrl(config);
   if (!gateway) return null;
-  return `${gateway}/v1`;
+  return config.openaiRoute === "root" ? gateway : `${gateway}/v1`;
 }

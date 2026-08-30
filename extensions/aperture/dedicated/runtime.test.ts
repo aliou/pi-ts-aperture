@@ -57,9 +57,14 @@ const fetchModelsDevCatalogMock = vi.mocked(mocks.fetchModelsDevCatalog);
 
 const GATEWAY = "http://gateway.test";
 
-function dedicatedConfig(enabled = true, providers: unknown[] = []) {
+function dedicatedConfig(
+  enabled = true,
+  providers: unknown[] = [],
+  openaiRoute: "v1" | "root" = "v1",
+) {
   return {
     baseUrl: GATEWAY,
+    openaiRoute,
     onboardingDone: true,
     onboarding: { enabled: false },
     proxy: { enabled: false, upstreamProviders: [] },
@@ -297,12 +302,11 @@ describe("refreshModels / cache-only restore", () => {
           reasoning: false,
           input: ["text"],
           cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-          contextWindow: 128_000,
           maxTokens: 8_192,
         },
       ] as unknown as Model<Api>[],
       checkedAt: Date.now(),
-      catalogKey: `${GATEWAY} * v2`,
+      catalogKey: `${GATEWAY} * v1 v2`,
     });
 
     const models = await refresh(provider, store, false);
@@ -710,6 +714,17 @@ describe("refreshModels / upstream base URL inference", () => {
 
     const models = await refresh(provider, memoryStore(), true);
     expect(models.map((m) => m.baseUrl)).toEqual([`${GATEWAY}/v1`]);
+  });
+
+  test("uses the configured gateway root for OpenAI-compatible routes", async () => {
+    getConfig.mockReturnValue(dedicatedConfig(true, [], "root"));
+    providersMock.mockResolvedValue([gatewayProvider("openai", ["gpt-5"])]);
+    const provider = register(() => [
+      nativeModel("openai", "gpt-5", "https://api.openai.com/v1"),
+    ]);
+
+    const models = await refresh(provider, memoryStore(), true);
+    expect(models.map((m) => m.baseUrl)).toEqual([GATEWAY]);
   });
 
   // Root-baseurl providers (Mistral, DeepSeek) must keep gateway /v1: Aperture

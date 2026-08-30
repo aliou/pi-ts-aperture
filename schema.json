@@ -25,6 +25,10 @@
           "type": "string",
           "description": "Aperture gateway base URL (e.g. `https://aperture.example.com`)."
         },
+        "openaiRoute": {
+          "$ref": "#/definitions/OpenAiRoute",
+          "description": "Public route prefix for OpenAI-compatible models. `v1` is the standard Aperture route; use `root` for deployments exposing `/chat/completions` and `/responses` directly at the gateway origin."
+        },
         "onboardingDone": {
           "type": "boolean",
           "description": "Whether onboarding has been completed."
@@ -76,6 +80,14 @@
         }
       },
       "additionalProperties": false
+    },
+    "OpenAiRoute": {
+      "type": "string",
+      "enum": [
+        "v1",
+        "root"
+      ],
+      "description": "Public path variant used by OpenAI-compatible Aperture routes."
     },
     "ProxiedProviderConfig": {
       "type": "object",

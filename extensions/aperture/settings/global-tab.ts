@@ -33,6 +33,7 @@ export function buildGlobalSections(
   const onboardingDone = draft.onboardingDone ?? resolved.onboardingDone;
   const onboardingEnabled =
     draft.onboarding?.enabled ?? resolved.onboarding.enabled;
+  const openaiRoute = draft.openaiRoute ?? resolved.openaiRoute;
 
   const baseConnectionItem: SettingsSection = {
     label: "Connection",
@@ -73,6 +74,14 @@ export function buildGlobalSections(
             getDoneSummary: () => currentUrl || "(not set)",
           });
         },
+      },
+      {
+        id: "openaiRoute",
+        label: "OpenAI-compatible route",
+        description:
+          "Public gateway path for OpenAI-compatible models (standard /v1 or root)",
+        currentValue: openaiRoute === "root" ? "gateway root" : "gateway/v1",
+        values: ["gateway/v1", "gateway root"],
       },
     ],
   };

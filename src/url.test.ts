@@ -86,6 +86,15 @@ describe("resolveProviderBaseUrl", () => {
     ).toBe("https://ai.host.ts.net/v1");
   });
 
+  test("uses the gateway root for deployments with root OpenAI routes", () => {
+    expect(
+      resolveProviderBaseUrl({
+        baseUrl: "https://ai.host.ts.net",
+        openaiRoute: "root",
+      }),
+    ).toBe("https://ai.host.ts.net");
+  });
+
   test("preserves the provider /v1 suffix when configured", () => {
     expect(
       resolveProviderBaseUrl({

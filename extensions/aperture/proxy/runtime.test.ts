@@ -82,9 +82,11 @@ function proxyConfig(
     keepGatewayModelsOnly?: boolean;
     api?: string;
   }[],
+  openaiRoute: "v1" | "root" = "v1",
 ) {
   return {
     baseUrl: "http://gateway.test",
+    openaiRoute,
     onboardingDone: true,
     onboarding: { enabled: false },
     proxy: { enabled: true, upstreamProviders },
@@ -258,6 +260,26 @@ describe("ApertureRuntime.sync OpenAI SDK inference", () => {
     );
     expect(wrappedBaseUrl(registerNativeProvider, "groq")).toBe(
       "http://gateway.test/v1",
+    );
+  });
+
+  test("uses the configured gateway root for standard OpenAI routes", async () => {
+    getConfig.mockReturnValue(
+      proxyConfig([{ id: "openai", shouldCheckGatewayModels: false }], "root"),
+    );
+    const { deps, registerNativeProvider } = syncDeps(() => [
+      model(
+        "openai",
+        "gpt-5.5",
+        "openai-responses",
+        "https://api.openai.com/v1",
+      ),
+    ]);
+
+    await new ApertureRuntime().sync(deps);
+
+    expect(wrappedBaseUrl(registerNativeProvider, "openai")).toBe(
+      "http://gateway.test",
     );
   });
 
@@ -563,7 +585,6 @@ describe("ApertureRuntime.checkMissingModels gateway failures", () => {
 
     const notify = vi.fn();
     const runtime = new ApertureRuntime();
-
     await expect(
       runtime.checkMissingModels({
         getModels: () => [model("synthetic", "missing-model")],
@@ -584,6 +605,7 @@ describe("ApertureRuntime.resolveProxyProviderSync", () => {
   ): ResolvedConfig {
     return {
       baseUrl: "http://gateway.test",
+      openaiRoute: "v1",
       onboardingDone: true,
       onboarding: { enabled: false },
       proxy: {

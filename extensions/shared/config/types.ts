@@ -16,6 +16,9 @@ export type RoutableApi = Extract<
   | "bedrock-converse-stream"
 >;
 
+/** Public path variant used by OpenAI-compatible Aperture routes. */
+export type OpenAiRoute = "v1" | "root";
+
 export interface ProxiedProviderConfig {
   /** Aperture provider id (matches `/api/providers` response). */
   id: string;
@@ -121,6 +124,12 @@ export interface ApertureConfig {
   version?: string;
   /** Aperture gateway base URL (e.g. `https://aperture.example.com`). */
   baseUrl?: string;
+  /**
+   * Public route prefix for OpenAI-compatible models. `v1` is the standard
+   * Aperture route; use `root` for deployments exposing `/chat/completions`
+   * and `/responses` directly at the gateway origin.
+   */
+  openaiRoute?: OpenAiRoute;
   /** Whether onboarding has been completed. */
   onboardingDone?: boolean;
   onboarding?: {
@@ -142,6 +151,7 @@ export interface ApertureConfig {
 
 export interface ResolvedConfig {
   baseUrl: string;
+  openaiRoute: OpenAiRoute;
   onboardingDone: boolean;
   onboarding: {
     enabled: boolean;

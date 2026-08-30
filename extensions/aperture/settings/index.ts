@@ -53,6 +53,8 @@ export function registerApertureSettings(
     onSettingChange: (id, newValue, config) => {
       const updated = structuredClone(config);
       if (id === "baseUrl") updated.baseUrl = normalizeInputUrl(newValue);
+      if (id === "openaiRoute")
+        updated.openaiRoute = newValue === "gateway root" ? "root" : "v1";
       if (id === "proxy.enabled")
         updated.proxy = { ...updated.proxy, enabled: newValue === "enabled" };
       if (id === "dedicated.enabled")

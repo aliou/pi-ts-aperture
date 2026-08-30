@@ -48,11 +48,11 @@ type DedicatedStoreEntry = ModelsStoreEntry & { catalogKey?: string };
 
 /**
  * Identity of the catalog a store entry was built from: gateway origin plus
- * the normalized dedicated provider filter, with api overrides recorded as
- * `id@api` so a catalog stamped for a different routing api never replays.
- * Comparing keys on cache-only restore rejects catalogs for a different
- * gateway (origin equality, not a string prefix, so `gateway.example.evil`
- * never matches `gateway.example`) or provider selection.
+ * the normalized dedicated provider filter, the OpenAI route mode, and api
+ * overrides recorded as `id@api` so a catalog stamped for a different routing
+ * configuration never replays. Comparing keys on cache-only restore rejects
+ * catalogs for a different gateway (origin equality, not a string prefix, so
+ * `gateway.example.evil` never matches `gateway.example`) or provider selection.
  */
 function buildCatalogKey(gatewayUrl: string, config: ResolvedConfig): string {
   let origin: string;
@@ -67,7 +67,7 @@ function buildCatalogKey(gatewayUrl: string, config: ResolvedConfig): string {
     .sort();
   const filter =
     config.dedicated.providers.length === 0 ? "*" : enabled.join(",");
-  return `${origin} ${filter} v2`;
+  return `${origin} ${filter} ${config.openaiRoute ?? "v1"} v2`;
 }
 
 function filterProviders(
