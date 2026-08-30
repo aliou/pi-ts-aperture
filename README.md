@@ -16,6 +16,12 @@ Aperture handles API key injection and request routing server-side, so Pi never 
 pi install npm:@aliou/pi-ts-aperture
 ```
 
+For Oh My Pi, use the OMP-compatible fork:
+
+```bash
+omp install https://github.com/caentzminger/pi-ts-aperture
+```
+
 ## First run
 
 After installing, run the onboarding wizard:

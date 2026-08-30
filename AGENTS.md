@@ -95,6 +95,7 @@ Source of truth: `extensions/shared/config/types.ts` and `extensions/shared/conf
 ```ts
 interface ApertureConfig {
   baseUrl?: string;
+  openaiRoute?: "v1" | "root";
   onboardingDone?: boolean;
   onboarding?: { enabled?: boolean };
   proxy?: {
@@ -116,6 +117,7 @@ interface ApertureConfig {
 ```ts
 interface ResolvedConfig {
   baseUrl: string;
+  openaiRoute: "v1" | "root";
   onboardingDone: boolean;
   onboarding: { enabled: boolean };
   proxy: { enabled: boolean; upstreamProviders: (Required<Omit<ProxiedProviderConfig, "api" | "enabled">> & Pick<ProxiedProviderConfig, "api" | "enabled">)[] };
