@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { normalizeInputUrl } from "./url";
+import { normalizeInputUrl, resolveProviderBaseUrl } from "./url";
 
 describe("normalizeInputUrl", () => {
   test("adds http:// scheme to bare hostname", () => {
@@ -74,5 +74,23 @@ describe("normalizeInputUrl", () => {
 
   test("returns empty string for whitespace-only input", () => {
     expect(normalizeInputUrl("   ")).toBe("");
+  });
+});
+
+describe("resolveProviderBaseUrl", () => {
+  test("appends /v1 to the gateway root for provider registration", () => {
+    expect(
+      resolveProviderBaseUrl({
+        baseUrl: "https://ai.host.ts.net",
+      }),
+    ).toBe("https://ai.host.ts.net/v1");
+  });
+
+  test("preserves the provider /v1 suffix when configured", () => {
+    expect(
+      resolveProviderBaseUrl({
+        baseUrl: "https://ai.host.ts.net/v1",
+      }),
+    ).toBe("https://ai.host.ts.net/v1");
   });
 });
