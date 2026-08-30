@@ -74,6 +74,8 @@ Enable connectors in `/aperture:settings`. Pin changes take effect on the next P
 
 Configuration is saved globally to `~/.pi/agent/extensions/aperture.json`. The settings UI covers everything, but you can also edit the file directly:
 
+On Oh My Pi, the equivalent global config path is `~/.omp/agent/extensions/aperture.json`.
+
 ```json
 {
   "baseUrl": "http://ai.your-tailnet.ts.net",
