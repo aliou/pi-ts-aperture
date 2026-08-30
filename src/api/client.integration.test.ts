@@ -1,7 +1,6 @@
-import { Value } from "typebox/value";
 import { describe, expect, test } from "vitest";
 import { ApertureClient } from "./client";
-import { ApertureProviderSchema, ConnectorInfoSchema } from "./types";
+import { parseApertureProvider, parseConnectorInfo } from "./types";
 
 const DEFAULT_URL = "http://ai";
 const url = process.env.APERTURE_TEST_URL || DEFAULT_URL;
@@ -27,7 +26,7 @@ describe.skipIf(!accessible)("ApertureClient integration", () => {
 
     expect(providers.length).toBeGreaterThan(0);
     for (const p of providers) {
-      expect(Value.Check(ApertureProviderSchema, p)).toBe(true);
+      expect(parseApertureProvider(p)).not.toBeNull();
     }
   });
 
@@ -54,7 +53,7 @@ describe.skipIf(!accessible)("ApertureClient integration", () => {
 
     expect(connectors.length).toBeGreaterThan(0);
     for (const c of connectors) {
-      expect(Value.Check(ConnectorInfoSchema, c)).toBe(true);
+      expect(parseConnectorInfo(c)).not.toBeNull();
     }
   });
 

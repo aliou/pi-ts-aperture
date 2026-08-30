@@ -1,55 +1,30 @@
-import type { TSchema } from "typebox";
-import { Value } from "typebox/value";
 import {
   type ApertureModelInfo,
   type ApertureProvider,
-  ApertureProviderSchema,
   type ConnectorInfo,
-  ConnectorInfoSchema,
+  parseApertureProvider,
+  parseConnectorInfo,
 } from "./types";
-
-function validate<T>(schema: TSchema, value: unknown): T | null {
-  const withDefaults = Value.Default(schema, value);
-  return Value.Check(schema, withDefaults) ? (withDefaults as T) : null;
-}
-
-function parseProvider(
-  value: unknown,
-  fallbackId?: string,
-): ApertureProvider | null {
-  if (!value || typeof value !== "object") return null;
-  const record = value as Record<string, unknown>;
-  const id = typeof record.id === "string" ? record.id : fallbackId;
-  if (!id) return null;
-
-  return validate<ApertureProvider>(ApertureProviderSchema, {
-    ...record,
-    id,
-    name: record.name ?? id,
-  });
-}
 
 function parseProvidersBody(body: unknown): ApertureProvider[] {
   if (Array.isArray(body)) {
     return body
-      .map((provider) => parseProvider(provider))
+      .map((provider) => parseApertureProvider(provider))
       .filter((p): p is ApertureProvider => p !== null);
   }
   if (!body || typeof body !== "object") return [];
 
-  const providers = (body as { providers?: unknown }).providers;
+  const providers = "providers" in body ? body.providers : undefined;
   if (Array.isArray(providers)) {
     return providers
-      .map((provider) => parseProvider(provider))
+      .map((provider) => parseApertureProvider(provider))
       .filter((p): p is ApertureProvider => p !== null);
   }
   if (providers && typeof providers === "object") {
-    return Object.entries(providers as Record<string, unknown>).flatMap(
-      ([id, provider]) => {
-        const parsed = parseProvider(provider, id);
-        return parsed ? [parsed] : [];
-      },
-    );
+    return Object.entries(providers).flatMap(([id, provider]) => {
+      const parsed = parseApertureProvider(provider, id);
+      return parsed ? [parsed] : [];
+    });
   }
   return [];
 }
@@ -174,10 +149,7 @@ export class ApertureClient {
     if (!Array.isArray(body.connectors)) return [];
 
     return body.connectors
-      .map((c): ConnectorInfo | null => {
-        if (!c || typeof c !== "object") return null;
-        return validate<ConnectorInfo>(ConnectorInfoSchema, c);
-      })
+      .map((c) => parseConnectorInfo(c))
       .filter((c): c is ConnectorInfo => c !== null);
   }
 
