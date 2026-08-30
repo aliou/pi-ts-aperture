@@ -16,10 +16,18 @@ Aperture handles API key injection and request routing server-side, so Pi never 
 pi install npm:@aliou/pi-ts-aperture
 ```
 
-For Oh My Pi, use the OMP-compatible fork:
+For Oh My Pi, use the OMP-compatible source snapshot:
 
 ```bash
-omp install https://github.com/caentzminger/pi-ts-aperture
+omp install https://github.com/caentzminger/pi-ts-aperture#adad2d6826e3d93d00acfbae341ad2b1ef31fb31 --force
+```
+
+For a local checkout, pin the same commit and link it:
+
+```bash
+git clone https://github.com/caentzminger/pi-ts-aperture.git
+git -C pi-ts-aperture checkout adad2d6826e3d93d00acfbae341ad2b1ef31fb31
+omp install "$PWD/pi-ts-aperture" --force
 ```
 
 ## First run
@@ -115,6 +123,7 @@ Notes:
 
 ## Requirements
 
+- Pi `>=0.84.0`, or an OMP release exposing the equivalent Pi extension APIs.
 - A Tailscale tailnet with Aperture configured.
 - The device running Pi must be able to reach your Aperture endpoint.
 - Use the URL/scheme that matches your deployment (`http://` or `https://`).
