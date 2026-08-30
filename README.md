@@ -19,14 +19,14 @@ pi install npm:@aliou/pi-ts-aperture
 For Oh My Pi, use the OMP-compatible source snapshot:
 
 ```bash
-omp install https://github.com/caentzminger/pi-ts-aperture#adad2d6826e3d93d00acfbae341ad2b1ef31fb31 --force
+omp install https://github.com/caentzminger/pi-ts-aperture#omp-v0.14.2 --force
 ```
 
 For a local checkout, pin the same commit and link it:
 
 ```bash
 git clone https://github.com/caentzminger/pi-ts-aperture.git
-git -C pi-ts-aperture checkout adad2d6826e3d93d00acfbae341ad2b1ef31fb31
+git -C pi-ts-aperture checkout omp-v0.14.2
 omp install "$PWD/pi-ts-aperture" --force
 ```
 
