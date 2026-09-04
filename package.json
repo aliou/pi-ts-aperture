@@ -70,7 +70,7 @@
   "devDependencies": {
     "@aliou/biome-plugins": "^0.11.0",
     "@biomejs/biome": "^2.5.2",
-    "@changesets/cli": "^2.27.11",
+    "@changesets/cli": "3.0.1",
     "@earendil-works/pi-coding-agent": "0.84.2",
     "@types/node": "^25.0.10",
     "@vitest/coverage-v8": "^4.0.18",
@@ -84,7 +84,8 @@
   "pnpm": {
     "overrides": {
       "@earendil-works/pi-ai": "$@earendil-works/pi-coding-agent",
-      "@earendil-works/pi-tui": "$@earendil-works/pi-coding-agent"
+      "@earendil-works/pi-tui": "$@earendil-works/pi-coding-agent",
+      "@changesets/git": "4.0.0"
     }
   },
   "packageManager": "pnpm@10.26.1"
