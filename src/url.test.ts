@@ -3,8 +3,8 @@ import { normalizeInputUrl } from "./url";
 
 describe("normalizeInputUrl", () => {
   test("adds http:// scheme to bare hostname", () => {
-    expect(normalizeInputUrl("ai.tetra-albacore.ts.net")).toBe(
-      "http://ai.tetra-albacore.ts.net",
+    expect(normalizeInputUrl("ai.pango-lin.ts.net")).toBe(
+      "http://ai.pango-lin.ts.net",
     );
   });
 

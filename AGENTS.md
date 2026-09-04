@@ -206,6 +206,7 @@ There is no current `mode` setting. Legacy `mode` configs are migrated to capabi
 
 ### General
 
+- The gateway base URL can be overridden with the `APERTURE_BASE_URL` environment variable, which takes precedence over the config file value (applied in the config loader's `afterMerge` hook, normalized via `normalizeInputUrl`, and never persisted back to disk).
 - No hardcoded provider IDs or URLs. Works for any Aperture instance with any providers.
 - Config migrations are added when the file format changes, so existing user configuration keeps working across releases.
 
@@ -215,6 +216,7 @@ There is no current `mode` setting. Legacy `mode` configs are migrated to capabi
 - Integration tests in `src/api/client.integration.test.ts` hit a live Aperture instance and are skipped without credentials.
 - Pre-commit runs `typecheck`, `lint`, and `gen:schema`; the schema check fails the commit if `schema.json` is stale.
 - CI (`.github/workflows/ci.yml`) runs lint + typecheck + tests on push and PR. The publish workflow runs after CI succeeds on `main`.
+- **Example URLs in tests.** Always use `ai.pango-lin.ts.net` (the same placeholder the onboarding wizard shows) as the example Aperture hostname in tests and fixtures — never a real tailnet URL. Other clearly-fake hosts like `aperture.example.ts.net` or `ai.host.ts.net` are fine for cases where a generic hostname is more readable.
 
 ## Dependencies
 
