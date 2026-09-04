@@ -62,160 +62,196 @@ export class ApertureRuntime {
     const baseUrl = resolveProviderBaseUrl(config);
     if (!gatewayRoot || !baseUrl) return;
 
-    // One catalog fetch per sync serves passthrough detection and model
-    // filtering.
-    const providers = await this.fetchProviders(gatewayRoot);
-    this.passthroughProviderIds = new Set(
-      providers.filter((p) => p.requires_client_auth).map((p) => p.id),
-    );
-
-    const filterableIds = new Set(
-      upstreamProviders.filter((p) => p.keepGatewayModelsOnly).map((p) => p.id),
-    );
-    const configByProvider = new Map(upstreamProviders.map((p) => [p.id, p]));
-    const gatewayModelIds = new Map(
-      providers.map((p) => [p.id, new Set(p.models)]),
-    );
-    const compatibilityByProvider = new Map(
-      providers.map((p) => [p.id, p.compatibility]),
-    );
+    // Start the one catalog fetch used for passthrough detection, model
+    // filtering, and API validation, but do not await it yet. session_start
+    // fires sync without awaiting it, so providers needing gateway-injected
+    // credentials must receive placeholder auth before this promise settles.
+    const providersPromise = this.fetchProviders(gatewayRoot);
 
     const allModels = deps.getModels();
     const providerIds = upstreamProviders
       .map((p) => p.id)
       .filter((id) => id !== "aperture");
+    const configByProvider = new Map(upstreamProviders.map((p) => [p.id, p]));
+    const registered = new Map<string, Provider>();
 
-    for (const providerName of providerIds) {
-      const providerModels = allModels.filter(
-        (m) => m.provider === providerName,
+    const registerProviders = (providers?: ApertureProvider[]): void => {
+      const filterableIds = new Set(
+        providers
+          ? upstreamProviders
+              .filter((p) => p.keepGatewayModelsOnly)
+              .map((p) => p.id)
+          : [],
       );
-      if (providerModels.length === 0) continue;
+      const gatewayModelIds = new Map(
+        (providers ?? []).map((p) => [p.id, new Set(p.models)]),
+      );
+      const compatibilityByProvider = new Map(
+        (providers ?? []).map((p) => [p.id, p.compatibility]),
+      );
 
-      const sourceModel = providerModels[0];
+      for (const providerName of providerIds) {
+        const providerModels = allModels.filter(
+          (m) => m.provider === providerName,
+        );
+        if (providerModels.length === 0) continue;
 
-      // If the live model URL is already the gateway itself, the upstream
-      // shape was overwritten by a prior sync; reuse the cached upstream URL
-      // instead of re-deriving it from the gateway URL.
-      const liveBaseUrl = sourceModel.baseUrl;
-      const isAlreadyGateway =
-        liveBaseUrl === gatewayRoot || liveBaseUrl === baseUrl;
-      const upstreamBaseUrl = isAlreadyGateway
-        ? this.upstreamBaseUrls.get(providerName)
-        : liveBaseUrl;
-      if (!isAlreadyGateway && upstreamBaseUrl) {
-        this.upstreamBaseUrls.set(providerName, upstreamBaseUrl);
-      }
+        const sourceModel = providerModels[0];
 
-      // Referer and x-session-id are injected per-request via the
-      // `before_provider_headers` hook registered in the extension entry
-      // point, so provider registration only needs the gateway URL and API
-      // path here.
-      //
-      // Re-register via the NATIVE path (passing a wrapped Provider object)
-      // rather than the config path. Pi's config-path registerProvider deletes
-      // the extension-native provider entry from the model runtime, which
-      // leaves no `base` for the composer to rewrite model baseUrls, so
-      // requests keep their baked upstream URL and bypass the gateway.
-      // Builtins (zai) survive because their built-in registration still
-      // resolves; these providers are extension-native, so we preserve them by
-      // re-registering a wrapped provider whose getModels() returns
-      // gateway-rewritten models.
-      const native = deps.getProvider(providerName);
-      if (!native) continue;
-      let firstSeen = this.firstSeenProviders.get(providerName);
-      if (!firstSeen) {
-        firstSeen = native;
-        this.firstSeenProviders.set(providerName, native);
-      }
+        // If the live model URL is already the gateway itself, the upstream
+        // shape was overwritten by a prior sync; reuse the cached upstream URL
+        // instead of re-deriving it from the gateway URL.
+        const liveBaseUrl = sourceModel.baseUrl;
+        const isAlreadyGateway =
+          liveBaseUrl === gatewayRoot || liveBaseUrl === baseUrl;
+        const upstreamBaseUrl = isAlreadyGateway
+          ? this.upstreamBaseUrls.get(providerName)
+          : liveBaseUrl;
+        if (!isAlreadyGateway && upstreamBaseUrl) {
+          this.upstreamBaseUrls.set(providerName, upstreamBaseUrl);
+        }
 
-      const sourceApi =
-        firstSeen.getModels()[0]?.api ??
-        sourceModel.api ??
-        "openai-completions";
-      const override = configByProvider.get(providerName)?.api;
-      const compatibility = compatibilityByProvider.get(providerName);
-      let apiOverride: Api | undefined;
-      if (override && compatibility !== undefined) {
-        if (isSelectableApi(override, compatibility)) {
-          apiOverride = override;
+        // Referer and x-session-id are injected per-request via the
+        // `before_provider_headers` hook registered in the extension entry
+        // point, so provider registration only needs the gateway URL and API
+        // path here.
+        //
+        // Re-register via the NATIVE path (passing a wrapped Provider object)
+        // rather than the config path. Pi's config-path registerProvider deletes
+        // the extension-native provider entry from the model runtime, which
+        // leaves no `base` for the composer to rewrite model baseUrls, so
+        // requests keep their baked upstream URL and bypass the gateway.
+        // Builtins (zai) survive because their built-in registration still
+        // resolves; these providers are extension-native, so we preserve them by
+        // re-registering a wrapped provider whose getModels() returns
+        // gateway-rewritten models.
+        const native = deps.getProvider(providerName);
+        if (!native) continue;
+        let firstSeen = this.firstSeenProviders.get(providerName);
+        if (!firstSeen) {
+          firstSeen = native;
+          this.firstSeenProviders.set(providerName, native);
+        }
+
+        const sourceApi =
+          firstSeen.getModels()[0]?.api ??
+          sourceModel.api ??
+          "openai-completions";
+        const override = configByProvider.get(providerName)?.api;
+        const compatibility = compatibilityByProvider.get(providerName);
+        let apiOverride: Api | undefined;
+        if (override && compatibility !== undefined) {
+          if (isSelectableApi(override, compatibility)) {
+            apiOverride = override;
+          } else {
+            deps.notify?.(
+              `[aperture] api override "${override}" for proxied provider ${providerName} is not served by the gateway; falling back to the provider's own api (${sourceApi}).`,
+              "warning",
+            );
+          }
+        }
+        const api = apiOverride ?? sourceApi;
+
+        const providerBaseUrl = getBaseUrlForApi(
+          api,
+          gatewayRoot,
+          baseUrl,
+          upstreamBaseUrl,
+        );
+
+        const servedIds = filterableIds.has(providerName)
+          ? gatewayModelIds.get(providerName)
+          : undefined;
+        if (
+          servedIds !== undefined &&
+          !firstSeen.getModels().some((model) => servedIds.has(model.id))
+        ) {
+          // The synchronous pre-fetch registration may have exposed this
+          // provider's unfiltered models. Re-register it empty once the gateway
+          // confirms that none are callable.
+          const existing = registered.get(providerName);
+          if (existing) {
+            existing.getModels = () => [];
+            deps.registerNativeProvider(existing);
+          }
+          continue;
+        }
+        const baseAuth = firstSeen.auth?.apiKey;
+        if (providers === undefined && !baseAuth) continue;
+        const isPassthrough =
+          providers !== undefined &&
+          this.passthroughProviderIds.has(providerName);
+        const wrapped: Provider = {
+          ...native,
+          id: providerName,
+          getModels: () =>
+            (servedIds === undefined
+              ? firstSeen.getModels()
+              : firstSeen.getModels().filter((model) => servedIds.has(model.id))
+            ).map((model) => ({
+              ...model,
+              ...(apiOverride ? { api: apiOverride } : {}),
+              baseUrl: providerBaseUrl,
+            })),
+          // Delegate through `firstSeen`, not `native`: from the second sync
+          // onwards `native` is our own previous wrapper, so routing its
+          // streams would double-qualify the model id. Same rationale as
+          // getModels() above.
+          stream: (model, context, options) =>
+            firstSeen.stream(
+              qualifyModelId(providerName, model),
+              context,
+              options,
+            ),
+          streamSimple: (model, context, options) =>
+            firstSeen.streamSimple(
+              qualifyModelId(providerName, model),
+              context,
+              options,
+            ),
+          // Override/none providers: the gateway injects the upstream credential,
+          // so a placeholder key keeps them surfaced in the model picker.
+          // Passthrough providers keep native auth so the client sends a real
+          // credential the gateway forwards.
+          auth:
+            firstSeen.auth && baseAuth && !isPassthrough
+              ? {
+                  ...firstSeen.auth,
+                  apiKey: {
+                    ...baseAuth,
+                    check: async () => ({
+                      type: "api_key",
+                      source: "aperture proxy",
+                    }),
+                    resolve: async () => ({
+                      auth: { apiKey: "-" },
+                      source: "aperture proxy",
+                    }),
+                  },
+                }
+              : firstSeen.auth,
+        };
+        const existing = registered.get(providerName);
+        if (existing) {
+          Object.assign(existing, wrapped);
+          deps.registerNativeProvider(existing);
         } else {
-          deps.notify?.(
-            `[aperture] api override "${override}" for proxied provider ${providerName} is not served by the gateway; falling back to the provider's own api (${sourceApi}).`,
-            "warning",
-          );
+          registered.set(providerName, wrapped);
+          deps.registerNativeProvider(wrapped);
         }
       }
-      const api = apiOverride ?? sourceApi;
+    };
 
-      const providerBaseUrl = getBaseUrlForApi(
-        api,
-        gatewayRoot,
-        baseUrl,
-        upstreamBaseUrl,
-      );
+    // This pass is intentionally synchronous: auth modes are provisionally
+    // treated as gateway-managed and receive placeholder auth, while
+    // catalog-dependent filtering and overrides remain inert.
+    registerProviders();
 
-      const servedIds = filterableIds.has(providerName)
-        ? gatewayModelIds.get(providerName)
-        : undefined;
-      if (
-        servedIds !== undefined &&
-        !firstSeen.getModels().some((model) => servedIds.has(model.id))
-      )
-        continue;
-      const baseAuth = firstSeen.auth?.apiKey;
-      const isPassthrough = this.passthroughProviderIds.has(providerName);
-      const wrapped: Provider = {
-        ...native,
-        id: providerName,
-        getModels: () =>
-          (servedIds === undefined
-            ? firstSeen.getModels()
-            : firstSeen.getModels().filter((model) => servedIds.has(model.id))
-          ).map((model) => ({
-            ...model,
-            ...(apiOverride ? { api: apiOverride } : {}),
-            baseUrl: providerBaseUrl,
-          })),
-        // Delegate through `firstSeen`, not `native`: from the second sync
-        // onwards `native` is our own previous wrapper, so routing its
-        // streams would double-qualify the model id. Same rationale as
-        // getModels() above.
-        stream: (model, context, options) =>
-          firstSeen.stream(
-            qualifyModelId(providerName, model),
-            context,
-            options,
-          ),
-        streamSimple: (model, context, options) =>
-          firstSeen.streamSimple(
-            qualifyModelId(providerName, model),
-            context,
-            options,
-          ),
-        // Override/none providers: the gateway injects the upstream credential,
-        // so a placeholder key keeps them surfaced in the model picker.
-        // Passthrough providers keep native auth so the client sends a real
-        // credential the gateway forwards.
-        auth:
-          firstSeen.auth && baseAuth && !isPassthrough
-            ? {
-                ...firstSeen.auth,
-                apiKey: {
-                  ...baseAuth,
-                  check: async () => ({
-                    type: "api_key",
-                    source: "aperture proxy",
-                  }),
-                  resolve: async () => ({
-                    auth: { apiKey: "-" },
-                    source: "aperture proxy",
-                  }),
-                },
-              }
-            : firstSeen.auth,
-      };
-      deps.registerNativeProvider(wrapped);
-    }
+    const providers = await providersPromise;
+    this.passthroughProviderIds = new Set(
+      providers.filter((p) => p.requires_client_auth).map((p) => p.id),
+    );
+    registerProviders(providers);
   }
 
   /** Fetch the gateway catalog, failing open to an empty list. */
