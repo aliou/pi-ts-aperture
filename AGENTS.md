@@ -76,6 +76,7 @@ Pi-extension concerns shared by both extensions. Note the aperture-local `extens
 - `types.ts` - Extension-facing types (Pi `Api`, `Model`, provider sync deps).
 - `events.ts` - Extension events shared across the aperture and connectors extensions.
 - `sync-bus.ts` - Config sync bus used to propagate config changes between extensions.
+- `provenance.ts` - Memoized read-only mirror of Pi's telemetry gate (`PI_TELEMETRY` env wins, else `enableInstallTelemetry` project over global, default enabled). Gates provenance header injection; used by the `before_provider_headers` hook and the `/aperture:settings` Global tab (which shows the setting as read-only `disabled (pi telemetry off)` when the gate is closed).
 - `provider-mapping.ts` - Maps Aperture providers to local Pi registry models for proxy and dedicated selection, preserving per-provider config toggles. Extension glue consumed by the settings tabs and onboarding.
 - `api-selection.ts` - Compatibility-map to Pi API mapping (`getSelectableApis` in auto-pick precedence order, `getApiForCompatibility`, `isSelectableApi` override validation) shared by dedicated, proxy, and the settings tabs. Compatibility flags Pi cannot dispatch are excluded. `openai_responses` maps to the generic `openai-responses` adapter even for the `openai-codex` gateway provider (the Codex-specific `openai-codex-responses` adapter is not selectable).
 
@@ -97,6 +98,7 @@ Source of truth: `extensions/shared/config/types.ts` and `extensions/shared/conf
 interface ApertureConfig {
   baseUrl?: string;
   onboardingDone?: boolean;
+  shouldSendProvenanceHeaders?: boolean; // inject Referer + x-session-id on provider requests (default true)
   onboarding?: { enabled?: boolean };
   proxy?: {
     enabled?: boolean;
@@ -118,6 +120,7 @@ interface ApertureConfig {
 interface ResolvedConfig {
   baseUrl: string;
   onboardingDone: boolean;
+  shouldSendProvenanceHeaders: boolean;
   onboarding: { enabled: boolean };
   proxy: { enabled: boolean; upstreamProviders: (Required<Omit<ProxiedProviderConfig, "api" | "enabled">> & Pick<ProxiedProviderConfig, "api" | "enabled">)[] };
   dedicated: { enabled: boolean; providers: DedicatedProviderConfig[] };
@@ -142,7 +145,7 @@ interface DedicatedProviderConfig {
 }
 ```
 
-Defaults: `dedicated.enabled: true`, `proxy.enabled: false`, `connectors.enabled: false`, `connectors.pinnedTools: []`, `connectors.discoveryTools: true`, `onboardingDone: false`, `onboarding.enabled: true`, empty proxy providers, empty dedicated provider filters.
+Defaults: `shouldSendProvenanceHeaders: true`, `dedicated.enabled: true`, `proxy.enabled: false`, `connectors.enabled: false`, `connectors.pinnedTools: []`, `connectors.discoveryTools: true`, `onboardingDone: false`, `onboarding.enabled: true`, empty proxy providers, empty dedicated provider filters.
 
 There is no current `mode` setting. Legacy `mode` configs are migrated to capability flags.
 
@@ -200,7 +203,7 @@ There is no current `mode` setting. Legacy `mode` configs are migrated to capabi
 ### Requests and credentials
 
 - `apiKey` is set to `"-"` because Aperture injects the upstream provider key server-side. Pi OAuth credentials still take precedence when available.
-- `Referer: https://pi.dev` and `x-session-id` (the live Pi session id) are injected on every provider request via the `before_provider_headers` hook, so `x-session-id` stays current across `/fork`, `/new`, and `/resume`. Headers are no longer baked into provider registration or a `streamSimple` wrapper.
+- `Referer: https://pi.dev` and `x-session-id` (the live Pi session id) are injected on every provider request via the `before_provider_headers` hook, so `x-session-id` stays current across `/fork`, `/new`, and `/resume`. Headers are no longer baked into provider registration or a `streamSimple` wrapper. Injection is gated per request on the `shouldSendProvenanceHeaders` config option (default `true`, toggleable in `/aperture:settings`) and on Pi's telemetry gate — a memoized read-only mirror of `PI_TELEMETRY` / `enableInstallTelemetry` in `extensions/shared/provenance.ts`.
 - The extension does not send `x-upstream-provider-id`.
 - URLs are normalized on input: scheme is added when missing, paths such as `/v1` are stripped to the origin, and provider registration appends the API-specific path as needed.
 
