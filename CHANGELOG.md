@@ -1,5 +1,11 @@
 # @aliou/pi-ts-aperture
 
+## 0.14.3
+
+### Patch Changes
+
+- f64c101: ci: upgrade @changesets/cli to v3 and migrate changesets/action to v2 in the publish workflow
+
 ## 0.14.2
 
 ### Patch Changes
