@@ -1,3 +1,4 @@
+import type { AssistantMessage } from "@earendil-works/pi-ai";
 import type {
   ExtensionAPI,
   ExtensionContext,
@@ -43,16 +44,76 @@ export default async function (pi: ExtensionAPI): Promise<void> {
     event.headers["x-session-id"] = ctx.sessionManager.getSessionId();
   });
 
+  // In proxy mode, completed assistant messages persist the
+  // transport-qualified model id (`provider/model-id`, or doubled after a
+  // re-wrap). On resume, `getModel(provider, id)` misses that qualified id
+  // against the bare registry ids and Pi falls back to a default model.
+  //
+  // Unwind the transport prefix at write time so the persisted message
+  // carries a bare public id — but ONLY for active proxied providers, and
+  // only when a candidate id does not already resolve as a real registry
+  // model. Some public registry ids legitimately begin with their provider id
+  // (e.g. openrouter's `openrouter/auto`); unconditionally stripping those
+  // corrupts them into non-existent ids (`auto`), reproducing the very resume
+  // failure this fix targets. Testing candidates against the live registry
+  // keeps provider-prefixed public ids intact while still unwinding transport
+  // re-wraps.
+  const normalizeModelId = (
+    message: AssistantMessage,
+    ctx: ExtensionContext,
+  ): AssistantMessage => {
+    const config = configLoader.getConfig();
+    // Proxy-only scope: never touch messages from unproxied providers.
+    if (!config.proxy.enabled) return message;
+    const isProxied = config.proxy.upstreamProviders.some(
+      (p) => p.id === message.provider && p.enabled !== false,
+    );
+    if (!isProxied) return message;
+
+    const prefix = `${message.provider}/`;
+    // Nothing to unwind when the id already lacks the transport prefix.
+    if (!message.model.startsWith(prefix)) return message;
+
+    // The un-stripped id is a real public registry model (e.g.
+    // openrouter/auto): preserve it instead of unwinding it into a
+    // non-existent id.
+    if (ctx.modelRegistry.find(message.provider, message.model)) {
+      return message;
+    }
+
+    // Unwind the transport prefix one segment at a time, preferring the
+    // longest candidate that resolves as a real registry model. This
+    // normalizes doubled ids (openai-codex/openai-codex/gpt-5.6-luna ->
+    // gpt-5.6-luna) while leaving provider-prefixed public ids intact
+    // (openrouter/openrouter/auto -> openrouter/auto, not auto).
+    let candidate = message.model;
+    while (candidate.startsWith(prefix)) {
+      candidate = candidate.slice(prefix.length);
+      if (ctx.modelRegistry.find(message.provider, candidate)) {
+        return { ...message, model: candidate };
+      }
+    }
+
+    // No candidate resolved (the registry has not loaded this model yet).
+    // Fall back to the fully stripped id so the persisted message still
+    // carries the bare public id, preserving the original persistence fix.
+    return { ...message, model: candidate };
+  };
+
   // Tag transient gateway failures so Pi's auto-retry picks them up. Pi
   // applies `message_end` replacements in place before the retry check runs.
   // Hooking the message rather than the provider also covers proxy mode.
-  pi.on("message_end", (event) => {
+  pi.on("message_end", (event, ctx) => {
     if (event.message.role !== "assistant") return;
-    const message = event.message;
-    if (message.stopReason !== "error" || !message.errorMessage) return;
+    const message = normalizeModelId(event.message, ctx);
+    if (message.stopReason !== "error" || !message.errorMessage) {
+      return message === event.message ? undefined : { message };
+    }
 
     const errorMessage = markRetryableApertureError(message.errorMessage);
-    if (!errorMessage) return;
+    if (!errorMessage) {
+      return message === event.message ? undefined : { message };
+    }
 
     return { message: { ...message, errorMessage } };
   });
