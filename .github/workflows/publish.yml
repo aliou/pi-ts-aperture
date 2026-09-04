@@ -78,17 +78,16 @@ jobs:
 
       - name: Create Release PR or Stage
         id: changesets
-        uses: changesets/action@v1
+        uses: changesets/action@v2
         with:
-          version: pnpm changeset version
-          title: ${{ steps.release-info.outputs.title }}
-          commit: ${{ steps.release-info.outputs.commit }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          version-script: pnpm changeset version
+          pr-title: ${{ steps.release-info.outputs.title }}
+          commit-message: ${{ steps.release-info.outputs.commit }}
 
       - name: Check for unpublished packages
         id: check-publish
-        if: steps.changesets.outputs.hasChangesets == 'false'
+        if: steps.changesets.outputs['has-changesets'] == 'false'
         run: |
           PACKAGE_NAME=$(node -p "require('./package.json').name")
           LOCAL_VERSION=$(node -p "require('./package.json').version")
