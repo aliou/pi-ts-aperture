@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { ApertureClient } from "../../../src/api/client";
+import type { ApertureProvider } from "../../../src/api/types";
 import { shouldUseGatewayRoot } from "../../../src/base-url-routing";
 import { configLoader } from "../../shared/config/loader";
 import type { ResolvedConfig } from "../../shared/config/types";
@@ -181,10 +182,15 @@ describe("shouldUseGatewayRoot OpenAI SDK path inference", () => {
     // openai-responses follows the same rule.
     ["responses-openai", "https://api.openai.com/v1", false, false],
     ["responses-zai", "https://api.z.ai/api/coding/paas/v4", false, true],
-  ])("%s completions baseUrl %s", (_name, baseUrl, isCompletions, expectedRoot) => {
-    const api: Api = isCompletions ? "openai-completions" : "openai-responses";
-    expect(shouldUseGatewayRoot(api, baseUrl)).toBe(expectedRoot);
-  });
+  ])(
+    "%s completions baseUrl %s",
+    (_name, baseUrl, isCompletions, expectedRoot) => {
+      const api: Api = isCompletions
+        ? "openai-completions"
+        : "openai-responses";
+      expect(shouldUseGatewayRoot(api, baseUrl)).toBe(expectedRoot);
+    },
+  );
 
   test("missing upstream base URL keeps /v1 for OpenAI SDK APIs", () => {
     expect(shouldUseGatewayRoot("openai-completions")).toBe(false);
@@ -1290,5 +1296,88 @@ describe("ApertureRuntime.sync passthrough auth", () => {
       auth: { apiKey: "-" },
       source: "aperture proxy",
     });
+  });
+});
+
+describe("ApertureRuntime.sync spawn auth race", () => {
+  // Regression (session 01a056b3): /spawn fires a completion within ~127ms of
+  // session start, before the async gateway catalog fetch in sync() has
+  // re-registered the proxy provider with the placeholder-key auth override.
+  // The provider must be registered with the placeholder auth synchronously,
+  // before the gateway fetch resolves, so an immediate completion does not
+  // surface "No API key for provider: neuralwatt".
+  test("registers placeholder auth before the gateway catalog fetch resolves", async () => {
+    let resolveFetch!: (value: ApertureProvider[]) => void;
+    const fetchPending = new Promise<ApertureProvider[]>((resolve) => {
+      resolveFetch = resolve;
+    });
+    vi.mocked(ApertureClient).mockImplementation(function (this: {
+      providers: ReturnType<typeof vi.fn>;
+    }) {
+      this.providers = vi.fn().mockReturnValue(fetchPending);
+      return this;
+    } as unknown as typeof ApertureClient);
+
+    getConfig.mockReturnValue(
+      proxyConfig([{ id: "neuralwatt", shouldCheckGatewayModels: false }]),
+    );
+
+    const nativeResolve = vi.fn().mockResolvedValue({
+      auth: { apiKey: "real-key" },
+      source: "env",
+    });
+    const native = {
+      id: "neuralwatt",
+      getModels: () => [
+        model(
+          "neuralwatt",
+          "kimi-k3",
+          "openai-completions",
+          "https://api.neuralwatt.com/v1",
+        ),
+      ],
+      auth: { apiKey: { name: "neuralwatt key", resolve: nativeResolve } },
+      stream: vi.fn(),
+      streamSimple: vi.fn(),
+    };
+    const registerNativeProvider = vi.fn();
+    const deps = {
+      getProvider: () => native,
+      registerNativeProvider,
+      getModels: () => native.getModels(),
+    };
+
+    // Do NOT await: the entry point fires `void proxyRuntime.sync(...)` from
+    // onSync, so an immediate completion races the in-flight fetch.
+    const syncPromise = new ApertureRuntime().sync(deps);
+
+    // Flush microtasks. sync() must have registered the placeholder auth
+    // override before parking on the gateway fetch.
+    await Promise.resolve();
+
+    const wrapped = registerNativeProvider.mock.calls.find(
+      ([p]: unknown[]) => (p as { id?: string }).id === "neuralwatt",
+    )?.[0] as
+      | {
+          auth?: {
+            apiKey?: {
+              resolve?: (input: unknown) => Promise<unknown>;
+            };
+          };
+        }
+      | undefined;
+
+    expect(wrapped).toBeDefined();
+    expect(wrapped.auth?.apiKey?.resolve).toBeDefined();
+    await expect(wrapped.auth?.apiKey?.resolve?.({})).resolves.toEqual({
+      auth: { apiKey: "-" },
+      source: "aperture proxy",
+    });
+    // The native resolve (real key) is not used: Aperture injects the
+    // upstream credential server-side.
+    expect(nativeResolve).not.toHaveBeenCalled();
+
+    resolveFetch([provider("neuralwatt", ["kimi-k3"])]);
+    await syncPromise;
   });
 });
