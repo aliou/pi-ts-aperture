@@ -212,7 +212,7 @@ There is no current `mode` setting. Legacy `mode` configs are migrated to capabi
 ## Testing and validation
 
 - Unit tests live next to source as `*.test.ts` and run with `pnpm test` (vitest).
-- Integration tests in `src/api/client.integration.test.ts` hit a live Aperture instance and are skipped without credentials.
+- Integration tests in `src/api/*.integration.test.ts` hit a live Aperture instance and are skipped without credentials. `src/api/access.integration.test.ts` guards the gateway surface the extension depends on and is meant to run with a `role: user` identity.
 - Pre-commit runs `typecheck`, `lint`, and `gen:schema`; the schema check fails the commit if `schema.json` is stale.
 - CI (`.github/workflows/ci.yml`) runs lint + typecheck + tests on push and PR. The publish workflow runs after CI succeeds on `main`.
 
