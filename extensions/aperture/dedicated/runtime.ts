@@ -132,7 +132,7 @@ function buildModels(
     }
     const providerUpstream = upstreamByProvider.get(provider.id);
     for (const modelId of provider.models) {
-      const modelInfo = provider.modelInfoById?.[modelId];
+      const modelInfo = provider.modelInfoById[modelId];
       // Fall back to a model-id lookup when the provider id does not match a
       // native Pi provider (e.g. a custom Aperture provider name).
       const upstreamBaseUrl = providerUpstream ?? upstreamByModel.get(modelId);

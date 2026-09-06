@@ -33,10 +33,7 @@ function gatewayProvider(id: string): ApertureProvider {
 }
 
 describe("mapProxyProviders", () => {
-  test("matches local providers by gateway ID from /api/providers", () => {
-    // /api/providers reflects the grant-scoped enabled providers, so proxy
-    // matching is done exclusively by provider id. No base-URL matching is
-    // performed.
+  test("matches local providers by gateway id", () => {
     const localModels = [
       localModel("anthropic", "https://api.anthropic.com"),
       localModel("openai", "https://api.openai.com"),

@@ -6,13 +6,8 @@ import type {
 } from "./config/types";
 
 /**
- * Match local Pi providers against Aperture gateway providers.
- *
- * The `/api/providers` endpoint already filters providers by grant scope
- * (enabled/disabled, role grants), so we match exclusively by provider id
- * against what the gateway exposes. No base-URL matching is performed; the
- * admin-only `/aperture/config` endpoint and its base URLs are no longer
- * consulted here.
+ * Match local Pi providers against Aperture gateway providers by id. No
+ * base-URL matching is performed.
  */
 export function mapProxyProviders(
   localModels: readonly Model<Api>[],

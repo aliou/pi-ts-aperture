@@ -1,11 +1,12 @@
 import type { TSchema } from "typebox";
 import { Value } from "typebox/value";
 import {
-  type ApertureModelInfo,
+  type ApertureModelEntry,
+  ApertureModelEntrySchema,
   type ApertureProvider,
-  ApertureProviderSchema,
   type ConnectorInfo,
   ConnectorInfoSchema,
+  type ProviderCompatibility,
 } from "./types";
 
 function validate<T>(schema: TSchema, value: unknown): T | null {
@@ -13,45 +14,21 @@ function validate<T>(schema: TSchema, value: unknown): T | null {
   return Value.Check(schema, withDefaults) ? (withDefaults as T) : null;
 }
 
-function parseProvider(
-  value: unknown,
-  fallbackId?: string,
-): ApertureProvider | null {
-  if (!value || typeof value !== "object") return null;
-  const record = value as Record<string, unknown>;
-  const id = typeof record.id === "string" ? record.id : fallbackId;
-  if (!id) return null;
-
-  return validate<ApertureProvider>(ApertureProviderSchema, {
-    ...record,
-    id,
-    name: record.name ?? id,
-  });
-}
-
-function parseProvidersBody(body: unknown): ApertureProvider[] {
-  if (Array.isArray(body)) {
-    return body
-      .map((provider) => parseProvider(provider))
-      .filter((p): p is ApertureProvider => p !== null);
+function compatibilityFlag(
+  endpoint: string,
+): keyof ProviderCompatibility | null {
+  switch (endpoint) {
+    case "/v1/chat/completions":
+      return "openai_chat";
+    case "/v1/responses":
+      return "openai_responses";
+    case "/v1/messages":
+      return "anthropic_messages";
+    default:
+      return endpoint.includes("generateContent")
+        ? "gemini_generate_content"
+        : null;
   }
-  if (!body || typeof body !== "object") return [];
-
-  const providers = (body as { providers?: unknown }).providers;
-  if (Array.isArray(providers)) {
-    return providers
-      .map((provider) => parseProvider(provider))
-      .filter((p): p is ApertureProvider => p !== null);
-  }
-  if (providers && typeof providers === "object") {
-    return Object.entries(providers as Record<string, unknown>).flatMap(
-      ([id, provider]) => {
-        const parsed = parseProvider(provider, id);
-        return parsed ? [parsed] : [];
-      },
-    );
-  }
-  return [];
 }
 
 /**
@@ -104,64 +81,47 @@ export class ApertureClient {
   }
 
   /**
-   * Models exposed by `/v1/models`, keyed by id.
-   *
-   * Disabled providers' models do not appear in `/v1/models`, so this is the
-   * source of truth for which gateway providers are usable. The full entry
-   * (including `pricing`) is retained so dedicated mode can attach costs to
-   * model configs without re-fetching the gateway. Failures (network, 404, ...)
-   * resolve to an empty map, which leaves the `/api/providers` result
-   * unfiltered as a safe fallback.
+   * Provider catalog derived from `/v1/models`: entries are grouped by
+   * `metadata.provider` and `supported_endpoints` are unioned into each
+   * provider's compatibility map.
    */
-  private async enabledModelsById(
-    signal?: AbortSignal,
-  ): Promise<Map<string, ApertureModelInfo>> {
-    try {
-      const body = await this._fetch<{ data?: unknown[] }>("/v1/models", {
-        signal,
-      });
-      if (!Array.isArray(body.data)) return new Map();
-      const byId = new Map<string, ApertureModelInfo>();
-      for (const entry of body.data) {
-        if (!entry || typeof entry !== "object") continue;
-        const record = entry as Record<string, unknown>;
-        const id = record.id;
-        if (typeof id !== "string") continue;
-        byId.set(id, {
-          id,
-          pricing: record.pricing as ApertureModelInfo["pricing"] | undefined,
-        });
-      }
-      return byId;
-    } catch {
-      return new Map();
-    }
-  }
-
   async providers(signal?: AbortSignal): Promise<ApertureProvider[]> {
-    const [body, enabledModelsById] = await Promise.all([
-      this._fetch<{ providers?: unknown } | unknown[]>("/api/providers", {
-        signal,
-      }),
-      this.enabledModelsById(signal),
-    ]);
+    const body = await this._fetch<{ data?: unknown[] }>("/v1/models", {
+      signal,
+    });
+    if (!Array.isArray(body.data)) return [];
 
-    const parsed = parseProvidersBody(body);
-    if (enabledModelsById.size === 0) return parsed;
+    const providers = new Map<string, ApertureProvider>();
+    for (const raw of body.data) {
+      const entry = validate<ApertureModelEntry>(ApertureModelEntrySchema, raw);
+      if (!entry) continue;
+      const metadata = entry.metadata.provider;
 
-    return parsed
-      .map((provider) => {
-        const models = provider.models.filter((id) =>
-          enabledModelsById.has(id),
-        );
-        const modelInfoById: Record<string, ApertureModelInfo> = {};
-        for (const id of models) {
-          const info = enabledModelsById.get(id);
-          if (info) modelInfoById[id] = info;
-        }
-        return { ...provider, models, modelInfoById };
-      })
-      .filter((provider) => provider.models.length > 0);
+      let provider = providers.get(metadata.id);
+      if (!provider) {
+        provider = {
+          id: metadata.id,
+          name: metadata.name || metadata.id,
+          description: metadata.description,
+          models: [],
+          compatibility: {},
+          requires_client_auth: metadata.requires_client_auth,
+          modelInfoById: {},
+        };
+        providers.set(metadata.id, provider);
+      }
+
+      provider.models.push(entry.id);
+      provider.modelInfoById[entry.id] = {
+        id: entry.id,
+        pricing: entry.pricing,
+      };
+      for (const endpoint of entry.supported_endpoints) {
+        const flag = compatibilityFlag(endpoint);
+        if (flag) provider.compatibility[flag] = true;
+      }
+    }
+    return [...providers.values()];
   }
 
   async connectors(signal?: AbortSignal): Promise<ConnectorInfo[]> {

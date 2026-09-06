@@ -78,9 +78,6 @@ export function buildProxyTab(
                   hideHint: submenuCtx.hideHint,
                   loader: async (signal, loaderCtx) => {
                     const client = new ApertureClient(baseUrl);
-                    // /api/providers reflects grant-scoped enabled/disabled
-                    // providers, so we match local Pi providers exclusively
-                    // against it. No /aperture/config fetch is needed here.
                     const gatewayProviders = await client.providers(signal);
                     const compatibilityById = new Map(
                       gatewayProviders.map((gp) => [gp.id, gp.compatibility]),

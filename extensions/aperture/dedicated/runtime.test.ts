@@ -73,6 +73,7 @@ function gatewayProvider(id: string, models: string[]): ApertureProvider {
     name: id,
     models,
     compatibility: { openai_chat: true },
+    modelInfoById: {},
   };
 }
 
@@ -742,6 +743,7 @@ describe("refreshModels / api overrides", () => {
       name: id,
       models,
       compatibility: { openai_chat: true, anthropic_messages: true },
+      modelInfoById: {},
     };
   }
 

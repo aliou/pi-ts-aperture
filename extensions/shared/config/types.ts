@@ -17,7 +17,7 @@ export type RoutableApi = Extract<
 >;
 
 export interface ProxiedProviderConfig {
-  /** Aperture provider id (matches `/api/providers` response). */
+  /** Aperture provider id. */
   id: string;
   /**
    * Proxy this provider through Aperture (default true). Set false to
