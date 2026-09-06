@@ -24,43 +24,55 @@ export type ProviderCompatibility = Static<typeof ProviderCompatibilitySchema>;
  * `web_search` and `input_cache_write_1h` have no direct mapping in Pi's
  * `ProviderModelConfig.cost` and are ignored when building model defaults.
  */
-export interface ApertureModelPricing {
-  input?: string;
-  input_cache_read?: string;
-  input_cache_write?: string;
-  input_cache_write_1h?: string;
-  output?: string;
-  web_search?: string;
-}
+export const ApertureModelPricingSchema = Type.Object(
+  {
+    input: Type.Optional(Type.String()),
+    input_cache_read: Type.Optional(Type.String()),
+    input_cache_write: Type.Optional(Type.String()),
+    input_cache_write_1h: Type.Optional(Type.String()),
+    output: Type.Optional(Type.String()),
+    web_search: Type.Optional(Type.String()),
+  },
+  { additionalProperties: true },
+);
 
-/**
- * Model metadata retained from `/v1/models`. Used as a lookup so dedicated
- * mode can attach pricing to model configs without re-fetching the gateway.
- */
-export interface ApertureModelInfo {
-  id: string;
-  pricing?: ApertureModelPricing;
-}
+export type ApertureModelPricing = Static<typeof ApertureModelPricingSchema>;
 
 export const ApertureModelInfoSchema = Type.Object(
   {
     id: Type.String(),
-    pricing: Type.Optional(
-      Type.Object(
-        {
-          input: Type.Optional(Type.String()),
-          input_cache_read: Type.Optional(Type.String()),
-          input_cache_write: Type.Optional(Type.String()),
-          input_cache_write_1h: Type.Optional(Type.String()),
-          output: Type.Optional(Type.String()),
-          web_search: Type.Optional(Type.String()),
-        },
-        { additionalProperties: true },
-      ),
-    ),
+    pricing: Type.Optional(ApertureModelPricingSchema),
   },
   { additionalProperties: true },
 );
+
+export type ApertureModelInfo = Static<typeof ApertureModelInfoSchema>;
+
+/** A `/v1/models` entry. */
+export const ApertureModelEntrySchema = Type.Object(
+  {
+    id: Type.String(),
+    metadata: Type.Object(
+      {
+        provider: Type.Object(
+          {
+            id: Type.String(),
+            name: Type.Optional(Type.String()),
+            description: Type.String({ default: "" }),
+            requires_client_auth: Type.Boolean({ default: false }),
+          },
+          { additionalProperties: true },
+        ),
+      },
+      { additionalProperties: true },
+    ),
+    supported_endpoints: Type.Array(Type.String(), { default: [] }),
+    pricing: Type.Optional(ApertureModelPricingSchema),
+  },
+  { additionalProperties: true },
+);
+
+export type ApertureModelEntry = Static<typeof ApertureModelEntrySchema>;
 
 export const ApertureProviderSchema = Type.Object(
   {
@@ -72,11 +84,8 @@ export const ApertureProviderSchema = Type.Object(
     // Set by `auth_mode: "passthrough"` providers: the gateway forwards the
     // client's own credential, so the client must send a real one.
     requires_client_auth: Type.Optional(Type.Boolean()),
-    // Populated from `/v1/models` so dedicated mode can attach pricing to
-    // model configs. Not present on the raw `/api/providers` response.
-    modelInfoById: Type.Optional(
-      Type.Record(Type.String(), ApertureModelInfoSchema),
-    ),
+    // Per-model info from `/v1/models` (pricing), keyed by model id.
+    modelInfoById: Type.Record(Type.String(), ApertureModelInfoSchema),
   },
   { additionalProperties: true },
 );

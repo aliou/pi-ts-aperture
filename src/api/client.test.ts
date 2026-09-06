@@ -6,10 +6,6 @@ describe("ApertureClient", () => {
     vi.unstubAllGlobals();
   });
 
-  // helpers ---------------------------------------------------------------
-  // providers() cross-references /v1/models, so every test that calls it
-  // must stub both endpoints. `route` returns a fetch Response mock based on
-  // the URL being requested.
   function mockFetch(route: (url: string) => unknown) {
     vi.stubGlobal(
       "fetch",
@@ -24,48 +20,42 @@ describe("ApertureClient", () => {
     );
   }
 
-  function models(...ids: string[]) {
-    return { data: ids.map((id) => ({ id, object: "model" })) };
-  }
-
-  function modelWithPricing(id: string, pricing: Record<string, string>) {
-    return { id, object: "model", pricing };
-  }
-
-  function providersArray(...providers: Record<string, unknown>[]) {
-    return { providers };
+  function model(
+    id: string,
+    provider: Record<string, unknown>,
+    extra: Record<string, unknown> = {},
+  ) {
+    return { id, object: "model", metadata: { provider }, ...extra };
   }
 
   function notOk(status: number, statusText: string) {
     return { ok: false, status, statusText, json: async () => ({}) };
   }
 
-  // ----------------------------------------------------------------------
-  // /api/providers array response
-  // /v1/models exposes only `anthropic`'s model, so `unmatched` (disabled)
-  // is dropped and `anthropic` survives with only its callable model.
-  test("providers() filters out providers whose models are absent from /v1/models", async () => {
+  test("providers() groups /v1/models entries by provider metadata", async () => {
     mockFetch((url) => {
-      if (url.endsWith("/api/providers")) {
-        return providersArray(
-          {
-            id: "anthropic",
-            name: "Anthropic",
-            description: "Claude models",
-            models: ["claude-3-5-sonnet", "claude-internal"],
-            compatibility: { anthropic_messages: true },
-          },
-          {
-            id: "unmatched",
-            name: "Unmatched",
-            description: "",
-            models: ["unmatched-model"],
-            compatibility: { openai_chat: true },
-          },
-        );
-      }
       if (url.endsWith("/v1/models")) {
-        return models("claude-3-5-sonnet");
+        return {
+          data: [
+            model(
+              "claude-sonnet-4",
+              { id: "anthropic", name: "Anthropic" },
+              { supported_endpoints: ["/v1/messages"] },
+            ),
+            model(
+              "gpt-5",
+              { id: "openai", name: "OpenAI", requires_client_auth: true },
+              {
+                supported_endpoints: ["/v1/chat/completions", "/v1/responses"],
+              },
+            ),
+            model(
+              "gpt-5-mini",
+              { id: "openai", name: "OpenAI", requires_client_auth: true },
+              { supported_endpoints: ["/v1/chat/completions"] },
+            ),
+          ],
+        };
       }
       return notOk(404, "Not Found");
     });
@@ -76,124 +66,44 @@ describe("ApertureClient", () => {
       {
         id: "anthropic",
         name: "Anthropic",
-        description: "Claude models",
-        // claude-internal is not in /v1/models -> intersected out
-        models: ["claude-3-5-sonnet"],
+        description: "",
+        models: ["claude-sonnet-4"],
         compatibility: { anthropic_messages: true },
-        modelInfoById: { "claude-3-5-sonnet": { id: "claude-3-5-sonnet" } },
+        requires_client_auth: false,
+        modelInfoById: { "claude-sonnet-4": { id: "claude-sonnet-4" } },
+      },
+      {
+        id: "openai",
+        name: "OpenAI",
+        description: "",
+        models: ["gpt-5", "gpt-5-mini"],
+        compatibility: { openai_chat: true, openai_responses: true },
+        requires_client_auth: true,
+        modelInfoById: {
+          "gpt-5": { id: "gpt-5" },
+          "gpt-5-mini": { id: "gpt-5-mini" },
+        },
       },
     ]);
   });
 
-  // /api/providers object response; only openrouter is enabled.
-  test("providers() parses object response and keeps only enabled providers", async () => {
+  test("providers() maps Gemini endpoints to gemini_generate_content", async () => {
     mockFetch((url) => {
-      if (url.endsWith("/api/providers")) {
+      if (url.endsWith("/v1/models")) {
         return {
-          providers: {
-            openrouter: {
-              name: "OpenRouter",
-              description: "",
-              models: ["openai/gpt-5"],
-              compatibility: { openai_chat: true },
-            },
-            disabled: {
-              name: "Disabled",
-              description: "",
-              models: ["disabled-model"],
-              compatibility: { openai_chat: true },
-            },
-          },
+          data: [
+            model(
+              "gemini-2.5-pro",
+              { id: "google", name: "Google AI Studio" },
+              {
+                supported_endpoints: [
+                  "/v1beta/models/{model}:generateContent",
+                  "/v1beta/models/{model}:streamGenerateContent",
+                ],
+              },
+            ),
+          ],
         };
-      }
-      if (url.endsWith("/v1/models")) {
-        return models("openai/gpt-5");
-      }
-      return notOk(404, "Not Found");
-    });
-
-    await expect(
-      new ApertureClient("http://gateway.test").providers(),
-    ).resolves.toEqual([
-      {
-        id: "openrouter",
-        name: "OpenRouter",
-        description: "",
-        models: ["openai/gpt-5"],
-        compatibility: { openai_chat: true },
-        modelInfoById: { "openai/gpt-5": { id: "openai/gpt-5" } },
-      },
-    ]);
-  });
-
-  // /v1/models failed or is unreachable -> providers() falls back to the
-  // unfiltered /api/providers result.
-  test("providers() falls back to unfiltered list when /v1/models is unreachable", async () => {
-    mockFetch((url) => {
-      if (url.endsWith("/api/providers")) {
-        return providersArray({
-          id: "anthropic",
-          name: "Anthropic",
-          description: "",
-          models: ["claude-3-5-sonnet"],
-          compatibility: { anthropic_messages: true },
-        });
-      }
-      if (url.endsWith("/v1/models")) {
-        return notOk(500, "Internal Server Error");
-      }
-      return notOk(404, "Not Found");
-    });
-
-    await expect(
-      new ApertureClient("http://gateway.test").providers(),
-    ).resolves.toEqual([
-      {
-        id: "anthropic",
-        name: "Anthropic",
-        description: "",
-        models: ["claude-3-5-sonnet"],
-        compatibility: { anthropic_messages: true },
-      },
-    ]);
-  });
-
-  test("providers() rejects with ApertureHttpError when /api/providers fails", async () => {
-    mockFetch((url) => {
-      if (url.endsWith("/api/providers"))
-        return notOk(500, "Internal Server Error");
-      if (url.endsWith("/v1/models")) return models();
-      return notOk(404, "Not Found");
-    });
-
-    await expect(
-      new ApertureClient("http://gateway.test").providers(),
-    ).rejects.toBeInstanceOf(ApertureHttpError);
-  });
-
-  // /v1/models entries carry a `pricing` object; providers() should retain it
-  // on `modelInfoById` so dedicated mode can build cost-aware model configs.
-  test("providers() retains /v1/models pricing on modelInfoById", async () => {
-    const pricing = {
-      input: "0.00000100",
-      input_cache_read: "0.00000010",
-      input_cache_write: "0.00000125",
-      input_cache_write_1h: "0.00000200",
-      output: "0.00000500",
-      web_search: "0.01000000",
-    };
-    mockFetch((url) => {
-      if (url.endsWith("/api/providers")) {
-        return providersArray({
-          id: "synthetic",
-          name: "Synthetic",
-          description: "",
-          models: ["syn:large:text"],
-          compatibility: { openai_chat: true },
-        });
-      }
-      if (url.endsWith("/v1/models")) {
-        return { data: [modelWithPricing("syn:large:text", pricing)] };
       }
       return notOk(404, "Not Found");
     });
@@ -201,9 +111,67 @@ describe("ApertureClient", () => {
     const providers = await new ApertureClient(
       "http://gateway.test",
     ).providers();
-    expect(providers[0].modelInfoById?.["syn:large:text"]).toEqual({
+    expect(providers[0].compatibility).toEqual({
+      gemini_generate_content: true,
+    });
+  });
+
+  test("providers() retains pricing on modelInfoById", async () => {
+    const pricing = { input: "0.00000100", output: "0.00000500" };
+    mockFetch((url) => {
+      if (url.endsWith("/v1/models")) {
+        return {
+          data: [
+            model(
+              "syn:large:text",
+              { id: "synthetic", name: "Synthetic" },
+              { pricing, supported_endpoints: ["/v1/chat/completions"] },
+            ),
+          ],
+        };
+      }
+      return notOk(404, "Not Found");
+    });
+
+    const providers = await new ApertureClient(
+      "http://gateway.test",
+    ).providers();
+    expect(providers[0].modelInfoById["syn:large:text"]).toEqual({
       id: "syn:large:text",
       pricing,
     });
+  });
+
+  test("providers() skips entries without provider metadata", async () => {
+    mockFetch((url) => {
+      if (url.endsWith("/v1/models")) {
+        return {
+          data: [
+            { id: "orphan", object: "model" },
+            model("gpt-5", { id: "openai", name: "OpenAI" }),
+          ],
+        };
+      }
+      return notOk(404, "Not Found");
+    });
+
+    const providers = await new ApertureClient(
+      "http://gateway.test",
+    ).providers();
+    expect(providers.map((p) => p.id)).toEqual(["openai"]);
+    expect(providers[0].models).toEqual(["gpt-5"]);
+  });
+
+  test("providers() rejects with ApertureHttpError when /v1/models fails", async () => {
+    mockFetch((url) => {
+      if (url.endsWith("/v1/models")) {
+        return notOk(500, "Internal Server Error");
+      }
+      return notOk(404, "Not Found");
+    });
+
+    await expect(
+      new ApertureClient("http://gateway.test").providers(),
+    ).rejects.toBeInstanceOf(ApertureHttpError);
   });
 });

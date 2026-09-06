@@ -82,7 +82,7 @@
       "properties": {
         "id": {
           "type": "string",
-          "description": "Aperture provider id (matches `/api/providers` response)."
+          "description": "Aperture provider id."
         },
         "enabled": {
           "type": "boolean",

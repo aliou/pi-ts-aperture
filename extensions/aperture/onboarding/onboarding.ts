@@ -207,9 +207,6 @@ class ProxyProvidersStep implements Component {
   private async fetchProviders(): Promise<void> {
     try {
       const client = new ApertureClient(this.state.baseUrl);
-      // /api/providers reflects grant-scoped enabled/disabled providers, so
-      // we match local Pi providers exclusively against it. No
-      // /aperture/config fetch is needed here.
       const gatewayProviders = await client.providers();
       this.providers = mapProxyProviders(
         this.knownModels,

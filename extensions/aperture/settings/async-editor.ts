@@ -14,7 +14,7 @@ function summarizeError(error: unknown): string {
     return error.message || error.name;
   }
   const msg = error instanceof Error ? error.message : String(error);
-  // ApertureClient throws e.g. "[Aperture] GET /api/providers: -> 504 Gateway Timeout".
+  // ApertureClient throws e.g. "[Aperture] GET /v1/models: -> 504 Gateway Timeout".
   const http = msg.match(/->\s*(\d{3})\s*(.*)/);
   if (http) return `gateway returned ${http[1]} ${http[2] ?? ""}`.trim();
   if (/fetch failed|ENOTFOUND|ECONNREFUSED|ECONNRESET|network/i.test(msg))

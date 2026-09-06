@@ -1,14 +1,18 @@
 import { Value } from "typebox/value";
 import { describe, expect, test } from "vitest";
-import { ApertureClient } from "./client";
-import { ApertureProviderSchema, ConnectorInfoSchema } from "./types";
+import { ApertureClient, ApertureHttpError } from "./client";
+import {
+  ApertureProviderSchema,
+  type ConnectorInfo,
+  ConnectorInfoSchema,
+} from "./types";
 
 const DEFAULT_URL = "http://ai";
 const url = process.env.APERTURE_TEST_URL || DEFAULT_URL;
 
 async function isAccessible(target: string): Promise<boolean> {
   try {
-    const res = await fetch(`${target}/api/providers`, {
+    const res = await fetch(`${target}/v1/models`, {
       signal: AbortSignal.timeout(3000),
     });
     return res.ok;
@@ -49,8 +53,20 @@ describe.skipIf(!accessible)("ApertureClient integration", () => {
     }
   });
 
-  test("connectors() returns valid connectors", async () => {
-    const connectors = await client.connectors();
+  test("connectors() returns valid connectors", async (context) => {
+    let connectors: ConnectorInfo[];
+    try {
+      connectors = await client.connectors();
+    } catch (error) {
+      // /api/connectors is admin-scoped.
+      if (
+        error instanceof ApertureHttpError &&
+        (error.status === 401 || error.status === 403)
+      ) {
+        context.skip();
+      }
+      throw error;
+    }
 
     expect(connectors.length).toBeGreaterThan(0);
     for (const c of connectors) {
