@@ -1,5 +1,12 @@
 # @aliou/pi-ts-aperture
 
+## 0.14.3
+
+### Patch Changes
+
+- f64c101: ci: upgrade @changesets/cli to v3 and migrate changesets/action to v2 in the publish workflow
+- 02d7c29: Derive the provider catalog from `/v1/models` instead of `/api/providers`, which requires the admin role. Provider discovery, dedicated model refresh, proxy sync, onboarding, and the settings provider lists now work for `role: user` tailnet identities.
+
 ## 0.14.2
 
 ### Patch Changes
