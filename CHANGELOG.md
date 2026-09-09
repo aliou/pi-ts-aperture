@@ -1,5 +1,12 @@
 # @aliou/pi-ts-aperture
 
+## 0.14.4
+
+### Patch Changes
+
+- 7780a12: Fix proxy auth registration so immediate spawn completions use Aperture placeholder credentials before gateway reconciliation.
+- 6704355: Proxy mode: strip the transport-qualified provider prefix from the persisted assistant message model id in the `message_end` handler, so resuming a session restores the model via the bare registry id instead of warning "Could not restore model ..." and falling back to a default model. The strip is idempotent: already-bare ids are left untouched.
+
 ## 0.14.3
 
 ### Patch Changes
