@@ -9,6 +9,7 @@ import {
   APERTURE_FEATURE_REQUEST_EVENT,
   createFeatureRequestPayload,
 } from "../shared/events";
+import { isProvenanceTelemetryAllowed } from "../shared/provenance";
 import { emitConfigSync } from "../shared/sync-bus";
 import {
   reconcileDedicatedProvider,
@@ -38,7 +39,12 @@ export default async function (pi: ExtensionAPI): Promise<void> {
   // request. `x-session-id` must reflect the current session (it changes on
   // /fork, /new, /resume), so it cannot be baked into provider registration.
   // The hook fires per request, after Pi assembles the outgoing headers.
+  //
+  // Injection is gated on the `shouldSendProvenanceHeaders` config option
+  // (also exposed in /aperture:settings) and pi's own telemetry gate.
   pi.on("before_provider_headers", (event, ctx) => {
+    if (!configLoader.getConfig().shouldSendProvenanceHeaders) return;
+    if (!isProvenanceTelemetryAllowed()) return;
     event.headers.Referer = "https://pi.dev";
     event.headers["x-session-id"] = ctx.sessionManager.getSessionId();
   });
