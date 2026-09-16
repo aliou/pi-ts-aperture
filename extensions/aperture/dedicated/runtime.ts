@@ -71,12 +71,18 @@ function filterProviders(
   providers: ApertureProvider[],
   config: ResolvedConfig,
 ): ApertureProvider[] {
+  // Passthrough providers require a client credential Aperture cannot
+  // inject; the dedicated provider never sends one, so their models cannot
+  // be called. Exclude them regardless of the configured filter.
+  const callable = providers.filter(
+    (provider) => !provider.requires_client_auth,
+  );
   const selected = new Set(
     config.dedicated.providers.filter((p) => p.enabled).map((p) => p.id),
   );
   return config.dedicated.providers.length > 0
-    ? providers.filter((provider) => selected.has(provider.id))
-    : providers;
+    ? callable.filter((provider) => selected.has(provider.id))
+    : callable;
 }
 
 function buildModels(

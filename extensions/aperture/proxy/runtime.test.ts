@@ -181,10 +181,15 @@ describe("shouldUseGatewayRoot OpenAI SDK path inference", () => {
     // openai-responses follows the same rule.
     ["responses-openai", "https://api.openai.com/v1", false, false],
     ["responses-zai", "https://api.z.ai/api/coding/paas/v4", false, true],
-  ])("%s completions baseUrl %s", (_name, baseUrl, isCompletions, expectedRoot) => {
-    const api: Api = isCompletions ? "openai-completions" : "openai-responses";
-    expect(shouldUseGatewayRoot(api, baseUrl)).toBe(expectedRoot);
-  });
+  ])(
+    "%s completions baseUrl %s",
+    (_name, baseUrl, isCompletions, expectedRoot) => {
+      const api: Api = isCompletions
+        ? "openai-completions"
+        : "openai-responses";
+      expect(shouldUseGatewayRoot(api, baseUrl)).toBe(expectedRoot);
+    },
+  );
 
   test("missing upstream base URL keeps /v1 for OpenAI SDK APIs", () => {
     expect(shouldUseGatewayRoot("openai-completions")).toBe(false);

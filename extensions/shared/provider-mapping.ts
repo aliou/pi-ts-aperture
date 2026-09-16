@@ -55,10 +55,12 @@ export function mapDedicatedProviders(
     existingProviders.map((provider) => [provider.id, provider]),
   );
 
-  return gatewayProviders.map((provider) => ({
-    id: provider.id,
-    name: provider.name,
-    enabled: existing.get(provider.id)?.enabled ?? true,
-    api: existing.get(provider.id)?.api,
-  }));
+  return gatewayProviders
+    .filter((provider) => !provider.requires_client_auth)
+    .map((provider) => ({
+      id: provider.id,
+      name: provider.name,
+      enabled: existing.get(provider.id)?.enabled ?? true,
+      api: existing.get(provider.id)?.api,
+    }));
 }

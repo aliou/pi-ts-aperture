@@ -412,6 +412,36 @@ describe("refreshModels / networked refresh", () => {
     expect(models.map((m) => m.id)).toEqual(["anthropic/claude-x"]);
   });
 
+  test("excludes passthrough (requires_client_auth) providers", async () => {
+    providersMock.mockResolvedValue([
+      gatewayProvider("openai", ["gpt-5"]),
+      {
+        ...gatewayProvider("codex", ["gpt-5-codex"]),
+        requires_client_auth: true,
+      },
+    ]);
+    const provider = register();
+
+    const models = await refresh(provider, memoryStore(), true);
+    expect(models.map((m) => m.id)).toEqual(["openai/gpt-5"]);
+  });
+
+  test("excludes passthrough providers even when explicitly selected", async () => {
+    getConfig.mockReturnValue(
+      dedicatedConfig(true, [{ id: "codex", enabled: true }]),
+    );
+    providersMock.mockResolvedValue([
+      {
+        ...gatewayProvider("codex", ["gpt-5-codex"]),
+        requires_client_auth: true,
+      },
+    ]);
+    const provider = register();
+
+    const models = await refresh(provider, memoryStore(), true);
+    expect(models).toEqual([]);
+  });
+
   test("propagates gateway fetch failures", async () => {
     providersMock.mockRejectedValue(new Error("gateway down"));
     const provider = register();

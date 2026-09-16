@@ -142,4 +142,16 @@ describe("mapDedicatedProviders", () => {
 
     expect(result[0].api).toBe("openai-responses");
   });
+
+  test("excludes passthrough (requires_client_auth) providers", () => {
+    const result = mapDedicatedProviders(
+      [
+        gatewayProvider("openrouter"),
+        { ...gatewayProvider("codex"), requires_client_auth: true },
+      ],
+      [],
+    );
+
+    expect(result.map((p) => p.id)).toEqual(["openrouter"]);
+  });
 });
