@@ -1,242 +1,54 @@
 # pi-ts-aperture
 
-Pi extension that routes LLM traffic through Tailscale Aperture.
+Pi extension that routes LLM traffic through [Tailscale Aperture](https://tailscale.com/docs/features/aperture), a managed AI gateway on a tailnet. Aperture injects upstream provider credentials server-side and routes requests; this extension registers and routes Pi providers, models, and MCP connector tools through it.
 
-## Purpose and risk profile
+## Layout
 
-This extension integrates Pi with [Tailscale Aperture](https://tailscale.com/docs/features/aperture), a managed AI gateway on a tailnet. Aperture handles API key injection and request routing server-side; this extension registers and routes Pi providers, models, and MCP connector tools through the gateway.
+- `extensions/aperture/` - Main extension: proxy mode (`proxy/`), the dedicated `aperture` provider (`dedicated/`), onboarding wizard (`onboarding/`), settings UI (`settings/`).
+- `extensions/connectors/` - Registers MCP tools discovered from Aperture's `/v1/mcp` endpoint.
+- `extensions/shared/` - Config (types, defaults, loader, migrations), sync bus between the two extensions, provider mapping, Pi API selection.
+- `src/` - Pi-agnostic code: Aperture API client, gateway base-URL routing, model metadata resolution, retryable-error tagging, MCP client.
 
-Risk profile:
+Config types and defaults: `extensions/shared/config/types.ts` and `defaults.ts`. Read those instead of trusting any restated shape.
 
-- **Network-level, global config.** Aperture is a network concern, so config is global-only (`~/.pi/agent/extensions/aperture.json`), not per-project. Changes affect every Pi session.
-- **No secrets in code or config.** `apiKey` is set to `"-"` because Aperture injects upstream credentials server-side. Never hardcode provider IDs, URLs, or keys.
-- **Runtime tool registration is one-way.** Pi cannot unregister tools at runtime, so pinning connector tools or changing `discoveryTools` requires a full Pi restart.
+## Commands
 
-## Commands and checks
-
-Pi user-facing commands registered by this extension:
-
-- `/aperture:onboarding` - Onboarding wizard. Only appears while onboarding is pending. Completion saves config and reloads Pi so selected providers register cleanly.
-- `/aperture:settings` - Edit config: connection URL, capabilities, proxy providers and gateway checks, dedicated provider filters, pinned connector tools, onboarding status, and onboarding extension toggle. Settings syncs providers without a reload; pinned connector tools require a full Pi restart.
-
-Development commands (`package.json` scripts, run with `pnpm`):
+Development (`pnpm`):
 
 | Script | What it does |
 |---|---|
-| `pnpm typecheck` | `tsc --noEmit`. |
-| `pnpm lint` | `biome check`. |
-| `pnpm format` | `biome check --write` (applies fixes). |
-| `pnpm test` | `vitest run` (unit tests, run on every push). |
-| `pnpm test:watch` | `vitest` in watch mode. |
-| `pnpm gen:schema` | Regenerates `schema.json` from `extensions/shared/config/types.ts`. |
-| `pnpm check:schema` | Verifies `schema.json` is in sync with the types. |
-| `pnpm check:lockfile` | `pnpm install --frozen-lockfile --ignore-scripts`. |
-| `pnpm changeset` | Add a changeset entry. |
-| `pnpm release` | `pnpm changeset publish`. |
+| `pnpm typecheck` | `tsc --noEmit` |
+| `pnpm lint` | `biome check` |
+| `pnpm format` | `biome check --write` |
+| `pnpm test` | `vitest run` |
+| `pnpm gen:schema` | Regenerate `schema.json` from config types |
+| `pnpm changeset` / `pnpm release` | Changeset entry / publish |
 
-The pre-commit hook (`.husky/pre-commit`) runs `typecheck`, `lint`, and `gen:schema`, then fails if `schema.json` is out of date. Always stage `schema.json` when you touch config types.
+The pre-commit hook runs `typecheck`, `lint`, and `gen:schema`, then fails if `schema.json` is out of date. Always stage `schema.json` when you touch config types. Never edit `schema.json` by hand.
 
-## Architecture and structure
+User-facing commands: `/aperture:onboarding` (visible only while onboarding is pending; reloads Pi on completion) and `/aperture:settings` (syncs providers without a reload; pinned connector tools require a full restart).
 
-Two independent extensions live under `extensions/`:
+## Invariants and gotchas
 
-- `extensions/aperture/` - The main extension. Loads config, syncs dedicated and proxy providers, and registers onboarding and settings.
-- `extensions/connectors/` - The connectors extension. Discovers MCP tools from Aperture's `/v1/mcp` endpoint and registers them with Pi (pinned as first-class tools, or proxied through discovery meta-tools).
+These are not obvious from reading the code. The code shows what happens; these say why and what not to break.
 
-Pi-agnostic Aperture API and mapping code lives under `src/`. Extension glue (Pi-dependent code) lives under `extensions/`.
+- **Global-only config.** Aperture is a network concern, so config lives at `~/.pi/agent/extensions/aperture.json` and has no per-project scope.
+- **No secrets, no hardcoded IDs.** `apiKey` is `"-"` because the gateway injects credentials server-side. Never hardcode provider IDs, URLs, or keys; the extension must work against any Aperture instance with any providers. Pi OAuth credentials still take precedence when present.
+- **Tool registration is one-way.** Pi cannot unregister tools at runtime. Pinning connector tools or changing `connectors.discoveryTools` only takes effect after a full Pi restart.
+- **Fail open on gateway fetches.** Catalog fetches (auth reconciliation, model filtering, api-override validation) that fail must leave behavior unchanged rather than break the session.
+- **Synchronous auth placeholder.** Proxy providers get the placeholder-key auth override synchronously before the catalog fetch is awaited, so an immediate `/spawn` cannot race auth setup. Keep that ordering.
+- **Model-id qualification.** Request model ids are provider-qualified (`provider/model-id`); the exception is path-embedding APIs (Gemini, Vertex, Bedrock), which must stay bare because the gateway only accepts bare ids in URL paths. `getModels()` keeps bare ids so the model picker is unaffected.
+- **Model metadata belongs in `~/.pi/agent/models.json`, not in extension config.** No gateway model cache is persisted in the extension config file.
+- **Retryable errors are tagged, not classified.** Pi's retry classifier is hardcoded, so a `message_end` handler appends ` (service unavailable)` to transient Aperture errors. New patterns go in `TRANSIENT_APERTURE_ERROR_PATTERNS` in `src/retryable-errors.ts`.
+- **Config migrations are mandatory on format change.** Migrations live in `extensions/shared/config/migration/`; existing user config must keep working across releases.
+- **Headers are injected per-request.** `Referer` and `x-session-id` go through the `before_provider_headers` hook so the session id stays current across `/fork`, `/new`, `/resume`. Do not bake headers into provider registration.
 
-### `extensions/aperture/`
+## Testing
 
-- `index.ts` - Single extension entry point. Loads config, syncs proxy and dedicated providers, registers onboarding and settings.
-- `proxy/runtime.ts` - `ApertureRuntime` for proxy provider registration/unregistration, `keepGatewayModelsOnly` filtering, and gateway model verification.
-- `dedicated/runtime.ts` - `registerDedicatedProvider` / `reconcileDedicatedProvider` for the standalone `aperture` provider. Model discovery and caching go through the provider's `refreshModels` (`refreshDedicatedCatalog`) and Pi's per-provider models store.
-- `dedicated/provider.ts` - Native pi-ai `Provider` assembly for dedicated mode: gateway-authenticated auth (resolve always succeeds with a placeholder key), live model list adopted via `context.publish({ update })`.
-- `dedicated/api-routing.ts` - Stream-time dispatch (`buildStream` / `buildStreamSimple`) for dedicated mode. The Aperture compatibility-to-Pi API mapping (`getSelectableApis`, `getApiForCompatibility`) lives in `extensions/shared/api-selection.ts`. Per-API gateway base-URL resolution lives in the shared `src/base-url-routing.ts` (`getBaseUrlForApi`).
-- `dedicated/model-defaults.ts` - Model config builder merging safe defaults, resolved metadata, and gateway pricing.
-- `onboarding/index.ts` - Registers temporary onboarding affordances while onboarding is enabled.
-- `onboarding/onboarding.ts` - Onboarding wizard. Steps: welcome, URL, capability selection, provider selection, recap.
-- `onboarding/setup-command.ts` - `/aperture:onboarding` command registration. Saves config and reloads Pi after completion.
-- `onboarding/setup-wizard.ts` - `UrlStep` TUI component with inline Aperture health check.
-- `settings/index.ts` - Registration entry for the `/aperture:settings` command via `registerSettingsCommand`. Per-tab files in `settings/` build the Global / Proxy / Dedicated / Connectors sections. Includes the pinned connector tools submenu (`connectors.pinnedTools`), which uses `FilterableChecklist` and reads the live gateway tool list via `createMcpSession().listTools()`. The panel renders at a fixed content height (`SETTINGS_CONTENT_HEIGHT` in `settings/shared.ts`, shared by every `SettingsDetailEditor` the tabs build); submenus forward the host's `hideHint` and expose `getShortcuts()` so the panel's single controls line always shows the open submenu's shortcuts.
-- `shared/filterable-checklist.ts` - Shared `FilterableChecklist` Component (search input + checkbox list with Space toggle, optional Esc-to-close, `getShortcuts()` + optional `hideHint` for host-rendered controls lines). Used by the onboarding provider steps and the settings pinned-tools submenu.
-
-### `extensions/connectors/`
-
-- `index.ts` - Connector extension entry point. Splits gateway tools into pinned (registered as first-class Pi tools) vs proxied (reached through the `aperture_connector_tool_*` meta-tools) based on `connectors.pinnedTools`. The discovery meta-tools only register when `connectors.discoveryTools` is on (default `true`); pinned tools register whenever `connectors.enabled` is on.
-- `proxy-tools.ts` - Defines the four prefixed proxy meta-tools (`aperture_connector_list` / `aperture_connector_tool_search` / `aperture_connector_tool_describe` / `aperture_connector_tool_call`), plus `createStandaloneConnectorTool` for pinned tools and the shared `renderConnectorCallResult` used by both the call meta-tool and standalone tools.
-
-### `extensions/shared/`
-
-Pi-extension concerns shared by both extensions. Note the aperture-local `extensions/aperture/shared/` holds UI components only; this is the extension-wide layer.
-
-- `config/types.ts` - Config types.
-- `config/defaults.ts` - Default config. Dedicated is enabled by default.
-- `config/loader.ts` - Config loader instance.
-- `config/migration/` - Legacy config migrations.
-- `types.ts` - Extension-facing types (Pi `Api`, `Model`, provider sync deps).
-- `events.ts` - Extension events shared across the aperture and connectors extensions.
-- `sync-bus.ts` - Config sync bus used to propagate config changes between extensions.
-- `provider-mapping.ts` - Maps Aperture providers to local Pi registry models for proxy and dedicated selection, preserving per-provider config toggles. Extension glue consumed by the settings tabs and onboarding.
-- `api-selection.ts` - Compatibility-map to Pi API mapping (`getSelectableApis` in auto-pick precedence order, `getApiForCompatibility`, `isSelectableApi` override validation) shared by dedicated, proxy, and the settings tabs. Compatibility flags Pi cannot dispatch are excluded. `openai_responses` maps to the generic `openai-responses` adapter even for the `openai-codex` gateway provider (the Codex-specific `openai-codex-responses` adapter is not selectable).
-
-### `src/`
-
-- `api/client.ts` - Pi-agnostic Aperture API client for `/v1/models` (connectors via `/api/connectors`). `providers()` derives the provider catalog from `/v1/models`: entries are grouped by `metadata.provider` (id, name, `requires_client_auth`) and each entry's `supported_endpoints` are unioned into the provider's compatibility map. Disabled providers' models never appear in `/v1/models`, so only enabled, callable providers are returned.
-- `api/types.ts` - Aperture API response types.
-- `base-url-routing.ts` - Shared gateway base-URL routing for both proxy and dedicated modes. `getBaseUrlForApi` resolves the per-API gateway base URL (Anthropic/Codex root, Gemini `/v1beta`, Vertex `/v1`, Bedrock `/bedrock`, OpenAI-SDK root-vs-`/v1` inference); `shouldUseGatewayRoot` is the low-level inference it builds on.
-- `model-metadata/` - Capability metadata resolver for dedicated models. `index.ts` orchestrates precedence (Pi registry wins over models.dev) and re-exports the public API; `pi-registry.ts` and `models-dev.ts` implement one source each (including the best-effort `fetchModelsDevCatalog` fetch); `types.ts` holds the shared `ModelMetadata` shape.
-- `retryable-errors.ts` - `TRANSIENT_APERTURE_ERROR_PATTERNS` and `markRetryableApertureError`, which tag transient gateway errors so Pi's auto-retry picks them up.
-- `url.ts` - URL normalization helpers.
-- `mcp-client.ts` - MCP client for Aperture's `/v1/mcp` Streamable HTTP endpoint (2024-11-05 protocol).
-
-## Config shape
-
-Source of truth: `extensions/shared/config/types.ts` and `extensions/shared/config/defaults.ts`. The JSON Schema is generated to `schema.json` via `pnpm gen:schema`.
-
-```ts
-interface ApertureConfig {
-  baseUrl?: string;
-  onboardingDone?: boolean;
-  onboarding?: { enabled?: boolean };
-  proxy?: {
-    enabled?: boolean;
-    upstreamProviders?: ProxiedProviderConfig[];
-  };
-  dedicated?: {
-    enabled?: boolean;
-    providers?: DedicatedProviderConfig[];
-  };
-  connectors?: {
-    enabled?: boolean; // master switch for the connectors feature (default false)
-    pinnedTools?: { connectorId: string; toolName: string }[]; // MCP tools registered as first-class Pi tools
-    discoveryTools?: boolean; // register the four discovery meta-tools (default true)
-  };
-}
-```
-
-```ts
-interface ResolvedConfig {
-  baseUrl: string;
-  onboardingDone: boolean;
-  onboarding: { enabled: boolean };
-  proxy: { enabled: boolean; upstreamProviders: (Required<Omit<ProxiedProviderConfig, "api" | "enabled">> & Pick<ProxiedProviderConfig, "api" | "enabled">)[] };
-  dedicated: { enabled: boolean; providers: DedicatedProviderConfig[] };
-  connectors: { enabled: boolean; pinnedTools: { connectorId: string; toolName: string }[]; discoveryTools: boolean };
-}
-```
-
-```ts
-interface ProxiedProviderConfig {
-  id: string;
-  enabled?: boolean; // default true; false keeps per-provider settings without proxying
-  shouldCheckGatewayModels?: boolean;
-  keepGatewayModelsOnly?: boolean;
-  api?: RoutableApi;
-}
-
-interface DedicatedProviderConfig {
-  id: string;
-  name?: string;
-  enabled: boolean;
-  api?: RoutableApi;
-}
-```
-
-Defaults: `dedicated.enabled: true`, `proxy.enabled: false`, `connectors.enabled: false`, `connectors.pinnedTools: []`, `connectors.discoveryTools: true`, `onboardingDone: false`, `onboarding.enabled: true`, empty proxy providers, empty dedicated provider filters.
-
-There is no current `mode` setting. Legacy `mode` configs are migrated to capability flags.
-
-## Conventions
-
-### Capabilities
-
-- Dedicated and proxy are independent capabilities. Dedicated is enabled by default.
-- Config is global-only (no per-project scope). Aperture is a network-level concern.
-- No gateway model cache is persisted in extension config; model metadata belongs in `~/.pi/agent/models.json`.
-
-### Proxy mode
-
-- Only overrides `baseUrl`, `apiKey`, and headers on existing providers. Model definitions are never touched, with one opt-in exception: a per-provider `api` override rewrites `model.api` on that provider's models.
-- Skips providers with no local models because there is nothing to reroute.
-- Provider selection maps Aperture providers to local Pi registry providers by id, exclusively from the `/v1/models`-derived catalog, so only enabled providers (those whose models appear in `/v1/models`) are offered.
-- Proxy and dedicated modes share one gateway base-URL resolver, `getBaseUrlForApi` in `src/base-url-routing.ts`. Anthropic and Codex map to the gateway root (Pi's Anthropic SDK and Codex adapter append their own API paths, `/v1/messages` and `/codex/responses`); Gemini to `/v1beta`; Vertex to `/v1`; Bedrock to `/bedrock` (Aperture's native Bedrock-compatible surface; the OpenAI-shaped `/v1` fails with a protocol error). For the OpenAI SDK APIs (`openai-completions` / `openai-responses`), a model registers against the gateway root only when its upstream base URL ends in a version segment that is not `/v1` (e.g. Z.ai `/api/coding/paas/v4`), because Aperture would otherwise double the version (`/v4/v1/chat/completions`). Root baseurls (Mistral, DeepSeek) and `/v1` baseurls (OpenAI, Groq, OpenRouter) keep `gateway/v1`, which is Aperture's standard `/v1/chat/completions` endpoint. Missing or unparseable upstream URLs keep `gateway/v1`.
-- The wrapped provider overrides `stream`/`streamSimple` to rewrite the request model id to the provider-qualified form (`provider/model-id`), which the gateway strips when routing through body-carried model fields (its bare-id resolution lowercases and mispicks on duplicate registration). The exception is path-embedding APIs (`google-generative-ai`, `google-vertex`, `bedrock-converse-stream`, via `embedsModelIdInPath` in `src/base-url-routing.ts`): those put the model id in the request URL, which the gateway only accepts in bare form, so their ids stay unqualified. `getModels()` keeps bare ids, so the model picker, `checkMissingModels`, and `keepGatewayModelsOnly` are unaffected.
-- Auth depends on the gateway provider's `auth_mode`. Override/none providers (the common case; gateway injects or strips the upstream credential) get a placeholder-key override: both `check` and `resolve` are replaced so the provider always counts as configured (env-key providers otherwise hide from the model picker when no env key is set) and requests carry `apiKey: "-"`. The placeholder wrapper is registered synchronously before the gateway catalog fetch is awaited, so immediate `/spawn` completions cannot race provider auth setup; post-fetch reconciliation restores native auth for passthrough providers (`requires_client_auth` in the `/v1/models` provider metadata) so the client sends a real key/OAuth token the gateway forwards. OAuth-only providers (no `apiKey` field, e.g. `openai-codex`) also keep native auth. The passthrough set is re-derived each sync from the single catalog fetch that also serves `keepGatewayModelsOnly` filtering (`fetchProviders`), failing open to an empty set.
-- Optional per-provider gateway model verification (`shouldCheckGatewayModels`) warns if configured local models are missing from the Aperture gateway.
-- Optional per-provider `keepGatewayModelsOnly` (default `false`) filters that provider's registered models down to the gateway catalog at registration time: during `sync`, if any selected provider opts in, the runtime fetches the gateway catalog once (`ApertureClient.providers()`, the same `/v1/models`-derived catalog the warning path uses) and filters the wrapped provider's `getModels()` to the models the gateway lists. Remaining model definitions are untouched. The fetch fails open: a gateway error registers everything unfiltered. A provider with every model filtered is skipped, mirroring the no-local-models convention. Filtering runs against the provider captured at the first sync (`firstSeenProviders`; from the second sync on, `deps.getProvider` returns our own filtered wrapper), so the full list comes back when the flag is toggled off and a resync runs. Also editable per provider from the Proxy tab in `/aperture:settings`.
-- Optional per-provider `api` override: a configured Pi API wins over the provider's own `model.api` and drives the gateway base-URL choice. It is validated each sync against the provider's gateway compatibility map (from the same catalog fetch); an override the gateway no longer serves falls back to the provider's own api (named in the `ui.notify` warning), and stays inert when the catalog fetch fails (fail-open). The original api is read from the first-seen provider, so removing the override restores the previous routing on the next sync.
-- In `/aperture:settings`, the Proxy tab's upstream-providers item lists one row per provider with its enabled state; each row opens a per-provider submenu holding the proxy toggle, the gateway options (`shouldCheckGatewayModels`, `keepGatewayModelsOnly`), and the API selector (shown when the gateway maps at least one API; the auto option shows which API it resolves to). The submenu is the extension point for new per-provider settings.
-- Removed or disabled (`enabled: false`) proxy providers trigger unregistration on the next sync. Disabling a provider from the settings menu keeps its entry (and per-provider settings) in `proxy.upstreamProviders`.
-
-### Dedicated mode
-
-- Registers the Pi provider as a native pi-ai `Provider`; each model carries the real upstream Pi API (`model.api`), either the per-provider `api` override or the one auto-picked from Aperture provider compatibility, and the provider's `stream`/`streamSimple` dispatch requests through it.
-- Model IDs are provider-qualified (`provider/model-id`), same routing rationale as proxy mode. The catalog key is suffixed ` v2` so store snapshots with bare ids are not restored. At request time, `requestModel` in `dedicated/api-routing.ts` strips the catalog prefix for path-embedding APIs (`embedsModelIdInPath`), same exception as proxy mode; every other API keeps the qualified id.
-- Can filter gateway models by enabled `dedicated.providers`; an empty provider filter means all gateway providers are included. A non-empty list with all `enabled: false` means no dedicated models are registered.
-- Resolves capability metadata per model at refresh time (`src/model-metadata.ts`): Pi's native model registry first (context window, output limit, input modalities, reasoning, `thinkingLevelMap`, `compat`), then the models.dev catalog (`https://models.dev/api.json`, best-effort fetch) as a fallback, then safe defaults (128k context, 8k output, text-only, no reasoning). Matching prefers an exact provider-id + model-id match; a model-id-only fallback copies capabilities but never cost or `compat`. Gateway pricing from `/v1/models` wins field-by-field for costs; rates the gateway omits keep the registry/models.dev value. The dedicated provider's own registry entries are excluded from metadata matching (they carry defaults from a prior refresh). `~/.pi/agent/models.json` remains the user-side override.
-- Derives provider compatibility from the `/v1/models` `supported_endpoints` metadata and maps it to Pi APIs: OpenAI chat/completions, Anthropic messages, OpenAI responses, Gemini generate content, Google Vertex, or Bedrock converse.
-- Per-model base URL is inferred from the upstream provider's base URL, looked up from Pi's native model registry (cross-referenced by provider id, then model id). Both modes resolve the per-model base URL with the shared `getBaseUrlForApi`: a model uses the gateway root only when its upstream base URL ends in a non-`/v1` version segment (e.g. Z.ai `/api/coding/paas/v4`); root baseurls (Mistral, DeepSeek) and `/v1` baseurls (OpenAI, Groq) keep `gateway/v1`. Anthropic, Gemini, Vertex, and Bedrock keep their fixed paths (`/bedrock` for Bedrock). Gateway providers with no native Pi registry match keep `gateway/v1`. Inference runs at refresh time (registry available via `session_start`); the resolved per-model base URLs persist through the models store, so cache-only restores replay them before the first revalidation.
-- Optional per-provider `api` override, validated on every refresh against the provider's compatibility map: an override the gateway no longer serves falls back to the auto-picked api with a `ui.notify` warning (the refresh hook has no UI channel, so the notify callback is threaded from the entry point through `registerDedicatedProvider`). Overrides only apply to enabled providers.
-- In `/aperture:settings`, the Dedicated tab's provider list mirrors the Proxy tab: one row per provider with its enabled state, and each row opens a per-provider submenu holding the include toggle, and the API selector (shown when the gateway maps at least one API; the auto option shows which API it resolves to).
-- Model discovery and caching use Pi's `refreshModels` hook (requires Pi >= 0.80.8). The provider is registered in the extension factory body with a `refreshModels` callback; Pi immediately fires a cache-only refresh that restores the previous catalog from its per-provider models store (`~/.pi/agent/models-store.json`), so scoped models validate during startup, including offline. `session_start`/`onSync` then calls `ctx.modelRegistry.refresh()` for the networked revalidation, which fetches `/v1/models`, rebuilds and enriches the models, and writes the store back. Each store entry records a catalog key (gateway origin + normalized dedicated provider filter, with api overrides recorded as `id@api`, + version suffix); cache-only restores return nothing when the key no longer matches the current config. First run with no stored catalog resolves nothing until the first networked refresh.
-
-### Connectors
-
-- Connector tool discovery goes through Aperture's `/v1/mcp` endpoint (Streamable HTTP, 2024-11-05 protocol). The MCP session is re-created on each `session_start`.
-- Defaults to four proxy meta-tools (`aperture_connector_list`, `aperture_connector_tool_search`, `aperture_connector_tool_describe`, `aperture_connector_tool_call`), so models discover tools via list/search/describe then call. This keeps individual tool schemas out of the system prompt.
-- `connectors.pinnedTools` is an allow-list of MCP tools (stored as `{ connectorId, toolName }`) that bypass the proxy meta-tools and register as first-class Pi tools. `toolName` is matched verbatim against the gateway `tools/list` response; `connectorId` is stored for traceability (it is the tool name prefix before the first `_`).
-- `connectors.discoveryTools` (default `true`) toggles the four discovery meta-tools. It is decorrelated from `connectors.pinnedTools`: pinning runs whenever `connectors.enabled` is on, even when discovery is disabled. Disabling discovery avoids registering the proxy meta-tools entirely, so the model only sees pinned tool schemas. Pinning nothing and disabling discovery leaves the connector feature inert.
-- Pinned tools use the raw MCP tool name (e.g. `github_list_repos`); no namespacing.
-- Pinned tools that no longer exist on the gateway are silently skipped on registration, with a single warning `ui.notify`. The allow-list stays harmless when stale.
-- Each pinned tool adds its full JSON Schema to the system prompt, raising context cost. The settings UI warns above a threshold (currently 10).
-- Pi cannot unregister tools at runtime, so pinning takes effect on the next full Pi restart (which re-runs the extension factory). The settings submenu reads the live gateway tool list every time it opens, but saved changes only apply after reload.
-- Resource proxy tools (`connector_resource_*`) were removed because Pi does not support MCP resources well enough yet. The MCP session still exposes resource methods; only the Pi tool wrappers were removed.
-
-### Retryable errors
-
-- Pi's retry classifier matches error text against a hardcoded pattern list extensions cannot extend. A `message_end` handler in the extension entry point appends ` (service unavailable)` to transient Aperture errors so Pi retries them. Covers both modes, since it hooks the message and not the provider.
-- Add new patterns to `TRANSIENT_APERTURE_ERROR_PATTERNS` in `src/retryable-errors.ts`.
-
-### Requests and credentials
-
-- `apiKey` is set to `"-"` because Aperture injects the upstream provider key server-side. Pi OAuth credentials still take precedence when available.
-- `Referer: https://pi.dev` and `x-session-id` (the live Pi session id) are injected on every provider request via the `before_provider_headers` hook, so `x-session-id` stays current across `/fork`, `/new`, and `/resume`. Headers are no longer baked into provider registration or a `streamSimple` wrapper.
-- The extension does not send `x-upstream-provider-id`.
-- URLs are normalized on input: scheme is added when missing, paths such as `/v1` are stripped to the origin, and provider registration appends the API-specific path as needed.
-
-### General
-
-- No hardcoded provider IDs or URLs. Works for any Aperture instance with any providers.
-- Config migrations are added when the file format changes, so existing user configuration keeps working across releases.
-
-## Testing and validation
-
-- Unit tests live next to source as `*.test.ts` and run with `pnpm test` (vitest).
-- Integration tests in `src/api/*.integration.test.ts` hit a live Aperture instance and are skipped without credentials. `src/api/access.integration.test.ts` guards the gateway surface the extension depends on and is meant to run with a `role: user` identity.
-- Pre-commit runs `typecheck`, `lint`, and `gen:schema`; the schema check fails the commit if `schema.json` is stale.
-- CI (`.github/workflows/ci.yml`) runs lint + typecheck + tests on push and PR. The publish workflow runs after CI succeeds on `main`.
-
-## Dependencies
-
-- `@aliou/pi-utils-settings` - Config loader, settings command, wizard infrastructure.
-- `@earendil-works/pi-coding-agent` - Extension API and settings theme helpers.
-- `@earendil-works/pi-tui` - TUI components used by the setup wizard.
-- `@earendil-works/pi-ai` - API provider lookup and model types.
-
-## Versioning and release
-
-- Uses changesets + GitHub Actions for releases. Add a changeset with `pnpm changeset` before merging.
-- CI runs lint + typecheck + tests on push/PR. The publish workflow triggers after CI succeeds on `main`.
-- `schema.json` is a generated artifact; regenerate it with `pnpm gen:schema` whenever config types change and commit the result alongside the type changes.
+- Unit tests live next to source as `*.test.ts`.
+- Integration tests in `src/api/*.integration.test.ts` hit a live Aperture instance and are skipped without credentials.
+- CI runs lint + typecheck + tests on push/PR; publish runs after CI succeeds on `main`.
 
 ## Documentation update triggers
 
-Update `AGENTS.md` and `README.md` when:
-
-- Config shape, defaults, or config migrations change.
-- A `/aperture:*` command is added, removed, or changes behavior.
-- The set of registered connector tools or their names change.
-- Provider registration, routing, headers, or credentials behavior changes.
-- File structure under `extensions/` or `src/` changes meaningfully.
-
-`schema.json` is regenerated automatically by the pre-commit hook; do not edit it by hand.
+Update `AGENTS.md` and `README.md` when config shape or defaults change, a `/aperture:*` command changes, registered tool names change, provider registration/routing/credentials behavior changes, or the `extensions/` / `src/` split changes meaningfully.
