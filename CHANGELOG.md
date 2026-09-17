@@ -1,5 +1,15 @@
 # @aliou/pi-ts-aperture
 
+## 0.15.0
+
+### Minor Changes
+
+- 418c780: Make provenance headers configurable and follow Pi's telemetry configuration. The `Referer: https://pi.dev` and `x-session-id` headers injected on every provider request can now be turned off with the new `shouldSendProvenanceHeaders` config option (default `true`, also exposed in `/aperture:settings`). Independent of that flag, the headers are skipped whenever the user opted out of Pi telemetry (`PI_TELEMETRY` env override or the `enableInstallTelemetry` setting, mirroring the gate Pi core uses for its own provider attribution headers). Users who opted out of Pi telemetry will see the headers stop; everyone else sees no change.
+
+### Patch Changes
+
+- 100c237: Dedicated mode: exclude passthrough providers (`requires_client_auth`) from the dedicated catalog and from the settings/onboarding provider lists. Their models cannot be called through the dedicated provider since it never forwards a client credential. Proxy mode still lists them and reconciles native auth.
+
 ## 0.14.4
 
 ### Patch Changes
