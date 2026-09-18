@@ -1,11 +1,11 @@
 import type { Api, Model, StreamOptions } from "@earendil-works/pi-ai";
 import { getApiProvider } from "@earendil-works/pi-ai/compat";
-import { embedsModelIdInPath } from "../../../src/base-url-routing";
+import { embedsModelIdInPath } from "../../src/base-url-routing";
 import type {
   AssistantMessageEventStream,
   Context,
   SimpleStreamOptions,
-} from "../../shared/types";
+} from "./types";
 
 function providerFor(model: Model<Api>) {
   const provider = getApiProvider(model.api);

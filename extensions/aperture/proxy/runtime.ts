@@ -5,6 +5,7 @@ import {
   getBaseUrlForApi,
 } from "../../../src/base-url-routing";
 import { resolveGatewayUrl, resolveProviderBaseUrl } from "../../../src/url";
+import { buildStream, buildStreamSimple } from "../../shared/api-routing";
 import { isSelectableApi } from "../../shared/api-selection";
 import { configLoader } from "../../shared/config/loader";
 import type { ResolvedConfig } from "../../shared/config/types";
@@ -190,25 +191,37 @@ export class ApertureRuntime {
               : firstSeen.getModels().filter((model) => servedIds.has(model.id))
             ).map((model) => ({
               ...model,
-              ...(apiOverride ? { api: apiOverride } : {}),
+              api,
               baseUrl: providerBaseUrl,
             })),
           // Delegate through `firstSeen`, not `native`: from the second sync
           // onwards `native` is our own previous wrapper, so routing its
           // streams would double-qualify the model id. Same rationale as
           // getModels() above.
-          stream: (model, context, options) =>
-            firstSeen.stream(
+          // With an api override the gateway owns the protocol translation, so
+          // streams go through the api registry (dedicated-style). Delegating
+          // would hit upstream stream layers pinned to their own api
+          // (`Mismatched api`). Without an override the upstream still drives
+          // the request, keeping its extension hooks.
+
+          stream: (model, context, options) => {
+            const streamFn = apiOverride ? buildStream() : firstSeen.stream;
+            return streamFn(
               qualifyModelId(providerName, model),
               context,
               options,
-            ),
-          streamSimple: (model, context, options) =>
-            firstSeen.streamSimple(
+            );
+          },
+          streamSimple: (model, context, options) => {
+            const streamSimpleFn = apiOverride
+              ? buildStreamSimple()
+              : firstSeen.streamSimple;
+            return streamSimpleFn(
               qualifyModelId(providerName, model),
               context,
               options,
-            ),
+            );
+          },
           // Override/none providers: the gateway injects the upstream credential,
           // so a placeholder key keeps them surfaced in the model picker.
           // Passthrough providers keep native auth so the client sends a real

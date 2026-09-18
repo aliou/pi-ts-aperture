@@ -4,10 +4,10 @@ import {
   unregisterApiProviders,
 } from "@earendil-works/pi-ai/compat";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import type { Context } from "../../shared/types";
 import { buildStream, buildStreamSimple } from "./api-routing";
+import type { Context } from "./types";
 
-const SOURCE_ID = "dedicated-api-routing-test";
+const SOURCE_ID = "shared-api-routing-test";
 
 function model(id: string, api: Api): Model<Api> {
   return { provider: "aperture", id, api } as Model<Api>;

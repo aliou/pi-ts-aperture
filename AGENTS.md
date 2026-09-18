@@ -6,7 +6,7 @@ Pi extension that routes LLM traffic through [Tailscale Aperture](https://tailsc
 
 - `extensions/aperture/` - Main extension: proxy mode (`proxy/`), the dedicated `aperture` provider (`dedicated/`), onboarding wizard (`onboarding/`), settings UI (`settings/`).
 - `extensions/connectors/` - Registers MCP tools discovered from Aperture's `/v1/mcp` endpoint.
-- `extensions/shared/` - Config (types, defaults, loader, migrations), sync bus between the two extensions, provider mapping, Pi API selection, provenance (telemetry-gated header injection in `provenance.ts`).
+- `extensions/shared/` - Config (types, defaults, loader, migrations), sync bus between the two extensions, provider mapping, Pi API selection, api routing (registry-dispatch stream helpers shared by dedicated and proxy in `api-routing.ts`), provenance (telemetry-gated header injection in `provenance.ts`).
 - `src/` - Pi-agnostic code: Aperture API client, gateway base-URL routing, model metadata resolution, retryable-error tagging, MCP client.
 
 Config types and defaults: `extensions/shared/config/types.ts` and `defaults.ts`. Read those instead of trusting any restated shape.

@@ -1045,6 +1045,94 @@ describe("ApertureRuntime.sync api overrides", () => {
     expect(notify).not.toHaveBeenCalled();
   });
 
+  test("stream dispatch routes an override through the api registry, not the upstream provider", async () => {
+    // With an override the gateway owns the protocol translation, so streams
+    // go through the api registry (dedicated-style). Delegating would hand
+    // the rewritten model to upstream stream layers pinned to their own api
+    // entry, which reject such models with `Mismatched api: ...`.
+    const firstSeenStream = vi.fn();
+    const firstSeenStreamSimple = vi.fn();
+    const native = {
+      id: "neuralwatt",
+      getModels: () => [
+        model(
+          "neuralwatt",
+          "kimi-k3",
+          "openai-completions",
+          "https://api.neuralwatt.com/v1",
+        ),
+      ],
+      stream: firstSeenStream,
+      streamSimple: firstSeenStreamSimple,
+    };
+    const registerNativeProvider = vi.fn();
+    const deps = {
+      getProvider: vi.fn().mockReturnValue(native),
+      registerNativeProvider,
+      getModels: () => native.getModels(),
+    };
+
+    await new ApertureRuntime().sync(deps);
+
+    const wrapped = (
+      registerNativeProvider.mock.calls.at(-1) as [typeof native]
+    )[0];
+    const overridden = { ...wrapped.getModels()[0] };
+    expect(overridden.api).toBe("anthropic-messages");
+
+    // Registry dispatch must not throw synchronously and must not reach the
+    // pinned upstream stream layer.
+    expect(() =>
+      wrapped.streamSimple(overridden, {} as never, undefined),
+    ).not.toThrow();
+    expect(() =>
+      wrapped.stream(overridden, {} as never, undefined),
+    ).not.toThrow();
+    expect(firstSeenStreamSimple).not.toHaveBeenCalled();
+    expect(firstSeenStream).not.toHaveBeenCalled();
+  });
+
+  test("stream dispatch delegates to the upstream provider without an override", async () => {
+    const firstSeenStreamSimple = vi.fn();
+    const native = {
+      id: "groq",
+      getModels: () => [
+        model(
+          "groq",
+          "llama-4",
+          "openai-completions",
+          "https://api.groq.com/openai/v1",
+        ),
+      ],
+      stream: vi.fn(),
+      streamSimple: firstSeenStreamSimple,
+    };
+    const registerNativeProvider = vi.fn();
+    getConfig.mockReturnValue(
+      proxyConfig([{ id: "groq", shouldCheckGatewayModels: false }]),
+    );
+    const deps = {
+      getProvider: vi.fn().mockReturnValue(native),
+      registerNativeProvider,
+      getModels: () => native.getModels(),
+    };
+
+    await new ApertureRuntime().sync(deps);
+
+    const wrapped = (
+      registerNativeProvider.mock.calls.at(-1) as [typeof native]
+    )[0];
+    const served = { ...wrapped.getModels()[0] };
+    expect(served.api).toBe("openai-completions");
+
+    wrapped.streamSimple(served, {} as never, undefined);
+    expect(firstSeenStreamSimple).toHaveBeenCalledOnce();
+    expect(firstSeenStreamSimple.mock.calls[0]?.[0]).toMatchObject({
+      provider: "groq",
+      id: "groq/llama-4",
+    });
+  });
+
   test("a provider with enabled: false is not proxied", async () => {
     getConfig.mockReturnValue(
       proxyConfig([

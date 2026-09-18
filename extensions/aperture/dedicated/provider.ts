@@ -4,7 +4,7 @@ import type {
   Provider,
   RefreshModelsContext,
 } from "@earendil-works/pi-ai";
-import { buildStream, buildStreamSimple } from "./api-routing";
+import { buildStream, buildStreamSimple } from "../../shared/api-routing";
 
 export const DEDICATED_PROVIDER_ID = "aperture";
 
