@@ -25,21 +25,6 @@ const { refreshDedicatedCatalog } = await import(
 
 const accessible = await isAccessible(GATEWAY);
 
-// Stand-in for Pi's native registry: supplies the zai upstream base URL the
-// gateway-root inference needs (ends in /v4, so the gateway root is used).
-const registryModels = [
-  {
-    id: "glm-5.3",
-    provider: "zai",
-    api: "openai-completions",
-    baseUrl: "https://api.z.ai/api/coding/paas/v4",
-    reasoning: true,
-    input: ["text"],
-    contextWindow: 1_000_000,
-    maxTokens: 65_536,
-  },
-] as Model<Api>[];
-
 describe.skipIf(!accessible)("dedicated provider e2e", () => {
   let provider: Provider;
   let models: Model<Api>[];
@@ -49,7 +34,7 @@ describe.skipIf(!accessible)("dedicated provider e2e", () => {
     expect(configLoader.getConfig().baseUrl).toBe(GATEWAY);
 
     provider = createDedicatedProvider(`${GATEWAY}/v1`, (context) =>
-      refreshDedicatedCatalog(context, () => registryModels),
+      refreshDedicatedCatalog(context, () => []),
     );
 
     const context = {
