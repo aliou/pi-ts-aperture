@@ -9,6 +9,7 @@ import type {
   Model,
   Provider,
   SimpleStreamOptions,
+  TranscriptContext,
 } from "@earendil-works/pi-ai";
 
 export type {
@@ -18,6 +19,7 @@ export type {
   Model,
   Provider,
   SimpleStreamOptions,
+  TranscriptContext,
 };
 
 /**

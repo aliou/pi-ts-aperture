@@ -3,8 +3,8 @@ import { getApiProvider } from "@earendil-works/pi-ai/compat";
 import { embedsModelIdInPath } from "../../src/base-url-routing";
 import type {
   AssistantMessageEventStream,
-  Context,
   SimpleStreamOptions,
+  TranscriptContext,
 } from "./types";
 
 function providerFor(model: Model<Api>) {
@@ -34,7 +34,7 @@ function requestModel(model: Model<Api>): Model<Api> {
 export function buildStreamSimple() {
   return (
     model: Model<Api>,
-    context: Context,
+    context: TranscriptContext,
     options?: SimpleStreamOptions,
   ): AssistantMessageEventStream =>
     providerFor(model).streamSimple(requestModel(model), context, options);
@@ -44,7 +44,7 @@ export function buildStreamSimple() {
 export function buildStream() {
   return (
     model: Model<Api>,
-    context: Context,
+    context: TranscriptContext,
     options?: StreamOptions,
   ): AssistantMessageEventStream =>
     providerFor(model).stream(requestModel(model), context, options);
