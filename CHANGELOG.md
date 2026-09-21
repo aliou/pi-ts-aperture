@@ -1,5 +1,12 @@
 # @aliou/pi-ts-aperture
 
+## 0.15.1
+
+### Patch Changes
+
+- f71bdbc: Fix `Mismatched api: anthropic-messages expected openai-completions` when a proxy provider has an `api` override (e.g. routing neuralwatt models through the anthropic-messages surface). With an override the gateway owns the protocol translation, so proxy mode now streams through the pi-ai api registry (like dedicated mode) instead of delegating the rewritten model to the upstream provider, whose stream layer may be pinned to its own api. Delegation is unchanged without an override. The shared registry-dispatch helpers move from `extensions/aperture/dedicated/api-routing.ts` to `extensions/shared/api-routing.ts`.
+- 1428aff: Fix a crash when another extension replaces the session at startup (`ctx.newSession()` via pi-rig's `/spawn --parent`) while the gateway catalog fetch in `proxyRuntime.sync()` / `checkMissingModels()` is still in flight. Pi invalidates the ctx after `session_shutdown`, so every deferred continuation on the stale ctx threw `This extension ctx is stale after session replacement or reload.` and took down the process. Sync continuations now check an `invalidated` flag set by `session_shutdown` and bail; the replacement session's `session_start` re-runs the sync with a fresh ctx.
+
 ## 0.15.0
 
 ### Minor Changes
