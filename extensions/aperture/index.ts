@@ -25,6 +25,14 @@ export default async function (pi: ExtensionAPI): Promise<void> {
 
   const proxyRuntime = new ApertureRuntime();
 
+  // Set by `session_shutdown`, which precedes ctx invalidation on session
+  // replacement or /reload. Deferred continuations check this before
+  // touching ctx again; the new session's session_start re-runs the sync.
+  let invalidated = false;
+  pi.on("session_shutdown", () => {
+    invalidated = true;
+  });
+
   // Registry model snapshot for dedicated refreshes, refreshed on every
   // `onSync` (see `updateKnownModels`). Deliberately plain data: capturing
   // `ctx` or `ctx.modelRegistry` is forbidden after session replacement or
@@ -166,8 +174,10 @@ export default async function (pi: ExtensionAPI): Promise<void> {
         registerNativeProvider: (provider) => pi.registerProvider(provider),
         getModels: () => ctx.modelRegistry.getAll(),
         notify: (msg, type) => ctx.ui.notify(msg, type),
+        isStale: () => invalidated,
       })
       .then(() => {
+        if (invalidated) return;
         const active = ctx.model;
         if (!active) return;
         const updated = ctx.modelRegistry.find(active.provider, active.id);
@@ -179,6 +189,7 @@ export default async function (pi: ExtensionAPI): Promise<void> {
     void proxyRuntime.checkMissingModels({
       getModels: () => ctx.modelRegistry.getAll(),
       notify: (msg, type) => ctx.ui.notify(msg, type),
+      isStale: () => invalidated,
     });
 
     reconcileDedicatedProvider(pi, getRegistryModels, (msg) =>
@@ -192,6 +203,7 @@ export default async function (pi: ExtensionAPI): Promise<void> {
     void ctx.modelRegistry
       .refresh()
       .then((result) => {
+        if (invalidated) return;
         // Per-provider refresh errors resolve rather than reject; relay them.
         const error = result?.errors?.get("aperture");
         if (error) {
@@ -202,6 +214,7 @@ export default async function (pi: ExtensionAPI): Promise<void> {
         }
       })
       .catch((error: unknown) => {
+        if (invalidated) return;
         ctx.ui.notify(
           `[aperture] model refresh failed: ${error instanceof Error ? error.message : String(error)}`,
           "warning",

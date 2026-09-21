@@ -261,6 +261,9 @@ export class ApertureRuntime {
     registerProviders();
 
     const providers = await providersPromise;
+    // Bail if the session was replaced while the fetch was in flight;
+    // the refreshed ctx for the new session re-runs sync.
+    if (deps.isStale?.()) return;
     this.passthroughProviderIds = new Set(
       providers.filter((p) => p.requires_client_auth).map((p) => p.id),
     );
@@ -299,6 +302,8 @@ export class ApertureRuntime {
       // Best-effort, warning-only: a gateway failure must never propagate (the
       // caller fires-and-forgets this promise) and crash Pi.
       gatewayProviders = await this.fetchProviders(gatewayUrl as string);
+      // Same stale-ctx guard as sync().
+      if (deps.isStale?.()) return;
     }
     if (gatewayProviders.length === 0) return;
 

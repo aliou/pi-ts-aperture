@@ -1156,6 +1156,92 @@ describe("ApertureRuntime.sync api overrides", () => {
   });
 });
 
+describe("ApertureRuntime stale context", () => {
+  function staleDeps() {
+    let invalidated = false;
+    const staleError = () => {
+      throw new Error(
+        "This extension ctx is stale after session replacement or reload.",
+      );
+    };
+    return {
+      invalidate: () => {
+        invalidated = true;
+      },
+      deps: {
+        getProvider: () => {
+          if (invalidated) staleError();
+          return undefined;
+        },
+        registerNativeProvider: () => {
+          if (invalidated) staleError();
+        },
+        getModels: () => {
+          if (invalidated) staleError();
+          return [];
+        },
+        isStale: () => invalidated,
+      } satisfies SyncDeps,
+    };
+  }
+
+  beforeEach(() => {
+    getConfig.mockReturnValue(
+      proxyConfig([{ id: "openrouter", shouldCheckGatewayModels: true }]),
+    );
+  });
+
+  test("sync bails after the catalog fetch when the session was replaced", async () => {
+    let release: ((providers: unknown) => void) | undefined;
+    vi.mocked(ApertureClient).mockImplementation(function (this: {
+      providers: ReturnType<typeof vi.fn>;
+    }) {
+      this.providers = vi.fn(
+        () =>
+          new Promise((resolve) => {
+            release = resolve;
+          }),
+      );
+      return this;
+    } as unknown as typeof ApertureClient);
+    const { deps, invalidate } = staleDeps();
+
+    const pending = new ApertureRuntime().sync(deps);
+    invalidate();
+    release?.([]);
+
+    await expect(pending).resolves.toBeUndefined();
+  });
+
+  test("checkMissingModels bails after the catalog fetch when the session was replaced", async () => {
+    let release: ((providers: unknown) => void) | undefined;
+    vi.mocked(ApertureClient).mockImplementation(function (this: {
+      providers: ReturnType<typeof vi.fn>;
+    }) {
+      this.providers = vi.fn(
+        () =>
+          new Promise((resolve) => {
+            release = resolve;
+          }),
+      );
+      return this;
+    } as unknown as typeof ApertureClient);
+    const notify = vi.fn();
+    const { deps, invalidate } = staleDeps();
+
+    const pending = new ApertureRuntime().checkMissingModels({
+      getModels: deps.getModels,
+      notify,
+      isStale: deps.isStale,
+    });
+    invalidate();
+    release?.([provider("openrouter", ["or-1"])]);
+
+    await expect(pending).resolves.toBeUndefined();
+    expect(notify).not.toHaveBeenCalled();
+  });
+});
+
 describe("ApertureRuntime.sync passthrough auth", () => {
   function mockGatewayWithAuthFlags(
     providers: {
