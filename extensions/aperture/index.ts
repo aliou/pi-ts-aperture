@@ -11,6 +11,7 @@ import {
   createFeatureRequestPayload,
 } from "../shared/events";
 import { isProvenanceTelemetryAllowed } from "../shared/provenance";
+import { isStaleCtxError } from "../shared/stale-ctx";
 import { emitConfigSync } from "../shared/sync-bus";
 import {
   reconcileDedicatedProvider,
@@ -28,10 +29,26 @@ export default async function (pi: ExtensionAPI): Promise<void> {
   // Set by `session_shutdown`, which precedes ctx invalidation on session
   // replacement or /reload. Deferred continuations check this before
   // touching ctx again; the new session's session_start re-runs the sync.
+  // The flag is a fast bail only: hosts can also invalidate the runner
+  // directly, so continuations still swallow stale-ctx throws (see
+  // `suppressStaleRejection` and `notifyRefreshFailure`).
   let invalidated = false;
   pi.on("session_shutdown", () => {
     invalidated = true;
   });
+
+  // Terminal catch for the fire-and-forget chains below. A stale-ctx throw
+  // after session replacement is expected and is dropped (the replacement
+  // session's session_start re-runs the sync); pi installs no
+  // unhandledRejection handler, so letting it escape would be fatal.
+  // Genuine errors re-throw, preserving prior behavior.
+  const suppressStaleRejection = (error: unknown): void => {
+    if (isStaleCtxError(error)) {
+      invalidated = true;
+      return;
+    }
+    throw error;
+  };
 
   // Registry model snapshot for dedicated refreshes, refreshed on every
   // `onSync` (see `updateKnownModels`). Deliberately plain data: capturing
@@ -184,13 +201,16 @@ export default async function (pi: ExtensionAPI): Promise<void> {
         if (updated && nextProxyProviders.includes(active.provider)) {
           void pi.setModel(updated);
         }
-      });
+      })
+      .catch(suppressStaleRejection);
 
-    void proxyRuntime.checkMissingModels({
-      getModels: () => ctx.modelRegistry.getAll(),
-      notify: (msg, type) => ctx.ui.notify(msg, type),
-      isStale: () => invalidated,
-    });
+    void proxyRuntime
+      .checkMissingModels({
+        getModels: () => ctx.modelRegistry.getAll(),
+        notify: (msg, type) => ctx.ui.notify(msg, type),
+        isStale: () => invalidated,
+      })
+      .catch(suppressStaleRejection);
 
     reconcileDedicatedProvider(pi, getRegistryModels, (msg) =>
       ctx.ui.notify(msg, "warning"),
@@ -200,26 +220,33 @@ export default async function (pi: ExtensionAPI): Promise<void> {
     // before extensions load, so the dedicated provider never sees it.
     // Built-in providers self-throttle, so this costs about one gateway
     // fetch. Refresh failures fall back to the stored catalog inside Pi.
+    // The refresh can settle after session replacement; notify drops the
+    // warning instead of throwing stale-ctx into an unhandled rejection.
+    const notifyRefreshFailure = (error: unknown): void => {
+      if (isStaleCtxError(error)) {
+        invalidated = true;
+        return;
+      }
+      if (invalidated) return;
+      try {
+        ctx.ui.notify(
+          `[aperture] model refresh failed: ${error instanceof Error ? error.message : String(error)}`,
+          "warning",
+        );
+      } catch (notifyError) {
+        if (!isStaleCtxError(notifyError)) throw notifyError;
+        invalidated = true;
+      }
+    };
     void ctx.modelRegistry
       .refresh()
       .then((result) => {
         if (invalidated) return;
         // Per-provider refresh errors resolve rather than reject; relay them.
         const error = result?.errors?.get("aperture");
-        if (error) {
-          ctx.ui.notify(
-            `[aperture] model refresh failed: ${error.message}`,
-            "warning",
-          );
-        }
+        if (error) notifyRefreshFailure(error);
       })
-      .catch((error: unknown) => {
-        if (invalidated) return;
-        ctx.ui.notify(
-          `[aperture] model refresh failed: ${error instanceof Error ? error.message : String(error)}`,
-          "warning",
-        );
-      });
+      .catch(notifyRefreshFailure);
   };
 
   pi.on("session_start", (_event, ctx) => {
