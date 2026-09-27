@@ -1,7 +1,11 @@
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { describe, expect, test } from "vitest";
 import type { ApertureProvider } from "../../src/api/types";
-import { mapDedicatedProviders, mapProxyProviders } from "./provider-mapping";
+import {
+  mapDedicatedProviders,
+  mapGatewayProxyProviders,
+  mapProxyProviders,
+} from "./provider-mapping";
 
 function localModel(
   provider: string,
@@ -46,23 +50,30 @@ describe("mapProxyProviders", () => {
 
     const result = mapProxyProviders(localModels, gatewayProviders, []);
 
-    expect(result.map((p) => p.id)).toEqual(["anthropic", "openai"]);
+    expect(result.map((p) => p.id)).toEqual([
+      "anthropic",
+      "openai",
+      "unmatched",
+    ]);
     // name resolved from gateway providers
     expect(result[0]).toMatchObject({ id: "anthropic", name: "anthropic" });
     // gateway model check defaults to on
     expect(result[0].shouldCheckGatewayModels).toBe(true);
+    expect(result[2]).toMatchObject({ gatewayId: undefined, enabled: false });
   });
 
-  test("returns nothing when no local provider matches a gateway provider ID", () => {
+  test("shows unmatched local providers as unrouted", () => {
     const localModels = [localModel("unmatched", "https://example.com")];
     const gatewayProviders = [gatewayProvider("anthropic")];
 
     const result = mapProxyProviders(localModels, gatewayProviders, []);
 
-    expect(result).toEqual([]);
+    expect(result).toMatchObject([
+      { id: "unmatched", gatewayId: undefined, enabled: false },
+    ]);
   });
 
-  test("ignores local providers not present on the gateway", () => {
+  test("includes local providers not present on the gateway", () => {
     const localModels = [
       localModel("anthropic", "https://api.anthropic.com/v1"),
       localModel("excluded", "https://nowhere.example.com"),
@@ -71,8 +82,8 @@ describe("mapProxyProviders", () => {
 
     const result = mapProxyProviders(localModels, gatewayProviders, []);
 
-    expect(result.map((p) => p.id)).toEqual(["anthropic"]);
-    expect(result.some((p) => p.id === "excluded")).toBe(false);
+    expect(result.map((p) => p.id)).toEqual(["anthropic", "excluded"]);
+    expect(result.find((p) => p.id === "excluded")?.gatewayId).toBeUndefined();
   });
 
   test("preserves existing shouldCheckGatewayModels setting", () => {
@@ -80,7 +91,11 @@ describe("mapProxyProviders", () => {
     const gatewayProviders = [gatewayProvider("anthropic")];
 
     const result = mapProxyProviders(localModels, gatewayProviders, [
-      { id: "anthropic", shouldCheckGatewayModels: false },
+      {
+        id: "anthropic",
+        gatewayId: "anthropic",
+        shouldCheckGatewayModels: false,
+      },
     ]);
 
     expect(result[0].shouldCheckGatewayModels).toBe(false);
@@ -93,6 +108,7 @@ describe("mapProxyProviders", () => {
     const result = mapProxyProviders(localModels, gatewayProviders, [
       {
         id: "openrouter",
+        gatewayId: "openrouter",
         shouldCheckGatewayModels: false,
         api: "anthropic-messages",
       },
@@ -114,9 +130,14 @@ describe("mapProxyProviders", () => {
     ];
 
     const result = mapProxyProviders(localModels, gatewayProviders, [
-      { id: "anthropic", shouldCheckGatewayModels: false },
+      {
+        id: "anthropic",
+        gatewayId: "anthropic",
+        shouldCheckGatewayModels: false,
+      },
       {
         id: "openai",
+        gatewayId: "openai",
         enabled: false,
         shouldCheckGatewayModels: false,
         api: "openai-responses",
@@ -130,6 +151,81 @@ describe("mapProxyProviders", () => {
     });
     // The disabled provider's other settings survive the round-trip.
     expect(result.find((p) => p.id === "openai")?.api).toBe("openai-responses");
+  });
+
+  test("maps entry-only targets and excludes aperture", () => {
+    const catalog = [
+      gatewayProvider("anthropic-oauth"),
+      gatewayProvider("openai"),
+      gatewayProvider("aperture"),
+    ];
+    const rows = mapProxyProviders(
+      [
+        localModel("anthropic", "https://example.com"),
+        localModel("aperture", "https://example.com"),
+      ],
+      catalog,
+      [{ id: "anthropic", gatewayId: "anthropic-oauth", enabled: false }],
+    );
+    expect(rows).toMatchObject([
+      {
+        id: "anthropic",
+        gatewayId: "anthropic-oauth",
+        name: "anthropic-oauth",
+        enabled: false,
+      },
+    ]);
+    const gatewayRows = mapGatewayProxyProviders(
+      [
+        localModel("anthropic", "https://example.com"),
+        localModel("aperture", "https://example.com"),
+      ],
+      catalog,
+      [{ id: "anthropic", gatewayId: "anthropic-oauth", enabled: false }],
+    );
+    expect(gatewayRows.map((row) => row.provider.id)).toEqual([
+      "anthropic-oauth",
+      "openai",
+    ]);
+    expect(gatewayRows[0].pairedLocalIds).toEqual(["anthropic"]);
+    expect(gatewayRows[1].pairedLocalIds).toEqual([]);
+  });
+
+  test("gateway rows are bounded by the catalog, not the local provider count", () => {
+    const gatewayRows = mapGatewayProxyProviders(
+      [
+        localModel("openai", "https://example.com"),
+        localModel("unused-one", "https://example.com"),
+        localModel("unused-two", "https://example.com"),
+      ],
+      [gatewayProvider("openai"), gatewayProvider("unmatched")],
+      [],
+    );
+    expect(gatewayRows).toMatchObject([
+      {
+        provider: { id: "openai" },
+        exactLocalId: "openai",
+        pairedLocalIds: [],
+      },
+      {
+        provider: { id: "unmatched" },
+        exactLocalId: undefined,
+        pairedLocalIds: [],
+      },
+    ]);
+  });
+
+  test("sorts gateway rows by display name", () => {
+    const rows = mapGatewayProxyProviders(
+      [],
+      [
+        { ...gatewayProvider("z"), name: "Alpha" },
+        { ...gatewayProvider("a"), name: "Zeta" },
+        { ...gatewayProvider("m"), name: "Middle" },
+      ],
+      [],
+    );
+    expect(rows.map((row) => row.provider.id)).toEqual(["z", "m", "a"]);
   });
 });
 

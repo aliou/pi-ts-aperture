@@ -6,13 +6,18 @@ import {
   type SettingsSubmenuContext,
 } from "@aliou/pi-utils-settings";
 import type { Api, Model } from "@earendil-works/pi-ai";
+import type { Component } from "@earendil-works/pi-tui";
 import { ApertureClient } from "../../../src/api/client";
+import type { ApertureProvider } from "../../../src/api/types";
+import { isSelectableApi } from "../../shared/api-selection";
 import type {
   ApertureConfig,
+  ProxiedProviderConfig,
   ResolvedConfig,
 } from "../../shared/config/loader";
-import { mapProxyProviders } from "../../shared/provider-mapping";
+import { mapGatewayProxyProviders } from "../../shared/provider-mapping";
 import { AsyncEditor } from "./async-editor";
+import { LocalProviderSelector } from "./local-provider-selector";
 import {
   apiSelectionField,
   boolLabel,
@@ -22,16 +27,7 @@ import {
   SETTINGS_CONTENT_HEIGHT,
 } from "./shared";
 
-/**
- * Build the Proxy extra tab.
- *
- * Hosts the proxy-enable toggle and the upstream-providers submenu, which
- * fetches Aperture gateway providers and lets the user toggle which Pi
- * providers get rerouted through Aperture. The submenu lists one row per
- * provider with its enabled state; each row opens a per-provider submenu
- * holding the proxy toggle, the gateway options (model check, gateway models
- * only), and the API override.
- */
+/** The gateway catalog bounds the visible list; local providers appear only in pickers. */
 export function buildProxyTab(
   getKnownModels: () => Model<Api>[],
 ): ExtraSettingsTab<ApertureConfig, ResolvedConfig> {
@@ -61,7 +57,7 @@ export function buildProxyTab(
               id: "proxy.upstreamProviders",
               label: "Upstream providers",
               description:
-                "Choose which Pi providers get routed through Aperture, with per-provider gateway options",
+                "Pair gateway providers with local Pi providers and configure routing",
               currentValue:
                 upstreamProviders.length > 0
                   ? `${upstreamProviders.length} provider(s)`
@@ -77,149 +73,293 @@ export function buildProxyTab(
                   loadingDescription: "Fetching gateway providers",
                   hideHint: submenuCtx.hideHint,
                   loader: async (signal, loaderCtx) => {
-                    const client = new ApertureClient(baseUrl);
-                    const gatewayProviders = await client.providers(signal);
-                    const compatibilityById = new Map(
-                      gatewayProviders.map((gp) => [gp.id, gp.compatibility]),
-                    );
-                    const providers = mapProxyProviders(
-                      getKnownModels(),
+                    const gatewayProviders = await new ApertureClient(
+                      baseUrl,
+                    ).providers(signal);
+                    const localModels = getKnownModels();
+                    const localIds = [
+                      ...new Set(
+                        localModels
+                          .map((model) => model.provider)
+                          .filter((id) => id !== "aperture"),
+                      ),
+                    ].sort((a, b) => a.localeCompare(b));
+                    const rows = mapGatewayProxyProviders(
+                      localModels,
                       gatewayProviders,
                       upstreamProviders,
                     );
-                    const enabled = new Set(
-                      providers
-                        .filter((provider) => provider.enabled)
-                        .map((provider) => provider.id),
+                    const entries = new Map(
+                      upstreamProviders.map((entry) => [
+                        entry.id,
+                        { ...entry },
+                      ]),
                     );
-                    // Enabled rows are persisted; a disabled row is too, with
-                    // enabled: false, when it was already configured or
-                    // carries an api override — otherwise its settings would
-                    // be silently dropped on save.
+                    const excludedDefaults = new Set<string>();
                     const persistProviders = () => {
                       const updated = structuredClone(draft) as ApertureConfig;
                       updated.proxy = {
                         ...updated.proxy,
-                        upstreamProviders: providers
-                          .filter(
-                            (provider) =>
-                              enabled.has(provider.id) ||
-                              upstreamProviders.some(
-                                (p) => p.id === provider.id,
-                              ) ||
-                              provider.api !== undefined,
-                          )
-                          .map((provider) => ({
-                            id: provider.id,
-                            name: provider.name,
-                            ...(enabled.has(provider.id)
-                              ? {}
-                              : { enabled: false }),
-                            shouldCheckGatewayModels:
-                              provider.shouldCheckGatewayModels,
-                            keepGatewayModelsOnly:
-                              provider.keepGatewayModelsOnly,
-                            api: provider.api,
-                          })),
+                        upstreamProviders: [...entries.values()],
                       };
                       setDraftForScope(GLOBAL_SCOPE, updated);
                     };
-                    persistProviders();
-                    const fields: SettingsDetailField[] = providers.map((p) => {
-                      const apiField = apiSelectionField({
-                        id: `provider.${p.id}.api`,
-                        compatibility: compatibilityById.get(p.id),
-                        getValue: () => p.api,
-                        setValue: (value) => {
-                          p.api = value;
-                          persistProviders();
-                        },
-                      });
-                      return {
-                        type: "submenu" as const,
-                        id: `provider.${p.id}`,
-                        label: p.name ?? p.id,
-                        description: `Proxy toggle and gateway options for ${p.name ?? p.id}`,
-                        getValue: () =>
-                          providerSummary(enabled.has(p.id), p.api),
-                        submenu: (providerDone, providerCtx) =>
-                          new SettingsDetailEditor({
-                            title: () =>
-                              `${p.name ?? p.id} (${enabled.has(p.id) ? "enabled" : "disabled"})`,
-                            fields: [
-                              {
-                                type: "boolean" as const,
-                                id: `provider.${p.id}.enabled`,
-                                label: "Proxy this provider",
-                                description:
-                                  "Route this provider's requests through the Aperture gateway",
-                                getValue: () => enabled.has(p.id),
-                                setValue: (value: boolean) => {
-                                  if (value) enabled.add(p.id);
-                                  else enabled.delete(p.id);
-                                  persistProviders();
-                                },
-                                trueLabel: "enabled",
-                                falseLabel: "disabled",
-                              },
-                              {
-                                type: "boolean" as const,
-                                id: `provider.${p.id}.shouldCheckGatewayModels`,
-                                label: "Gateway model check",
-                                description:
-                                  "Warn when configured local models are missing from the gateway catalog",
-                                getValue: () => p.shouldCheckGatewayModels,
-                                setValue: (value: boolean) => {
-                                  p.shouldCheckGatewayModels = value;
-                                  persistProviders();
-                                },
-                                trueLabel: "on",
-                                falseLabel: "off",
-                              },
-                              {
-                                type: "boolean" as const,
-                                id: `provider.${p.id}.keepGatewayModelsOnly`,
-                                label: "Gateway models only",
-                                description:
-                                  "Register only the models the gateway serves instead of all locally known models",
-                                getValue: () => p.keepGatewayModelsOnly,
-                                setValue: (value: boolean) => {
-                                  p.keepGatewayModelsOnly = value;
-                                  persistProviders();
-                                },
-                                trueLabel: "on",
-                                falseLabel: "off",
-                              },
-                              ...(apiField ? [apiField] : []),
-                            ],
-                            theme: settingsTheme,
-                            requestRender: providerCtx.requestRender,
-                            hideHint: providerCtx.hideHint,
-                            contentHeight: SETTINGS_CONTENT_HEIGHT,
-                            onDone: () => providerDone(),
-                          }),
+                    const pairedIds = (gatewayId: string) =>
+                      localIds.filter(
+                        (id) => entries.get(id)?.gatewayId === gatewayId,
+                      );
+                    const selectedIds = (provider: ApertureProvider) => {
+                      const ids = pairedIds(provider.id);
+                      return ids.length > 0
+                        ? ids
+                        : localIds.includes(provider.id) &&
+                            !entries.has(provider.id) &&
+                            !excludedDefaults.has(provider.id)
+                          ? [provider.id]
+                          : [];
+                    };
+                    const updateSelection = (
+                      provider: ApertureProvider,
+                      ids: string[],
+                      enableNew = true,
+                    ) => {
+                      if (ids.includes(provider.id)) {
+                        excludedDefaults.delete(provider.id);
+                      } else {
+                        excludedDefaults.add(provider.id);
+                      }
+                      for (const id of pairedIds(provider.id)) {
+                        if (ids.includes(id)) continue;
+                        entries.delete(id);
+                      }
+                      for (const id of ids) {
+                        const previous = entries.get(id);
+                        if (previous?.gatewayId === provider.id) continue;
+                        entries.set(id, {
+                          ...previous,
+                          id,
+                          gatewayId: provider.id,
+                          enabled: previous?.enabled ?? enableNew,
+                          shouldCheckGatewayModels:
+                            previous?.shouldCheckGatewayModels ?? true,
+                          keepGatewayModelsOnly:
+                            previous?.keepGatewayModelsOnly ?? false,
+                          api:
+                            previous?.api &&
+                            isSelectableApi(
+                              previous.api,
+                              provider.compatibility,
+                            )
+                              ? previous.api
+                              : undefined,
+                        });
+                      }
+                      persistProviders();
+                    };
+                    const rowSummary = (provider: ApertureProvider) => {
+                      const ids = selectedIds(provider);
+                      if (ids.length === 0) return "select";
+                      if (ids.length > 1) {
+                        const active = ids.filter((id) => {
+                          const entry = entries.get(id);
+                          return entry !== undefined && entry.enabled !== false;
+                        }).length;
+                        return `${active}/${ids.length} enabled`;
+                      }
+                      const id = ids[0];
+                      const entry = entries.get(id);
+                      const status = providerSummary(
+                        entry !== undefined && entry.enabled !== false,
+                        entry?.api,
+                      );
+                      return id === provider.id ? status : `${status} · ${id}`;
+                    };
+                    const openProvider = (
+                      provider: ApertureProvider,
+                      done: () => void,
+                      providerCtx: SettingsSubmenuContext,
+                    ): Component & { getShortcuts: () => string } => {
+                      let current: Component;
+                      const selected = () => selectedIds(provider);
+                      const edit = (
+                        id: string,
+                        update: (entry: ProxiedProviderConfig) => void,
+                      ) => {
+                        updateSelection(provider, selected(), false);
+                        const entry = entries.get(id);
+                        if (!entry) return;
+                        update(entry);
+                        persistProviders();
                       };
-                    });
+                      const selector = (
+                        submit: (ids: string[]) => void,
+                        cancel: () => void,
+                      ) =>
+                        new LocalProviderSelector(
+                          provider.name ?? provider.id,
+                          localIds,
+                          selected(),
+                          settingsTheme,
+                          providerCtx.hideHint ?? false,
+                          submit,
+                          cancel,
+                        );
+                      const options = (id: string): SettingsDetailField[] => {
+                        const apiField = apiSelectionField({
+                          id: `provider.${id}.api`,
+                          compatibility: provider.compatibility,
+                          getValue: () => entries.get(id)?.api,
+                          setValue: (api) =>
+                            edit(id, (entry) => {
+                              entry.api = api;
+                            }),
+                        });
+                        return [
+                          {
+                            type: "boolean",
+                            id: `provider.${id}.enabled`,
+                            label: "Proxy this provider",
+                            description: `Route local ${id} through Aperture`,
+                            getValue: () =>
+                              entries.get(id) !== undefined &&
+                              entries.get(id)?.enabled !== false,
+                            setValue: (value) =>
+                              edit(id, (entry) => {
+                                entry.enabled = value;
+                              }),
+                            trueLabel: "enabled",
+                            falseLabel: "disabled",
+                          },
+                          {
+                            type: "boolean",
+                            id: `provider.${id}.shouldCheckGatewayModels`,
+                            label: "Gateway model check",
+                            description:
+                              "Warn when configured local models are missing from the gateway catalog",
+                            getValue: () =>
+                              entries.get(id)?.shouldCheckGatewayModels ?? true,
+                            setValue: (value) =>
+                              edit(id, (entry) => {
+                                entry.shouldCheckGatewayModels = value;
+                              }),
+                            trueLabel: "on",
+                            falseLabel: "off",
+                          },
+                          {
+                            type: "boolean",
+                            id: `provider.${id}.keepGatewayModelsOnly`,
+                            label: "Gateway models only",
+                            description:
+                              "Register only the models the gateway serves instead of all locally known models",
+                            getValue: () =>
+                              entries.get(id)?.keepGatewayModelsOnly ?? false,
+                            setValue: (value) =>
+                              edit(id, (entry) => {
+                                entry.keepGatewayModelsOnly = value;
+                              }),
+                            trueLabel: "on",
+                            falseLabel: "off",
+                          },
+                          ...(apiField ? [apiField] : []),
+                        ];
+                      };
+                      const settings = () => {
+                        const ids = selected();
+                        const fields: SettingsDetailField[] = [
+                          {
+                            type: "submenu",
+                            id: `gateway.${provider.id}.local`,
+                            label: "Local Pi providers",
+                            description:
+                              "Select the local providers routed through this gateway provider",
+                            getValue: () => selected().join(", ") || "select",
+                            submenu: (close) =>
+                              selector(
+                                (ids) => {
+                                  updateSelection(provider, ids);
+                                  close();
+                                  current = settings();
+                                },
+                                () => close(),
+                              ),
+                          },
+                          ...(ids.length === 1
+                            ? options(ids[0])
+                            : ids.map(
+                                (id): SettingsDetailField => ({
+                                  type: "submenu",
+                                  id: `provider.${id}`,
+                                  label: id,
+                                  description: `Routing options for local ${id}`,
+                                  getValue: () =>
+                                    providerSummary(
+                                      entries.get(id)?.enabled !== false,
+                                      entries.get(id)?.api,
+                                    ),
+                                  submenu: (close, ctx) =>
+                                    new SettingsDetailEditor({
+                                      title: `${id} → ${provider.id}`,
+                                      fields: options(id),
+                                      theme: settingsTheme,
+                                      requestRender: ctx.requestRender,
+                                      hideHint: ctx.hideHint,
+                                      contentHeight: SETTINGS_CONTENT_HEIGHT,
+                                      onDone: () => close(),
+                                    }),
+                                }),
+                              )),
+                        ];
+                        return new SettingsDetailEditor({
+                          title: provider.name ?? provider.id,
+                          fields,
+                          theme: settingsTheme,
+                          requestRender: providerCtx.requestRender,
+                          hideHint: providerCtx.hideHint,
+                          contentHeight: SETTINGS_CONTENT_HEIGHT,
+                          onDone: () => done(),
+                        });
+                      };
+                      current =
+                        selected().length > 0
+                          ? settings()
+                          : selector((ids) => {
+                              updateSelection(provider, ids);
+                              current = settings();
+                            }, done);
+                      return {
+                        render: (width) => current.render(width),
+                        handleInput: (data) => current.handleInput?.(data),
+                        invalidate: () => current.invalidate?.(),
+                        getShortcuts: () =>
+                          (
+                            current as Component & {
+                              getShortcuts?: () => string;
+                            }
+                          ).getShortcuts?.() ?? "",
+                      };
+                    };
+                    const fields: SettingsDetailField[] = rows.map(
+                      ({ provider }) => ({
+                        type: "submenu",
+                        id: `gateway.${provider.id}`,
+                        label: provider.name ?? provider.id,
+                        description: provider.id,
+                        getValue: () => rowSummary(provider),
+                        submenu: (done, providerCtx) =>
+                          openProvider(provider, () => done(), providerCtx),
+                      }),
+                    );
                     return new SettingsDetailEditor({
                       title: () =>
-                        `Upstream Providers (${enabled.size}/${providers.length})`,
+                        `Upstream Providers (${rows.filter(({ provider }) => pairedIds(provider.id).some((id) => entries.get(id)?.enabled !== false)).length}/${rows.length} enabled)`,
                       fields,
                       theme: settingsTheme,
                       requestRender: submenuCtx.requestRender,
                       hideHint: loaderCtx.hideHint,
                       contentHeight: SETTINGS_CONTENT_HEIGHT,
-                      onDone: () =>
-                        submenuDone(
-                          providers.length > 0
-                            ? `${enabled.size}/${providers.length} enabled`
-                            : "none",
-                        ),
-                      getDoneSummary: () =>
-                        providers.length > 0
-                          ? `${enabled.size}/${providers.length} enabled`
-                          : "none",
-                      emptyStateText:
-                        "No local providers match the Aperture gateway providers.",
+                      onDone: () => submenuDone(`${entries.size} configured`),
+                      getDoneSummary: () => `${entries.size} configured`,
+                      emptyStateText: "No gateway providers found.",
                     });
                   },
                 }),

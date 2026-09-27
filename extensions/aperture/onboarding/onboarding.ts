@@ -211,7 +211,9 @@ class ProxyProvidersStep implements Component {
       this.providers = mapProxyProviders(
         this.knownModels,
         gatewayProviders,
-        this.state.upstreamProviders,
+        this.state.upstreamProviders.map((p) => ({ ...p, gatewayId: p.id })),
+      ).filter((provider) =>
+        gatewayProviders.some((gp) => gp.id === provider.id),
       );
       this.loading = false;
       this.saveState();
@@ -706,6 +708,7 @@ export function buildOnboardedConfig(
       enabled: proxyEnabled,
       upstreamProviders: upstreamProviders.map((p) => ({
         id: p.id,
+        gatewayId: p.id,
         shouldCheckGatewayModels: p.shouldCheckGatewayModels,
       })),
     },

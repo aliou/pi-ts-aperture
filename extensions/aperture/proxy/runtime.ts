@@ -75,15 +75,13 @@ export class ApertureRuntime {
       .filter((id) => id !== "aperture");
     const configByProvider = new Map(upstreamProviders.map((p) => [p.id, p]));
     const registered = new Map<string, Provider>();
+    const warnedUnknown = new Set<string>();
 
-    const registerProviders = (providers?: ApertureProvider[]): void => {
-      const filterableIds = new Set(
-        providers
-          ? upstreamProviders
-              .filter((p) => p.keepGatewayModelsOnly)
-              .map((p) => p.id)
-          : [],
-      );
+    const registerProviders = (
+      providers?: ApertureProvider[],
+      catalogSettled = false,
+    ): void => {
+      const catalogIds = new Set((providers ?? []).map((p) => p.id));
       const gatewayModelIds = new Map(
         (providers ?? []).map((p) => [p.id, new Set(p.models)]),
       );
@@ -92,6 +90,30 @@ export class ApertureRuntime {
       );
 
       for (const providerName of providerIds) {
+        const entry = configByProvider.get(providerName);
+        if (!entry) continue;
+        const { gatewayId } = entry;
+        if (
+          providers &&
+          (gatewayId === "aperture" || !catalogIds.has(gatewayId))
+        ) {
+          if (!warnedUnknown.has(gatewayId)) {
+            warnedUnknown.add(gatewayId);
+            deps.notify?.(
+              `[aperture] gateway provider "${gatewayId}" not found; provider "${providerName}" left unrouted.`,
+              "warning",
+            );
+          }
+          const original = this.firstSeenProviders.get(providerName);
+          if (
+            original &&
+            (registered.has(providerName) ||
+              deps.getProvider(providerName) !== original)
+          ) {
+            deps.registerNativeProvider(original);
+          }
+          continue;
+        }
         const providerModels = allModels.filter(
           (m) => m.provider === providerName,
         );
@@ -138,8 +160,8 @@ export class ApertureRuntime {
           firstSeen.getModels()[0]?.api ??
           sourceModel.api ??
           "openai-completions";
-        const override = configByProvider.get(providerName)?.api;
-        const compatibility = compatibilityByProvider.get(providerName);
+        const override = entry.api;
+        const compatibility = compatibilityByProvider.get(gatewayId);
         let apiOverride: Api | undefined;
         if (override && compatibility !== undefined) {
           if (isSelectableApi(override, compatibility)) {
@@ -160,9 +182,10 @@ export class ApertureRuntime {
           upstreamBaseUrl,
         );
 
-        const servedIds = filterableIds.has(providerName)
-          ? gatewayModelIds.get(providerName)
-          : undefined;
+        const servedIds =
+          providers && entry.keepGatewayModelsOnly
+            ? gatewayModelIds.get(gatewayId)
+            : undefined;
         if (
           servedIds !== undefined &&
           !firstSeen.getModels().some((model) => servedIds.has(model.id))
@@ -178,10 +201,8 @@ export class ApertureRuntime {
           continue;
         }
         const baseAuth = firstSeen.auth?.apiKey;
-        if (providers === undefined && !baseAuth) continue;
-        const isPassthrough =
-          providers !== undefined &&
-          this.passthroughProviderIds.has(providerName);
+        if (!catalogSettled && !baseAuth) continue;
+        const isPassthrough = this.passthroughProviderIds.has(gatewayId);
         const wrapped: Provider = {
           // Avoid copying composed methods that delegate back to this wrapper.
           ...firstSeen,
@@ -207,18 +228,14 @@ export class ApertureRuntime {
 
           stream: (model, context, options) => {
             const streamFn = apiOverride ? buildStream() : firstSeen.stream;
-            return streamFn(
-              qualifyModelId(providerName, model),
-              context,
-              options,
-            );
+            return streamFn(qualifyModelId(gatewayId, model), context, options);
           },
           streamSimple: (model, context, options) => {
             const streamSimpleFn = apiOverride
               ? buildStreamSimple()
               : firstSeen.streamSimple;
             return streamSimpleFn(
-              qualifyModelId(providerName, model),
+              qualifyModelId(gatewayId, model),
               context,
               options,
             );
@@ -265,20 +282,22 @@ export class ApertureRuntime {
     // Bail if the session was replaced while the fetch was in flight;
     // the refreshed ctx for the new session re-runs sync.
     if (deps.isStale?.()) return;
-    this.passthroughProviderIds = new Set(
-      providers.filter((p) => p.requires_client_auth).map((p) => p.id),
-    );
-    registerProviders(providers);
+    if (providers) {
+      this.passthroughProviderIds = new Set(
+        providers.filter((p) => p.requires_client_auth).map((p) => p.id),
+      );
+    }
+    registerProviders(providers, true);
   }
 
-  /** Fetch the gateway catalog, failing open to an empty list. */
+  /** Fetch the gateway catalog, failing open without treating failure as an empty catalog. */
   private async fetchProviders(
     gatewayRoot: string,
-  ): Promise<ApertureProvider[]> {
+  ): Promise<ApertureProvider[] | undefined> {
     try {
       return await new ApertureClient(gatewayRoot).providers();
     } catch {
-      return [];
+      return undefined;
     }
   }
 
@@ -289,11 +308,11 @@ export class ApertureRuntime {
     const config = configLoader.getConfig();
     if (!config.proxy.enabled) return;
 
-    const checkedProviderIds = config.proxy.upstreamProviders
+    const checkedProviders = config.proxy.upstreamProviders
       .filter((p) => p.enabled !== false)
       .filter((p) => p.shouldCheckGatewayModels)
-      .map((p) => p.id);
-    if (checkedProviderIds.length === 0) return;
+      .map((p) => [p.id, p.gatewayId] as const);
+    if (checkedProviders.length === 0) return;
 
     const gatewayUrl = resolveGatewayUrl(config);
     if (!gatewayUrl && !providers) return;
@@ -306,7 +325,7 @@ export class ApertureRuntime {
       // Same stale-ctx guard as sync().
       if (deps.isStale?.()) return;
     }
-    if (gatewayProviders.length === 0) return;
+    if (!gatewayProviders?.length) return;
 
     const modelIdsByProvider = new Map(
       gatewayProviders.map((provider) => [
@@ -316,13 +335,18 @@ export class ApertureRuntime {
     );
 
     const allModels = deps.getModels();
-    const checkedProviders = new Set(checkedProviderIds);
+    const gatewayIdByLocalId = new Map(checkedProviders);
     const routedModels = allModels.filter((m) =>
-      checkedProviders.has(m.provider),
+      gatewayIdByLocalId.has(m.provider),
     );
-    const missingModels = routedModels.filter(
-      (m) => !modelIdsByProvider.get(m.provider)?.has(m.id),
-    );
+    const missingModels = routedModels.filter((m) => {
+      const gatewayId = gatewayIdByLocalId.get(m.provider);
+      return (
+        gatewayId !== undefined &&
+        modelIdsByProvider.has(gatewayId) &&
+        !modelIdsByProvider.get(gatewayId)?.has(m.id)
+      );
+    });
 
     if (missingModels.length === 0) return;
 

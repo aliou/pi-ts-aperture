@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { configLoader } from "./loader";
 import {
+  gatewayIdMigration,
   legacyToV06Migration,
   modeToCapabilitiesMigration,
   normalizeCapabilitiesMigration,
@@ -22,8 +23,12 @@ describe("config migrations", () => {
     expect(result.proxy).toEqual({
       enabled: true,
       upstreamProviders: [
-        { id: "anthropic", shouldCheckGatewayModels: true },
-        { id: "openai", shouldCheckGatewayModels: false },
+        {
+          id: "anthropic",
+          gatewayId: "anthropic",
+          shouldCheckGatewayModels: true,
+        },
+        { id: "openai", gatewayId: "openai", shouldCheckGatewayModels: false },
       ],
     });
     expect(result.onboardingDone).toBe(true);
@@ -63,6 +68,29 @@ describe("config migrations", () => {
 
     expect(result.proxy).toEqual({ enabled: false, upstreamProviders: [] });
     expect(result.dedicated).toEqual({ enabled: true, providers: [] });
+  });
+
+  test("004 fills missing gateway ids and leaves complete entries alone", () => {
+    const incomplete = {
+      proxy: {
+        upstreamProviders: [
+          { id: "anthropic" },
+          { id: "openai", gatewayId: "custom" },
+        ],
+      },
+    } as never;
+    expect(gatewayIdMigration.shouldRun(incomplete)).toBe(true);
+    expect(
+      gatewayIdMigration.run(incomplete, "/fake/path").proxy?.upstreamProviders,
+    ).toEqual([
+      { id: "anthropic", gatewayId: "anthropic" },
+      { id: "openai", gatewayId: "custom" },
+    ]);
+    expect(
+      gatewayIdMigration.shouldRun(
+        gatewayIdMigration.run(incomplete, "/fake/path"),
+      ),
+    ).toBe(false);
   });
 });
 
