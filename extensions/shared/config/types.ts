@@ -17,8 +17,10 @@ export type RoutableApi = Extract<
 >;
 
 export interface ProxiedProviderConfig {
-  /** Aperture provider id. */
+  /** Local Pi provider id. */
   id: string;
+  /** Gateway provider id used for routing; may differ from the local id. */
+  gatewayId: string;
   /**
    * Proxy this provider through Aperture (default true). Set false to
    * keep per-provider settings without proxying the provider.

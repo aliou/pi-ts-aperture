@@ -44,7 +44,7 @@ Capabilities (context window, vision input, reasoning, thinking levels) come fro
 
 Reroutes existing Pi providers through Aperture. Each provider keeps its own model definitions and settings; only the base URL, API key, and headers are overridden. Use this when you want Pi's native per-provider model configuration but want requests to go through Aperture for server-side credentials.
 
-Provider selection matches your local Pi providers against the providers enabled on the gateway. Optional per-provider verification warns when configured local models are missing from the gateway. Set `keepGatewayModelsOnly: true` on a provider to go further and filter those models out of the model picker entirely, so it only shows models the gateway can actually serve.
+The Proxy tab in `/aperture:settings` lists gateway providers by name. Exact local matches show `disabled` until routed, configured routes show their enabled state, and providers without a local match show `select`. Opening a `select` row goes straight to a searchable local-provider multi-select; submitting opens routing settings. Other rows open routing settings directly. Use **Local Pi providers** in those settings to change the selection. When several local providers share a gateway target, each has its own routing settings. A local provider can use a different gateway id (for example, `anthropic` → `anthropic-oauth`). Optional per-provider verification warns when configured local models are missing from the gateway. Set `keepGatewayModelsOnly: true` on a provider to filter those models out of the model picker entirely.
 
 ### Connectors
 
@@ -74,7 +74,7 @@ Configuration is saved globally to `~/.pi/agent/extensions/aperture.json`. The s
   "proxy": {
     "enabled": true,
     "upstreamProviders": [
-      { "id": "anthropic", "shouldCheckGatewayModels": true }
+      { "id": "anthropic", "gatewayId": "anthropic-oauth", "shouldCheckGatewayModels": true }
     ]
   },
   "dedicated": {
@@ -97,6 +97,8 @@ Configuration is saved globally to `~/.pi/agent/extensions/aperture.json`. The s
 
 Notes:
 
+- `proxy.upstreamProviders[].id` is the local Pi provider; `gatewayId` is the target gateway provider and is required. Existing configs gain `gatewayId: id` during migration. Unknown gateway targets are left unrouted with a warning. `aperture` is reserved and cannot be selected as a pairing target.
+- Gateway providers that require client authentication forward the local provider's credential (including Pi OAuth); other providers use server-side credential injection.
 - `keepGatewayModelsOnly` (per proxy provider, default `false`) hides that provider's local models the gateway doesn't serve instead of letting them fail at request time. Also editable per provider from the Proxy tab in `/aperture:settings`.
 - `api` (per provider, unset by default) routes that provider's models through a specific Pi API (`openai-completions`, `anthropic-messages`, `openai-responses`, `google-generative-ai`, `google-vertex`, `bedrock-converse-stream`) instead of the one auto-picked from the gateway's compatibility map. Useful for providers Aperture serves through more than one API. Only values the provider reports as supported are offered in `/aperture:settings`; an override the gateway stops serving falls back to auto with a warning.
 - An empty `dedicated.providers` list means all gateway providers are included. Passthrough providers are excluded: the dedicated provider never forwards a client credential.

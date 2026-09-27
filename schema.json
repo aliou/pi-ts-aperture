@@ -86,7 +86,11 @@
       "properties": {
         "id": {
           "type": "string",
-          "description": "Aperture provider id."
+          "description": "Local Pi provider id."
+        },
+        "gatewayId": {
+          "type": "string",
+          "description": "Gateway provider id used for routing; may differ from the local id."
         },
         "enabled": {
           "type": "boolean",
@@ -106,7 +110,8 @@
         }
       },
       "required": [
-        "id"
+        "id",
+        "gatewayId"
       ],
       "additionalProperties": false
     },

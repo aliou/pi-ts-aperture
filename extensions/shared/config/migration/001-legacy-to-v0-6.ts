@@ -27,6 +27,7 @@ export const legacyToV06Migration: Migration<ApertureConfig> = {
         enabled: true,
         upstreamProviders: providers.map((id) => ({
           id,
+          gatewayId: id,
           shouldCheckGatewayModels: checked.includes(id),
         })),
       };

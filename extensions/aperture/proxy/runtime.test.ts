@@ -72,9 +72,20 @@ function provider(id: string, models: string[]) {
   return { id, name: id, models, compatibility: {} };
 }
 
+function mockCatalog(list: ReturnType<typeof provider>[]) {
+  vi.mocked(ApertureClient).mockImplementation(function (this: {
+    providers: ReturnType<typeof vi.fn>;
+  }) {
+    this.providers = vi.fn().mockResolvedValue(list);
+    return this;
+  } as unknown as typeof ApertureClient);
+}
+
 function proxyConfig(
   upstreamProviders: {
     id: string;
+    gatewayId?: string;
+    enabled?: boolean;
     shouldCheckGatewayModels: boolean;
     keepGatewayModelsOnly?: boolean;
     api?: string;
@@ -84,7 +95,13 @@ function proxyConfig(
     baseUrl: gatewayUrl,
     onboardingDone: true,
     onboarding: { enabled: false },
-    proxy: { enabled: true, upstreamProviders },
+    proxy: {
+      enabled: true,
+      upstreamProviders: upstreamProviders.map((p) => ({
+        ...p,
+        gatewayId: p.gatewayId ?? p.id,
+      })),
+    },
     dedicated: { enabled: false, providers: [] },
     connectors: { enabled: false, pinnedTools: [], discoveryTools: true },
   };
@@ -107,6 +124,11 @@ async function check(models: Model<Api>[]) {
 
 describe("ApertureRuntime.sync", () => {
   beforeEach(() => {
+    mockCatalog([
+      provider("anthropic", []),
+      provider("openai", []),
+      provider("openai-codex", []),
+    ]);
     getConfig.mockReturnValue(
       proxyConfig([
         { id: "anthropic", shouldCheckGatewayModels: false },
@@ -213,6 +235,11 @@ describe("shouldUseGatewayRoot OpenAI SDK path inference", () => {
 
 describe("ApertureRuntime.sync OpenAI SDK inference", () => {
   beforeEach(() => {
+    mockCatalog([
+      provider("zai", []),
+      provider("openai", []),
+      provider("groq", []),
+    ]);
     getConfig.mockReturnValue(
       proxyConfig([
         { id: "zai", shouldCheckGatewayModels: false },
@@ -293,6 +320,7 @@ describe("ApertureRuntime.sync OpenAI SDK inference", () => {
 
 describe("ApertureRuntime.sync fixed-path APIs", () => {
   test("routes a proxied Bedrock provider through /bedrock, not /v1", async () => {
+    mockCatalog([provider("bedrock", [])]);
     // Regression for the shared-resolver move: proxy used to inline only
     // shouldUseGatewayRoot, which is false for bedrock-converse-stream, so a
     // proxied bedrock provider was registered at gateway/v1 (protocol error).
@@ -318,6 +346,7 @@ describe("ApertureRuntime.sync fixed-path APIs", () => {
   });
 
   test("aligns a proxied Gemini provider to /v1beta via the shared resolver", async () => {
+    mockCatalog([provider("google", [])]);
     // Side effect of sharing getBaseUrlForApi: proxy Gemini now matches
     // dedicated and routes to /v1beta instead of the OpenAI-shaped /v1.
     getConfig.mockReturnValue(
@@ -338,6 +367,11 @@ describe("ApertureRuntime.sync fixed-path APIs", () => {
 
 describe("ApertureRuntime.sync provider-qualified model ids", () => {
   beforeEach(() => {
+    mockCatalog([
+      provider("synthetic", []),
+      provider("google", []),
+      provider("openai-codex", []),
+    ]);
     getConfig.mockReturnValue(
       proxyConfig([{ id: "synthetic", shouldCheckGatewayModels: false }]),
     );
@@ -736,6 +770,7 @@ describe("ApertureRuntime.resolveProxyProviderSync", () => {
         upstreamProviders: upstreamProviders.map((p) => ({
           shouldCheckGatewayModels: false,
           ...(typeof p === "string" ? { id: p } : p),
+          gatewayId: typeof p === "string" ? p : p.id,
         })),
       },
       dedicated: { enabled: false, providers: [] },
@@ -1137,6 +1172,7 @@ describe("ApertureRuntime.sync api overrides", () => {
   });
 
   test("stream dispatch delegates to the upstream provider without an override", async () => {
+    mockCatalog([provider("groq", [])]);
     const firstSeenStreamSimple = vi.fn();
     const native = {
       id: "groq",
@@ -1508,5 +1544,225 @@ describe("ApertureRuntime.sync passthrough auth", () => {
       auth: { apiKey: "-" },
       source: "aperture proxy",
     });
+  });
+});
+
+describe("ApertureRuntime.sync manual gateway mapping", () => {
+  test("qualifies mapped model ids with the gateway id and keeps local registry ids", async () => {
+    mockCatalog([provider("anthropic-oauth", ["claude"])]);
+    getConfig.mockReturnValue(
+      proxyConfig([
+        {
+          id: "anthropic",
+          gatewayId: "anthropic-oauth",
+          shouldCheckGatewayModels: false,
+        },
+      ]),
+    );
+    const stream = vi.fn();
+    const native = {
+      id: "anthropic",
+      getModels: () => [model("anthropic", "claude", "anthropic-messages")],
+      stream,
+      streamSimple: vi.fn(),
+    };
+    const registerNativeProvider = vi.fn();
+    await new ApertureRuntime().sync({
+      getModels: native.getModels,
+      getProvider: () => native,
+      registerNativeProvider,
+    });
+    const wrapped = registerNativeProvider.mock.calls.at(
+      -1,
+    )?.[0] as typeof native;
+    expect(wrapped.id).toBe("anthropic");
+    expect(wrapped.getModels()[0].id).toBe("claude");
+    wrapped.stream(wrapped.getModels()[0], {} as never);
+    expect(stream.mock.calls[0]?.[0]).toMatchObject({
+      provider: "anthropic",
+      id: "anthropic-oauth/claude",
+    });
+  });
+
+  test("uses mapped target for model filtering, API validation and many-to-one routes", async () => {
+    mockCatalog([
+      {
+        ...provider("shared", ["m-1"]),
+        compatibility: { anthropic_messages: true },
+      },
+    ]);
+    getConfig.mockReturnValue(
+      proxyConfig([
+        {
+          id: "first",
+          gatewayId: "shared",
+          shouldCheckGatewayModels: false,
+          keepGatewayModelsOnly: true,
+          api: "anthropic-messages",
+        },
+        {
+          id: "second",
+          gatewayId: "shared",
+          shouldCheckGatewayModels: false,
+          keepGatewayModelsOnly: false,
+        },
+      ]),
+    );
+    const { deps, registerNativeProvider } = syncDeps(() => [
+      model("first", "m-1", "openai-completions"),
+      model("first", "missing", "openai-completions"),
+      model("second", "m-1", "openai-completions"),
+      model("second", "missing", "openai-completions"),
+    ]);
+    await new ApertureRuntime().sync(deps);
+    const registered = registerNativeProvider.mock.calls.map(
+      ([p]) => p as { id: string; getModels: () => Model<Api>[] },
+    );
+    expect(registered.map((p) => p.id)).toEqual(["first", "second"]);
+    expect(registered[0].getModels().map((m) => [m.id, m.api])).toEqual([
+      ["m-1", "anthropic-messages"],
+    ]);
+    expect(registered[1].getModels().map((m) => m.id)).toEqual([
+      "m-1",
+      "missing",
+    ]);
+  });
+
+  test("keeps native auth when mapped target requires client auth", async () => {
+    mockCatalog([
+      {
+        ...provider("anthropic-oauth", ["claude"]),
+        requires_client_auth: true,
+      },
+    ]);
+    getConfig.mockReturnValue(
+      proxyConfig([
+        {
+          id: "anthropic",
+          gatewayId: "anthropic-oauth",
+          shouldCheckGatewayModels: false,
+        },
+      ]),
+    );
+    const auth = { apiKey: { resolve: vi.fn() } };
+    const native = {
+      id: "anthropic",
+      auth,
+      getModels: () => [model("anthropic", "claude", "anthropic-messages")],
+      stream: vi.fn(),
+      streamSimple: vi.fn(),
+    };
+    const registerNativeProvider = vi.fn();
+    await new ApertureRuntime().sync({
+      getModels: native.getModels,
+      getProvider: () => native,
+      registerNativeProvider,
+    });
+    expect(registerNativeProvider.mock.calls.at(-1)?.[0].auth).toBe(auth);
+  });
+
+  test("retains mapped passthrough auth during a later catalog failure", async () => {
+    mockCatalog([
+      { ...provider("oauth-target", ["m-1"]), requires_client_auth: true },
+    ]);
+    getConfig.mockReturnValue(
+      proxyConfig([
+        {
+          id: "local",
+          gatewayId: "oauth-target",
+          shouldCheckGatewayModels: false,
+        },
+      ]),
+    );
+    const auth = { apiKey: { resolve: vi.fn() } };
+    const native = {
+      id: "local",
+      auth,
+      getModels: () => [model("local", "m-1")],
+      stream: vi.fn(),
+      streamSimple: vi.fn(),
+    };
+    let current: typeof native = native;
+    const registerNativeProvider = vi.fn((provider: typeof native) => {
+      current = provider;
+    });
+    const deps = {
+      getModels: native.getModels,
+      getProvider: () => current,
+      registerNativeProvider,
+    };
+    const runtime = new ApertureRuntime();
+    await runtime.sync(deps);
+    vi.mocked(ApertureClient).mockImplementation(function (this: {
+      providers: ReturnType<typeof vi.fn>;
+    }) {
+      this.providers = vi.fn().mockRejectedValue(new Error("offline"));
+      return this;
+    } as unknown as typeof ApertureClient);
+    await runtime.sync(deps);
+    expect(current.auth).toBe(auth);
+  });
+
+  test("unknown target restores native after provisional registration and warns once per sync", async () => {
+    mockCatalog([provider("known", [])]);
+    getConfig.mockReturnValue(
+      proxyConfig([
+        { id: "first", gatewayId: "gone", shouldCheckGatewayModels: false },
+        { id: "second", gatewayId: "gone", shouldCheckGatewayModels: false },
+      ]),
+    );
+    const natives = new Map(
+      ["first", "second"].map((id) => [
+        id,
+        {
+          id,
+          getModels: () => [model(id, "m-1")],
+          auth: { apiKey: { resolve: vi.fn() } },
+          stream: vi.fn(),
+          streamSimple: vi.fn(),
+        },
+      ]),
+    );
+    const registerNativeProvider = vi.fn();
+    const notify = vi.fn();
+    const deps = {
+      getModels: () => [...natives.values()].flatMap((p) => p.getModels()),
+      getProvider: (id: string) => natives.get(id),
+      registerNativeProvider,
+      notify,
+    };
+    const runtime = new ApertureRuntime();
+    await runtime.sync(deps);
+    expect(notify).toHaveBeenCalledOnce();
+    expect(registerNativeProvider.mock.calls.at(-1)?.[0]).toBe(
+      natives.get("second"),
+    );
+    await runtime.sync(deps);
+    expect(notify).toHaveBeenCalledTimes(2);
+  });
+
+  test("missing-model check compares local models against mapped gateway catalog", async () => {
+    getConfig.mockReturnValue(
+      proxyConfig([
+        {
+          id: "anthropic",
+          gatewayId: "anthropic-oauth",
+          shouldCheckGatewayModels: true,
+        },
+      ]),
+    );
+    const notify = vi.fn();
+    await new ApertureRuntime().checkMissingModels(
+      {
+        getModels: () => [
+          model("anthropic", "claude"),
+          model("anthropic", "missing"),
+        ],
+        notify,
+      },
+      [provider("anthropic-oauth", ["claude"])],
+    );
+    expect(notify.mock.calls[0]?.[0]).toContain("anthropic: missing");
+    expect(notify.mock.calls[0]?.[0]).not.toContain("claude,");
   });
 });
