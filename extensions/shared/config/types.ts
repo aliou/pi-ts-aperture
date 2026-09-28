@@ -177,10 +177,10 @@ export interface ResolvedConfig {
   };
 }
 
-export interface Migration<TConfig> {
+export interface Migration<TConfig, TNextConfig = TConfig> {
   name: string;
   /** semver version string that shipped this migration. */
   version?: string;
   shouldRun: (config: TConfig) => boolean;
-  run: (config: TConfig, filePath: string) => TConfig;
+  run: (config: TConfig, filePath: string) => TNextConfig;
 }
