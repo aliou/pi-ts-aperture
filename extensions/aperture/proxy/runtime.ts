@@ -183,7 +183,8 @@ export class ApertureRuntime {
           providers !== undefined &&
           this.passthroughProviderIds.has(providerName);
         const wrapped: Provider = {
-          ...native,
+          // Avoid copying composed methods that delegate back to this wrapper.
+          ...firstSeen,
           id: providerName,
           getModels: () =>
             (servedIds === undefined

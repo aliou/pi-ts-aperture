@@ -479,6 +479,50 @@ describe("ApertureRuntime.sync provider-qualified model ids", () => {
     });
   });
 
+  test("refreshModels stays anchored to the original provider after Pi recomposes the wrapper", async () => {
+    vi.mocked(ApertureClient).mockImplementation(function (this: {
+      providers: ReturnType<typeof vi.fn>;
+    }) {
+      this.providers = vi
+        .fn()
+        .mockResolvedValue([provider("anthropic", ["claude-test"])]);
+      return this;
+    } as unknown as typeof ApertureClient);
+    getConfig.mockReturnValue(
+      proxyConfig([{ id: "anthropic", shouldCheckGatewayModels: false }]),
+    );
+    const refreshModels = vi.fn().mockResolvedValue(undefined);
+    const native = {
+      id: "anthropic",
+      getModels: () => [
+        model("anthropic", "claude-test", "anthropic-messages"),
+      ],
+      auth: { apiKey: { resolve: vi.fn() } },
+      refreshModels,
+    };
+    let current: typeof native = native;
+    const deps = {
+      getProvider: () => current,
+      registerNativeProvider: (base: typeof native) => {
+        current = {
+          ...base,
+          refreshModels: async (context: never) => {
+            await base.refreshModels(context);
+          },
+        };
+      },
+      getModels: () => native.getModels(),
+    };
+
+    const runtime = new ApertureRuntime();
+    await runtime.sync(deps as never);
+    await current.refreshModels({} as never);
+    await runtime.sync(deps as never);
+    await current.refreshModels({} as never);
+
+    expect(refreshModels).toHaveBeenCalledTimes(2);
+  });
+
   // `/reload` re-runs the factory with a fresh ApertureRuntime but keeps Pi's
   // ModelRuntime (and the wrapper in it), so the fresh runtime wraps the stale
   // wrapper. Spy the real openai-codex provider's stream and assert the model
