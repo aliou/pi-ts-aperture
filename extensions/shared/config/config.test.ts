@@ -23,12 +23,8 @@ describe("config migrations", () => {
     expect(result.proxy).toEqual({
       enabled: true,
       upstreamProviders: [
-        {
-          id: "anthropic",
-          gatewayId: "anthropic",
-          shouldCheckGatewayModels: true,
-        },
-        { id: "openai", gatewayId: "openai", shouldCheckGatewayModels: false },
+        { id: "anthropic", shouldCheckGatewayModels: true },
+        { id: "openai", shouldCheckGatewayModels: false },
       ],
     });
     expect(result.onboardingDone).toBe(true);
@@ -78,7 +74,7 @@ describe("config migrations", () => {
           { id: "openai", gatewayId: "custom" },
         ],
       },
-    } as never;
+    };
     expect(gatewayIdMigration.shouldRun(incomplete)).toBe(true);
     expect(
       gatewayIdMigration.run(incomplete, "/fake/path").proxy?.upstreamProviders,
