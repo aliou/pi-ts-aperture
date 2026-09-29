@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import * as responsesAdapter from "@earendil-works/pi-ai/api/openai-responses";
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { ApertureClient } from "../../../src/api/client";
@@ -627,6 +628,168 @@ describe("ApertureRuntime.sync provider-qualified model ids", () => {
       {},
       {},
     );
+  });
+});
+
+describe("ApertureRuntime.sync OpenAI passthrough transport", () => {
+  const upstreamUrl = "https://api.openai.com/v1";
+
+  async function setup({
+    requiresClientAuth = true,
+    api = "openai-responses" as Api,
+    baseUrl = upstreamUrl,
+    gatewayId = "openai-subscription",
+  } = {}) {
+    mockCatalog([
+      {
+        ...provider(gatewayId, ["gpt-6-sol"]),
+        requires_client_auth: requiresClientAuth,
+      },
+    ]);
+    getConfig.mockReturnValue({
+      ...proxyConfig([
+        {
+          id: "openai",
+          gatewayId,
+          shouldCheckGatewayModels: false,
+          keepGatewayModelsOnly: true,
+        },
+      ]),
+      baseUrl: "https://ai.pango-lin.ts.net",
+    });
+    const native = {
+      id: "openai",
+      getModels: () => [model("openai", "gpt-6-sol", api, baseUrl)],
+      auth: { apiKey: { resolve: vi.fn() } },
+      stream: vi.fn(),
+      streamSimple: vi.fn(),
+    };
+    let current = native;
+    const deps = {
+      getModels: () => current.getModels(),
+      getProvider: () => current,
+      registerNativeProvider: (p: typeof native) => {
+        current = p;
+      },
+    };
+    const runtime = new ApertureRuntime();
+    await runtime.sync(deps);
+    return { native, wrapped: () => current, runtime, deps };
+  }
+
+  test.each([
+    "stream",
+    "streamSimple",
+  ] as const)("%s preserves the native URL and auth while qualifying mapped model ids", async (method) => {
+    const { native, wrapped } = await setup();
+    const fetch = vi.fn().mockResolvedValue(new Response());
+    const options = {
+      apiKey: "subscription-token",
+      fetch,
+      signal: new AbortController().signal,
+      headers: { "x-session-id": "session-1" },
+    };
+    const proxied = wrapped();
+    expect(proxied.getModels()[0].baseUrl).toBe(upstreamUrl);
+    expect(proxied.getModels()[0].id).toBe("gpt-6-sol");
+    expect(proxied.auth).toBe(native.auth);
+
+    proxied[method](proxied.getModels()[0], {} as never, options);
+    const [sentModel, , sentOptions] = native[method].mock.calls[0];
+    expect(sentModel).toMatchObject({
+      id: "openai-subscription/gpt-6-sol",
+      provider: "openai",
+      baseUrl: upstreamUrl,
+    });
+    expect(sentOptions).toMatchObject({
+      apiKey: options.apiKey,
+      signal: options.signal,
+      headers: options.headers,
+    });
+    expect(options.fetch).toBe(fetch);
+    await sentOptions.fetch(`${upstreamUrl}/responses`);
+    expect(fetch).toHaveBeenCalledWith(
+      new URL("https://ai.pango-lin.ts.net/v1/responses"),
+      undefined,
+    );
+  });
+
+  test.each([
+    { requiresClientAuth: false },
+    { api: "openai-completions" as Api },
+    { baseUrl: "https://api.openai.com/v1/" },
+    { baseUrl: "https://other.example.test/v1" },
+  ])("keeps URL rewriting outside the exact passthrough Responses route: %j", async (settings) => {
+    const { native, wrapped } = await setup(settings);
+    const options = { apiKey: "sk-test", fetch: vi.fn() };
+    const proxied = wrapped();
+    expect(proxied.getModels()[0].baseUrl).toBe(
+      "https://ai.pango-lin.ts.net/v1",
+    );
+    proxied.stream(proxied.getModels()[0], {} as never, options);
+    expect(native.stream.mock.calls[0][2]).toBe(options);
+  });
+
+  test("keeps native URLs and a single transport wrapper across re-syncs", async () => {
+    const { native, wrapped, runtime, deps } = await setup();
+    await runtime.sync(deps);
+    const proxied = wrapped();
+    expect(proxied.getModels()[0].baseUrl).toBe(upstreamUrl);
+    proxied.streamSimple(proxied.getModels()[0], {} as never, undefined);
+    expect(native.streamSimple).toHaveBeenCalledOnce();
+    expect(native.streamSimple.mock.calls[0][0].id).toBe(
+      "openai-subscription/gpt-6-sol",
+    );
+    expect(native.streamSimple.mock.calls[0][2].fetch).toBeTypeOf("function");
+  });
+
+  test.each([
+    "subscription-token",
+    "sk-test",
+  ])("lets Pi build the same body as a direct request for credential %s", async (apiKey) => {
+    const { native, wrapped } = await setup();
+    const fetch = vi.fn().mockResolvedValue(
+      new Response('{"error":{"message":"test stop"}}', {
+        status: 400,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    const options = {
+      apiKey,
+      fetch,
+      maxTokens: 128,
+      temperature: 0.5,
+      cacheRetention: "long" as const,
+      sessionId: "session-1",
+      maxRetries: 0,
+    };
+    const context = { messages: [] };
+    const directModel = {
+      ...native.getModels()[0],
+      reasoning: false,
+      input: ["text"],
+      maxTokens: 128,
+    } as Model<"openai-responses">;
+    await responsesAdapter.stream(directModel, context, options).result();
+    const directBody = JSON.parse(fetch.mock.calls[0][1].body);
+    expect(String(fetch.mock.calls[0][0])).toBe(`${upstreamUrl}/responses`);
+
+    const proxied = wrapped();
+    proxied.stream(proxied.getModels()[0], context, options);
+    const [sentModel, , sentOptions] = native.stream.mock.calls[0];
+    await responsesAdapter
+      .stream({ ...directModel, ...sentModel }, context, sentOptions)
+      .result();
+    const proxyBody = JSON.parse(fetch.mock.calls[1][1].body);
+    expect(String(fetch.mock.calls[1][0])).toBe(
+      "https://ai.pango-lin.ts.net/v1/responses",
+    );
+    // Compare with Pi's own body rather than copying its subscription rules.
+    // This regression works both before and after Pi's ChatGPT support.
+    expect(proxyBody).toEqual({
+      ...directBody,
+      model: "openai-subscription/gpt-6-sol",
+    });
   });
 });
 

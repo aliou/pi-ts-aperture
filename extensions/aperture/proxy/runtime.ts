@@ -17,6 +17,8 @@ import type {
   SyncDeps,
 } from "../../shared/types";
 
+import { OPENAI_BASE_URL, withOpenAIGatewayFetch } from "./openai-passthrough";
+
 const MAX_MISSING_MODELS_PER_PROVIDER = 5;
 
 function qualifyModelId<T extends Api>(
@@ -175,12 +177,17 @@ export class ApertureRuntime {
         }
         const api = apiOverride ?? sourceApi;
 
-        const providerBaseUrl = getBaseUrlForApi(
-          api,
-          gatewayRoot,
-          baseUrl,
-          upstreamBaseUrl,
-        );
+        const isPassthrough = this.passthroughProviderIds.has(gatewayId);
+        // Preserve Pi's native ChatGPT sign-in detection. The adapter builds
+        // the subscription-safe body before our fetch redirects it to Aperture.
+        const useGatewayFetch =
+          isPassthrough &&
+          api === "openai-responses" &&
+          upstreamBaseUrl === OPENAI_BASE_URL;
+        const fetchGateway = useGatewayFetch ? gatewayRoot : undefined;
+        const providerBaseUrl = useGatewayFetch
+          ? OPENAI_BASE_URL
+          : getBaseUrlForApi(api, gatewayRoot, baseUrl, upstreamBaseUrl);
 
         const servedIds =
           providers && entry.keepGatewayModelsOnly
@@ -202,7 +209,6 @@ export class ApertureRuntime {
         }
         const baseAuth = firstSeen.auth?.apiKey;
         if (!catalogSettled && !baseAuth) continue;
-        const isPassthrough = this.passthroughProviderIds.has(gatewayId);
         const wrapped: Provider = {
           // Avoid copying composed methods that delegate back to this wrapper.
           ...firstSeen,
@@ -228,7 +234,11 @@ export class ApertureRuntime {
 
           stream: (model, context, options) => {
             const streamFn = apiOverride ? buildStream() : firstSeen.stream;
-            return streamFn(qualifyModelId(gatewayId, model), context, options);
+            return streamFn(
+              qualifyModelId(gatewayId, model),
+              context,
+              withOpenAIGatewayFetch(options, fetchGateway),
+            );
           },
           streamSimple: (model, context, options) => {
             const streamSimpleFn = apiOverride
@@ -237,7 +247,7 @@ export class ApertureRuntime {
             return streamSimpleFn(
               qualifyModelId(gatewayId, model),
               context,
-              options,
+              withOpenAIGatewayFetch(options, fetchGateway),
             );
           },
           // Override/none providers: the gateway injects the upstream credential,

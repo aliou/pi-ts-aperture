@@ -42,7 +42,9 @@ Capabilities (context window, vision input, reasoning, thinking levels) come fro
 
 [![Proxy providers walkthrough](https://assets.aliou.me/pi-extensions/demos/aperture/v0.8.0/proxy-providers.gif)](https://assets.aliou.me/pi-extensions/demos/aperture/v0.8.0/proxy-providers.mp4)
 
-Reroutes existing Pi providers through Aperture. Each provider keeps its own model definitions and settings; only the base URL, API key, and headers are overridden. Use this when you want Pi's native per-provider model configuration but want requests to go through Aperture for server-side credentials.
+Reroutes existing Pi providers through Aperture. Each provider keeps its own model definitions and settings. Aperture injects server-side credentials or forwards Pi's native credential for passthrough providers.
+
+OpenAI Responses passthrough routes support Pi's **Sign in with ChatGPT** on Pi 0.99 or later. The extension preserves OpenAI's native base URL so Pi applies its subscription request rules, then redirects HTTP requests to the gateway through a custom fetch. OpenAI API keys use the same route with Pi's normal request parameters. Other routes rewrite the model's base URL to the gateway.
 
 The Proxy tab in `/aperture:settings` lists gateway providers by name. Exact local matches show `disabled` until routed, configured routes show their enabled state, and providers without a local match show `select`. Opening a `select` row goes straight to a searchable local-provider multi-select; submitting opens routing settings. Other rows open routing settings directly. Use **Local Pi providers** in those settings to change the selection. When several local providers share a gateway target, each has its own routing settings. A local provider can use a different gateway id (for example, `anthropic` → `anthropic-oauth`). Optional per-provider verification warns when configured local models are missing from the gateway. Set `keepGatewayModelsOnly: true` on a provider to filter those models out of the model picker entirely.
 
