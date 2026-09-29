@@ -1,5 +1,12 @@
 # @aliou/pi-ts-aperture
 
+## 0.16.1
+
+### Patch Changes
+
+- f489284: Support ChatGPT subscription credentials on OpenAI Responses passthrough routes by preserving Pi's native request handling and redirecting HTTP requests through Aperture.
+- f5af48b: Remove proxy provider wrappers on session shutdown so reloads apply gateway changes without retaining stale wrappers. Prevent pending catalog fetches from restoring wrappers after shutdown.
+
 ## 0.16.0
 
 ### Minor Changes
