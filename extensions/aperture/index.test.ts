@@ -1,18 +1,18 @@
 /**
- * Gating tests for provenance header injection (`before_provider_headers`).
- * Headers are injected only when both the `shouldSendProvenanceHeaders`
- * config option (default true) and pi's telemetry gate (`PI_TELEMETRY` /
- * pi's `enableInstallTelemetry` setting) allow it.
- *
- * The config loader is mocked (per repo convention); settings files are
- * faked through a vi.mock'd readFileSync, so no test ever touches disk.
+ * Factory tests for provenance headers and proxy shutdown/reload cleanup.
+ * Config, gateway fetches, and settings files are mocked.
  */
 import { join } from "node:path";
 import {
   type ExtensionAPI,
   getAgentDir,
+  ModelRuntime,
 } from "@earendil-works/pi-coding-agent";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { ApertureClient } from "../../src/api/client";
+import type { ApertureProvider } from "../../src/api/types";
+import type { ResolvedConfig } from "../shared/config/types";
+import type { Provider } from "../shared/types";
 
 const mocks = vi.hoisted(() => ({
   config: {
@@ -23,7 +23,7 @@ const mocks = vi.hoisted(() => ({
     proxy: { enabled: false, upstreamProviders: [] },
     dedicated: { enabled: false, providers: [] },
     connectors: { enabled: false, pinnedTools: [], discoveryTools: true },
-  },
+  } as ResolvedConfig,
   /** Fake settings files, keyed by path; real fs used for everything else. */
   fakeFiles: new Map<string, string>(),
 }));
@@ -35,6 +35,8 @@ vi.mock("../shared/config/loader", () => ({
     getRawConfig: () => mocks.config,
   },
 }));
+
+vi.mock("../../src/api/client", () => ({ ApertureClient: vi.fn() }));
 
 // Fake settings files without touching disk: hits return from the map,
 // everything else (including package reads at import time) delegates.
@@ -63,6 +65,8 @@ type HeaderHandler = (
   event: { type: string; headers: Record<string, string> },
   ctx: unknown,
 ) => unknown;
+
+type LifecycleHandler = (event: { type: string }, ctx: unknown) => unknown;
 
 const SESSION_ID = "test-session-id";
 
@@ -107,6 +111,8 @@ beforeEach(() => {
   savedTelemetry = process.env.PI_TELEMETRY;
   delete process.env.PI_TELEMETRY;
   mocks.config.shouldSendProvenanceHeaders = true;
+  mocks.config.baseUrl = "https://ai.pango-lin.ts.net";
+  mocks.config.proxy = { enabled: false, upstreamProviders: [] };
   // Default: an empty global settings file (telemetry gate open), so the
   // real global settings on this machine can't leak into a test.
   mocks.fakeFiles.clear();
@@ -153,5 +159,160 @@ describe("before_provider_headers gating", () => {
     });
     expect(envWins.Referer).toBe("https://pi.dev");
     expect(envWins["x-session-id"]).toBe(SESSION_ID);
+  });
+});
+
+describe("proxy shutdown cleanup", () => {
+  async function setupRegistry(catalog?: Promise<ApertureProvider[]>) {
+    const registry = await ModelRuntime.create({
+      refreshOnCreate: false,
+      allowModelNetwork: false,
+    });
+    const native = registry.getProvider("openai") as Provider;
+    const sourceModel = native.getModels()[0];
+    const providers: ApertureProvider[] = [
+      {
+        id: "openai",
+        name: "OpenAI",
+        models: [sourceModel.id],
+        requires_client_auth: true,
+        compatibility: { openai_responses: true },
+      },
+    ];
+    vi.mocked(ApertureClient).mockImplementation(function (this: object) {
+      return Object.assign(this, {
+        providers: () => catalog ?? Promise.resolve(providers),
+      });
+    } as unknown as typeof ApertureClient);
+    mocks.config.proxy = {
+      enabled: true,
+      upstreamProviders: ["openai", "not-installed"].map((id) => ({
+        id,
+        gatewayId: "openai",
+        shouldCheckGatewayModels: false,
+        keepGatewayModelsOnly: true,
+      })),
+    };
+    return { registry, native, providers };
+  }
+
+  async function loadLifecycle(registry: ModelRuntime) {
+    const ctx = {
+      modelRegistry: {
+        getAll: () => [...registry.getModels()],
+        getProvider: (id: string) => registry.getProvider(id),
+        refresh: async () => ({ errors: new Map() }),
+      },
+      ui: { notify: vi.fn() },
+    };
+    const handlers = new Map<string, LifecycleHandler[]>();
+    const registerProvider = vi.fn((provider: Provider) => {
+      registry.registerNativeProvider(provider);
+    });
+    const unregisterProvider = vi.fn((id: string) => {
+      registry.unregisterProvider(id);
+    });
+    const pi = new Proxy(
+      {
+        on: (event: string, handler: LifecycleHandler) => {
+          handlers.set(event, [...(handlers.get(event) ?? []), handler]);
+        },
+        registerProvider,
+        unregisterProvider,
+        events: { on: () => {}, emit: () => {} },
+      },
+      { get: (t, p, r) => (p in t ? Reflect.get(t, p, r) : () => {}) },
+    );
+    await factory(pi as unknown as ExtensionAPI);
+    return {
+      registerProvider,
+      unregisterProvider,
+      emit: async (type: string) => {
+        for (const handler of handlers.get(type) ?? []) {
+          await handler({ type }, ctx);
+        }
+        // Drain the fire-and-forget sync and refresh continuations.
+        await new Promise<void>((resolve) => setImmediate(resolve));
+      },
+    };
+  }
+
+  test("unregisters only providers it registered, once, before teardown", async () => {
+    const { registry, native } = await setupRegistry();
+    const unrelated = registry.getProvider("anthropic");
+    const lifecycle = await loadLifecycle(registry);
+    await lifecycle.emit("session_start");
+    expect(lifecycle.registerProvider).toHaveBeenCalledTimes(2);
+    expect(registry.getProvider("openai")?.auth).toBe(native.auth);
+    lifecycle.unregisterProvider.mockClear();
+
+    await lifecycle.emit("session_shutdown");
+    expect(lifecycle.unregisterProvider).toHaveBeenCalledExactlyOnceWith(
+      "openai",
+    );
+    expect(registry.getProvider("openai")?.getModels()).toEqual(
+      native.getModels(),
+    );
+    expect(registry.getProvider("anthropic")).toBe(unrelated);
+    await lifecycle.emit("session_shutdown");
+    expect(lifecycle.unregisterProvider).toHaveBeenCalledTimes(1);
+  });
+
+  test.each([
+    "stream",
+    "streamSimple",
+  ] as const)("%s uses the current gateway after shutdown and reload", async (method) => {
+    const { registry, native } = await setupRegistry();
+    const spy = vi.spyOn(native, method).mockReturnValue({} as never);
+    const first = await loadLifecycle(registry);
+    await first.emit("session_start");
+    await first.emit("session_shutdown");
+    mocks.config.baseUrl = "https://aperture.example.ts.net";
+    const second = await loadLifecycle(registry);
+    await second.emit("session_start");
+    const fetch = vi.fn().mockResolvedValue(new Response());
+    const reloaded = registry.getProvider("openai") as Provider;
+    const model = reloaded.getModels()[0];
+    reloaded[method](model, { messages: [] }, { fetch });
+    expect(spy).toHaveBeenCalledOnce();
+    const [sentModel, , sentOptions] = spy.mock.calls[0];
+    expect(sentModel.id).toBe(`openai/${model.id}`);
+    await sentOptions?.fetch?.("https://api.openai.com/v1/responses");
+    expect(fetch).toHaveBeenCalledExactlyOnceWith(
+      new URL("https://aperture.example.ts.net/v1/responses"),
+      undefined,
+    );
+    await second.emit("session_shutdown");
+  });
+
+  test("does not unregister a removed route again on shutdown", async () => {
+    const { registry } = await setupRegistry();
+    const lifecycle = await loadLifecycle(registry);
+    await lifecycle.emit("session_start");
+    mocks.config.proxy.upstreamProviders = [];
+    await lifecycle.emit("session_start");
+    expect(lifecycle.unregisterProvider).toHaveBeenCalledWith("openai");
+    lifecycle.unregisterProvider.mockClear();
+    await lifecycle.emit("session_shutdown");
+    expect(lifecycle.unregisterProvider).not.toHaveBeenCalled();
+  });
+
+  test("does not re-register a wrapper when an in-flight catalog settles after shutdown", async () => {
+    let release!: (providers: ApertureProvider[]) => void;
+    const catalog = new Promise<ApertureProvider[]>((resolve) => {
+      release = resolve;
+    });
+    const { registry, native, providers } = await setupRegistry(catalog);
+    const lifecycle = await loadLifecycle(registry);
+    await lifecycle.emit("session_start");
+    expect(lifecycle.registerProvider).toHaveBeenCalledOnce();
+    await lifecycle.emit("session_shutdown");
+    lifecycle.registerProvider.mockClear();
+    release(providers);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(lifecycle.registerProvider).not.toHaveBeenCalled();
+    expect(registry.getProvider("openai")?.getModels()).toEqual(
+      native.getModels(),
+    );
   });
 });

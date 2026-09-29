@@ -25,6 +25,7 @@ export default async function (pi: ExtensionAPI): Promise<void> {
   await configLoader.load();
 
   const proxyRuntime = new ApertureRuntime();
+  const registeredProxyProviders = new Set<string>();
 
   // Set by `session_shutdown`, which precedes ctx invalidation on session
   // replacement or /reload. Deferred continuations check this before
@@ -35,6 +36,12 @@ export default async function (pi: ExtensionAPI): Promise<void> {
   let invalidated = false;
   pi.on("session_shutdown", () => {
     invalidated = true;
+    // /reload keeps Pi's model runtime. Remove our wrappers while the
+    // extension API is still active so the next load sees native providers.
+    for (const provider of registeredProxyProviders) {
+      pi.unregisterProvider(provider);
+    }
+    registeredProxyProviders.clear();
   });
 
   // Terminal catch for the fire-and-forget chains below. A stale-ctx throw
@@ -181,6 +188,7 @@ export default async function (pi: ExtensionAPI): Promise<void> {
       proxyRuntime.resolveProxyProviderSync(config, lastProxyProviders);
     for (const provider of unregister) {
       pi.unregisterProvider(provider);
+      registeredProxyProviders.delete(provider);
       ctx.ui.notify(`[aperture] unregistered ${provider}.`, "info");
     }
     lastProxyProviders = nextProxyProviders;
@@ -188,7 +196,10 @@ export default async function (pi: ExtensionAPI): Promise<void> {
     void proxyRuntime
       .sync({
         getProvider: (id) => ctx.modelRegistry.getProvider(id),
-        registerNativeProvider: (provider) => pi.registerProvider(provider),
+        registerNativeProvider: (provider) => {
+          pi.registerProvider(provider);
+          registeredProxyProviders.add(provider.id);
+        },
         getModels: () => ctx.modelRegistry.getAll(),
         notify: (msg, type) => ctx.ui.notify(msg, type),
         isStale: () => invalidated,
