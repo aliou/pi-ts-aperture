@@ -24,7 +24,6 @@ export type {
   ApertureConfig,
   ConnectorsConfig,
   DedicatedProviderConfig,
-  PinnedConnectorTool,
   ProxiedProviderConfig,
   ResolvedConfig,
   RoutableApi,

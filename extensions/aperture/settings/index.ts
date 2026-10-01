@@ -67,11 +67,6 @@ export function registerApertureSettings(
           ...updated.connectors,
           enabled: newValue === "enabled",
         };
-      if (id === "connectors.discoveryTools")
-        updated.connectors = {
-          ...updated.connectors,
-          discoveryTools: newValue === "enabled",
-        };
       if (id === "onboardingDone") {
         updated.onboardingDone = newValue === "completed";
         updated.onboarding = {

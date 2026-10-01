@@ -4,8 +4,13 @@ import {
   gatewayIdMigration,
   legacyToV06Migration,
   modeToCapabilitiesMigration,
+  nativeMcpConnectorsMigration,
   normalizeCapabilitiesMigration,
 } from "./migration";
+import type {
+  PreV17Config,
+  V17Config,
+} from "./migration/005-native-mcp-connectors";
 
 describe("config migrations", () => {
   test("001 migrates old providers and checks to proxy capability", () => {
@@ -87,6 +92,68 @@ describe("config migrations", () => {
         gatewayIdMigration.run(incomplete, "/fake/path"),
       ),
     ).toBe(false);
+  });
+
+  describe("005 drops connector pin/discovery config", () => {
+    const base: PreV17Config = {
+      baseUrl: "http://gateway.test",
+      proxy: { enabled: true, upstreamProviders: [] },
+      dedicated: { enabled: true, providers: [] },
+    };
+    const cases: {
+      name: string;
+      connectors: NonNullable<PreV17Config["connectors"]>;
+      expectedShouldRun: boolean;
+    }[] = [
+      {
+        name: "pinned tools set",
+        connectors: {
+          enabled: true,
+          pinnedTools: [
+            { connectorId: "github", toolName: "github_list_repos" },
+          ],
+        },
+        expectedShouldRun: true,
+      },
+      {
+        name: "discovery tools set",
+        connectors: { enabled: true, discoveryTools: false },
+        expectedShouldRun: true,
+      },
+      {
+        name: "both set",
+        connectors: {
+          enabled: false,
+          pinnedTools: [],
+          discoveryTools: true,
+        },
+        expectedShouldRun: true,
+      },
+      {
+        name: "neither set",
+        connectors: { enabled: true },
+        expectedShouldRun: false,
+      },
+    ];
+
+    for (const { name, connectors, expectedShouldRun } of cases) {
+      test(name, () => {
+        const pre: PreV17Config = { ...base, connectors };
+        expect(nativeMcpConnectorsMigration.shouldRun(pre)).toBe(
+          expectedShouldRun,
+        );
+        const post: V17Config = nativeMcpConnectorsMigration.run(
+          pre,
+          "/fake/path",
+        );
+        expect(post.connectors).toEqual({ enabled: connectors.enabled });
+        // Other top-level config passes through untouched.
+        expect(post.baseUrl).toBe(base.baseUrl);
+        expect(post.proxy).toEqual(base.proxy);
+        expect(post.dedicated).toEqual(base.dedicated);
+        expect(nativeMcpConnectorsMigration.shouldRun(post)).toBe(false);
+      });
+    }
   });
 });
 
