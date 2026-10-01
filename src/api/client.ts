@@ -1,5 +1,6 @@
 import type { TSchema } from "typebox";
 import { Value } from "typebox/value";
+import { parseReasoningReplay } from "../reasoning-replay";
 import {
   type ApertureModelEntry,
   ApertureModelEntrySchema,
@@ -112,9 +113,13 @@ export class ApertureClient {
       }
 
       provider.models.push(entry.id);
+      const reasoningReplay = parseReasoningReplay(
+        entry.metadata.reasoning_replay,
+      );
       provider.modelInfoById[entry.id] = {
         id: entry.id,
         pricing: entry.pricing,
+        ...(reasoningReplay ? { reasoning_replay: reasoningReplay } : {}),
       };
       for (const endpoint of entry.supported_endpoints) {
         const flag = compatibilityFlag(endpoint);

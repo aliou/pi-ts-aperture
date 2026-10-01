@@ -38,10 +38,24 @@ export const ApertureModelPricingSchema = Type.Object(
 
 export type ApertureModelPricing = Static<typeof ApertureModelPricingSchema>;
 
+export const ReasoningReplaySchema = Type.Object(
+  {
+    field: Type.Optional(
+      Type.Union([
+        Type.Literal("reasoning"),
+        Type.Literal("reasoning_content"),
+      ]),
+    ),
+    templateKwargs: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
+  },
+  { additionalProperties: true },
+);
+
 export const ApertureModelInfoSchema = Type.Object(
   {
     id: Type.String(),
     pricing: Type.Optional(ApertureModelPricingSchema),
+    reasoning_replay: Type.Optional(ReasoningReplaySchema),
   },
   { additionalProperties: true },
 );
@@ -63,6 +77,10 @@ export const ApertureModelEntrySchema = Type.Object(
           },
           { additionalProperties: true },
         ),
+        // Deliberately lenient: the client validates the knob strictly and
+        // drops it when malformed, so a bad declaration never invalidates
+        // the whole catalog entry.
+        reasoning_replay: Type.Optional(Type.Unknown()),
       },
       { additionalProperties: true },
     ),

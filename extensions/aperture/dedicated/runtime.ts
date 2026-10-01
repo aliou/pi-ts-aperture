@@ -147,8 +147,6 @@ function buildModels(
         registryModels: metadataRegistry,
         modelsDev,
       });
-      // Gateway modelInfo carries no reasoning_replay today (the client keeps
-      // only id + pricing); a future declaration would win over the table here.
       const reasoningReplay = resolveReasoningReplay(
         `${provider.id}/${modelId}`,
         modelInfo,

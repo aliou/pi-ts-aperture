@@ -24,8 +24,14 @@ describe("ApertureClient", () => {
     id: string,
     provider: Record<string, unknown>,
     extra: Record<string, unknown> = {},
+    metadataExtra: Record<string, unknown> = {},
   ) {
-    return { id, object: "model", metadata: { provider }, ...extra };
+    return {
+      id,
+      object: "model",
+      metadata: { provider, ...metadataExtra },
+      ...extra,
+    };
   }
 
   function notOk(status: number, statusText: string) {
@@ -160,6 +166,64 @@ describe("ApertureClient", () => {
     ).providers();
     expect(providers.map((p) => p.id)).toEqual(["openai"]);
     expect(providers[0].models).toEqual(["gpt-5"]);
+  });
+
+  test("providers() carries a valid metadata reasoning_replay onto modelInfoById", async () => {
+    const knob = {
+      field: "reasoning_content",
+      templateKwargs: { clear_thinking: false },
+    };
+    mockFetch((url) => {
+      if (url.endsWith("/v1/models")) {
+        return {
+          data: [
+            model(
+              "kimi-k3",
+              { id: "neuralwatt", name: "NeuralWatt" },
+              { supported_endpoints: ["/v1/chat/completions"] },
+              { reasoning_replay: knob },
+            ),
+          ],
+        };
+      }
+      return notOk(404, "Not Found");
+    });
+
+    const providers = await new ApertureClient(
+      "http://gateway.test",
+    ).providers();
+    expect(providers[0].modelInfoById["kimi-k3"]).toEqual({
+      id: "kimi-k3",
+      reasoning_replay: knob,
+    });
+  });
+
+  test("providers() drops a malformed metadata reasoning_replay and keeps the entry", async () => {
+    const pricing = { input: "0.00000100" };
+    mockFetch((url) => {
+      if (url.endsWith("/v1/models")) {
+        return {
+          data: [
+            model(
+              "kimi-k3",
+              { id: "neuralwatt", name: "NeuralWatt" },
+              { pricing, supported_endpoints: ["/v1/chat/completions"] },
+              { reasoning_replay: { field: "thoughts" } },
+            ),
+          ],
+        };
+      }
+      return notOk(404, "Not Found");
+    });
+
+    const providers = await new ApertureClient(
+      "http://gateway.test",
+    ).providers();
+    expect(providers[0].models).toEqual(["kimi-k3"]);
+    expect(providers[0].modelInfoById["kimi-k3"]).toEqual({
+      id: "kimi-k3",
+      pricing,
+    });
   });
 
   test("providers() rejects with ApertureHttpError when /v1/models fails", async () => {

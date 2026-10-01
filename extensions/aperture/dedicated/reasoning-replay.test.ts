@@ -136,6 +136,9 @@ function neuralwattStyleChunks(): Record<string, unknown>[] {
 /** Bodies of every chat-completions request the stub has served, in order. */
 const completionBodies: string[] = [];
 
+/** Test-scoped replacement for the served catalog (gateway-declared knobs). */
+let catalogOverride: { data: unknown[] } | null = null;
+
 const fetchStub = vi.fn(
   async (input: unknown, init?: { body?: unknown }): Promise<Response> => {
     const url =
@@ -145,7 +148,7 @@ const fetchStub = vi.fn(
           ? input.href
           : (input as Request).url;
     if (url === `${GATEWAY}/v1/models`) {
-      return new Response(JSON.stringify(CATALOG), {
+      return new Response(JSON.stringify(catalogOverride ?? CATALOG), {
         status: 200,
         headers: { "content-type": "application/json" },
       });
@@ -217,6 +220,10 @@ beforeAll(async () => {
   provider = createDedicatedProvider(`${GATEWAY}/v1`, (context) =>
     refreshDedicatedCatalog(context, () => []),
   );
+  await refreshCatalog();
+});
+
+async function refreshCatalog() {
   const context = {
     allowNetwork: true,
     force: true,
@@ -228,7 +235,7 @@ beforeAll(async () => {
   } as unknown as RefreshModelsContext;
   await provider.refreshModels?.(context);
   models = provider.getModels();
-});
+}
 
 beforeEach(() => {
   // vitest mockReset:true wipes implementations between tests; re-apply.
@@ -300,6 +307,39 @@ describe("turn-2 wire shape", () => {
     if (!api) throw new Error("openai-completions API not registered");
     await api.streamSimple(model, context, { apiKey: "-" }).result();
     expect(lastCompletionBody()).toBe(JSON.stringify(turn2Body));
+  });
+
+  test("a gateway-declared reasoning_replay wins over the repo table end to end", async () => {
+    // kimi-k3's table knob is { field: "reasoning_content" }; the declared
+    // { field: "reasoning" } must win from catalog stamp to turn-2 body.
+    const entry = catalogEntry("kimi-k3", "neuralwatt");
+    catalogOverride = {
+      data: [
+        {
+          ...entry,
+          metadata: {
+            ...entry.metadata,
+            reasoning_replay: { field: "reasoning" },
+          },
+        },
+      ],
+    };
+    try {
+      await refreshCatalog();
+      const model = catalogModel("neuralwatt/kimi-k3");
+      expect(
+        (model as { reasoningReplay?: ReasoningReplay }).reasoningReplay,
+      ).toEqual({ field: "reasoning" });
+
+      const { turn2Body } = await runTwoTurns(model);
+      const assistant = assistantWireMessage(turn2Body);
+      expect(assistant.reasoning).toBe(THINKING);
+      expect(assistant).not.toHaveProperty("reasoning_content");
+      expect(turn2Body).not.toHaveProperty("chat_template_kwargs");
+    } finally {
+      catalogOverride = null;
+      await refreshCatalog();
+    }
   });
 });
 
