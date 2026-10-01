@@ -9,6 +9,7 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { resolveGatewayUrl } from "../../src/url";
 import { configLoader } from "../shared/config/loader";
 import {
   APERTURE_FEATURE_REGISTER_EVENT,
@@ -26,7 +27,7 @@ export default async function apertureConnectors(
     return;
   }
 
-  const baseUrl = config.baseUrl;
+  const baseUrl = resolveGatewayUrl(config);
   if (!baseUrl) {
     return;
   }
