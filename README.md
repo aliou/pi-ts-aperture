@@ -38,6 +38,8 @@ Registers a standalone `aperture` provider listing the models your gateway expos
 
 Capabilities (context window, vision input, reasoning, thinking levels) come from the first source that knows the model: `~/.pi/agent/models.json`, then Pi's model registry, then [models.dev](https://models.dev), then safe defaults. Costs come from the gateway. The resolved catalog is cached in Pi's models store, so models load instantly on startup, even offline.
 
+For reasoning models whose served template renders a different thinking field than the stream provides (for example Kimi K3 via NeuralWatt), the dedicated provider replays prior-turn thinking in the field the template renders, so the model keeps its chain of thought from turn 2 on. The mapping is a small per-model table (`reasoningReplay`, exact model-id match) that a gateway-declared `reasoning_replay` metadata field can override; unmapped models stream unchanged.
+
 ### Proxy existing providers
 
 [![Proxy providers walkthrough](https://assets.aliou.me/pi-extensions/demos/aperture/v0.8.0/proxy-providers.gif)](https://assets.aliou.me/pi-extensions/demos/aperture/v0.8.0/proxy-providers.mp4)
