@@ -16,9 +16,9 @@
  * match. A model-id-only fallback match copies capabilities but never cost
  * (the same model id can be served with different pricing by e.g. OpenRouter).
  * It copies only the model-intrinsic `compat` fields
- * (`supportsDeveloperRole`, `maxTokensField`,
- * `requiresReasoningContentOnAssistantMessages`) - endpoint quirks such as
- * `supportsStore` or `deferredToolsMode` are provider-specific and stay out.
+ * (`supportsDeveloperRole`, `maxTokensField`) - endpoint quirks such as
+ * `supportsStore` or `deferredToolsMode` and evidence-dependent flags like
+ * `requiresReasoningContentOnAssistantMessages` stay out of a fallback match.
  */
 
 import type { Api, Model } from "@earendil-works/pi-ai";

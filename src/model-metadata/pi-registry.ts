@@ -19,12 +19,14 @@ function hasCost(cost: Model<Api>["cost"] | undefined): boolean {
  *
  * The rest (`supportsStore`, `supportsLongCacheRetention`,
  * `deferredToolsMode`, `zaiToolStream`, provider-named `thinkingFormat`, ...)
- * is endpoint-specific and stays out of a fallback match.
+ * is endpoint-specific and stays out of a fallback match. So does
+ * `requiresReasoningContentOnAssistantMessages`: copied without evidence it
+ * appends an empty `reasoning_content` next to a populated `reasoning`,
+ * which silently drops the replay (the #102 mechanism).
  */
 const INTRINSIC_COMPAT_KEYS = [
   "supportsDeveloperRole",
   "maxTokensField",
-  "requiresReasoningContentOnAssistantMessages",
 ] as const;
 
 interface RegistryMatch {

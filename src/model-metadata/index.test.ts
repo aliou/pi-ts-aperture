@@ -111,7 +111,10 @@ describe("resolveModelMetadata / Pi registry", () => {
         off: null,
         low: "low",
       } as Model<Api>["thinkingLevelMap"],
-      compat: { supportsStore: false } as Model<Api>["compat"],
+      compat: {
+        supportsStore: false,
+        requiresReasoningContentOnAssistantMessages: true,
+      } as Model<Api>["compat"],
     });
     const metadata = resolveModelMetadata("openai", "gpt-5", {
       registryModels: [model],
@@ -129,7 +132,10 @@ describe("resolveModelMetadata / Pi registry", () => {
       cacheWrite: 2.5,
     });
     expect(metadata.thinkingLevelMap).toEqual({ off: null, low: "low" });
-    expect(metadata.compat).toEqual({ supportsStore: false });
+    expect(metadata.compat).toEqual({
+      supportsStore: false,
+      requiresReasoningContentOnAssistantMessages: true,
+    });
   });
 
   test("model-id fallback copies capabilities but not cost; copies only model-intrinsic compat", () => {
@@ -141,6 +147,7 @@ describe("resolveModelMetadata / Pi registry", () => {
         supportsDeveloperRole: false,
         maxTokensField: "max_tokens",
         supportsLongCacheRetention: false,
+        requiresReasoningContentOnAssistantMessages: true,
       } as Model<Api>["compat"],
     });
     const metadata = resolveModelMetadata("my-openai-alias", "gpt-5", {
@@ -153,9 +160,15 @@ describe("resolveModelMetadata / Pi registry", () => {
     // Intrinsic fields (model-dictated) are copied on a model-id fallback...
     expect(metadata.compat?.supportsDeveloperRole).toBe(false);
     expect(metadata.compat?.maxTokensField).toBe("max_tokens");
-    // ...endpoint-specific fields are not.
+    // ...endpoint-specific fields are not. Nor is
+    // requiresReasoningContentOnAssistantMessages: without provider-exact
+    // evidence it would append an empty reasoning_content next to a populated
+    // reasoning replay and silently drop it (the #102 mechanism).
     expect(metadata.compat?.supportsStore).toBeUndefined();
     expect(metadata.compat?.supportsLongCacheRetention).toBeUndefined();
+    expect(
+      metadata.compat?.requiresReasoningContentOnAssistantMessages,
+    ).toBeUndefined();
   });
 
   test("model-id fallback with endpoint-only compat copies nothing", () => {
