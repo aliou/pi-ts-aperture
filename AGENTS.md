@@ -5,9 +5,9 @@ Pi extension that routes LLM traffic through [Tailscale Aperture](https://tailsc
 ## Layout
 
 - `extensions/aperture/` - Main extension: proxy mode (`proxy/`), the dedicated `aperture` provider (`dedicated/`), onboarding wizard (`onboarding/`), settings UI (`settings/`).
-- `extensions/connectors/` - Registers MCP tools discovered from Aperture's `/v1/mcp` endpoint.
+- `extensions/connectors/` - Registers Aperture's `/v1/mcp` endpoint as a session-scoped MCP server via pi's built-in MCP support (`pi.registerMcpServer`, `exposure: "deferred"`; tools surface as `mcp__aperture__*`).
 - `extensions/shared/` - Config (types, defaults, loader, migrations), sync bus between the two extensions, provider mapping, Pi API selection, api routing (registry-dispatch stream helpers shared by dedicated and proxy in `api-routing.ts`), provenance (telemetry-gated header injection in `provenance.ts`).
-- `src/` - Pi-agnostic code: Aperture API client, gateway base-URL routing, model metadata resolution, retryable-error tagging, MCP client.
+- `src/` - Pi-agnostic code: Aperture API client, gateway base-URL routing, model metadata resolution, retryable-error tagging.
 
 Config types and defaults: `extensions/shared/config/types.ts` and `defaults.ts`. Read those instead of trusting any restated shape.
 
@@ -26,7 +26,7 @@ Development (`pnpm`):
 
 The pre-commit hook runs `typecheck`, `lint`, and `gen:schema`, then fails if `schema.json` is out of date. Always stage `schema.json` when you touch config types. Never edit `schema.json` by hand.
 
-User-facing commands: `/aperture:onboarding` (visible only while onboarding is pending; reloads Pi on completion) and `/aperture:settings` (syncs providers without a reload; pinned connector tools require a full restart).
+User-facing commands: `/aperture:onboarding` (visible only while onboarding is pending; reloads Pi on completion) and `/aperture:settings` (syncs providers without a reload; the connectors enable toggle applies on the next `/reload`).
 
 ## Invariants and gotchas
 
@@ -35,7 +35,7 @@ These are not obvious from reading the code. The code shows what happens; these 
 - **Global-only config.** Aperture is a network concern, so config lives at `~/.pi/agent/extensions/aperture.json` and has no per-project scope.
 - **Base URL override.** The gateway base URL can be overridden with the `APERTURE_BASE_URL` environment variable, which takes precedence over the config file value (applied in the config loader's `afterMerge` hook, normalized via `normalizeInputUrl`, and never persisted back to disk).
 - **No secrets, no hardcoded IDs.** `apiKey` is `"-"` because the gateway injects credentials server-side. Never hardcode provider IDs, URLs, or keys; the extension must work against any Aperture instance with any providers. Pi OAuth credentials still take precedence when present.
-- **Tool registration is one-way.** Pi cannot unregister tools at runtime. Pinning connector tools or changing `connectors.discoveryTools` only takes effect after a full Pi restart.
+- **Connector exposure is pi-native.** The extension registers only the `aperture` MCP server, session-scoped at load; a same-name `mcp.json` entry wins over it. Pinning or hiding connector tools is the user's `toolExposure` in `mcp.json`, not extension config — there is no extension-side pin list to keep in sync.
 - **Proxy shutdown cleanup.** The main factory tracks proxy providers it actually registers. On `session_shutdown`, mark the runtime invalidated before unregistering those providers while Pi's API is still active. `/reload` reuses Pi's model runtime, so cleanup must remove wrappers before the next factory captures native providers. Remove ids from the tracked set when settings unregister a route.
 - **Fail open on gateway fetches.** Catalog fetches (auth reconciliation, model filtering, api-override validation) that fail must leave behavior unchanged rather than break the session.
 - **OpenAI subscription transport.** Passthrough `openai-responses` routes whose upstream base URL is exactly `https://api.openai.com/v1` keep that URL on models and redirect HTTP requests through `options.fetch` in `extensions/aperture/proxy/openai-passthrough.ts`. Pi's ChatGPT sign-in detection needs the native URL to apply its request rules. Do not copy its unsupported-field list or change native auth. Other routes keep gateway base-URL rewriting.

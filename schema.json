@@ -19,7 +19,7 @@
               "pattern": "^\\d{1,15}(\\.\\d{1,15})?(\\.\\d{1,15})?$"
             }
           ],
-          "description": "Config schema version, stamped by migrations. Current version: 0.11.4."
+          "description": "Config schema version, stamped by migrations. Current version: 0.17.0."
         },
         "baseUrl": {
           "type": "string",
@@ -159,40 +159,10 @@
         "enabled": {
           "type": "boolean",
           "description": "Master switch for the connectors feature. When `false`, the connectors extension registers nothing. Defaults to `false`."
-        },
-        "pinnedTools": {
-          "type": "array",
-          "items": {
-            "$ref": "#/definitions/PinnedConnectorTool"
-          },
-          "description": "MCP tools to register as first-class Pi tools instead of via the discovery meta-tools. Matching is by `toolName`; stale entries are silently skipped on registration.\n\nEach pinned tool adds its full JSON Schema to the system prompt, so prefer pinning only the few tools you use every session."
-        },
-        "discoveryTools": {
-          "type": "boolean",
-          "description": "Register the connector discovery meta-tools (list / search / describe / call).\n\nWhen `false`, only pinned tools are registered as first-class Pi tools. Decorrelated from `enabled`, which still gates whether pinning runs at all. Defaults to `true`."
         }
       },
       "additionalProperties": false,
-      "description": "Connector tools configuration.\n\n`enabled` gates the entire connectors feature: when `false`, no connector tools (pinned or discovery) are registered. It replaces the former `features.connectors` flag."
-    },
-    "PinnedConnectorTool": {
-      "type": "object",
-      "properties": {
-        "connectorId": {
-          "type": "string",
-          "description": "Connector id exposing the tool (tool name prefix before the first `_`)."
-        },
-        "toolName": {
-          "type": "string",
-          "description": "MCP tool name (from Aperture `/v1/mcp` `tools/list`), matched verbatim."
-        }
-      },
-      "required": [
-        "connectorId",
-        "toolName"
-      ],
-      "additionalProperties": false,
-      "description": "A pinned connector tool entry.\n\n`toolName` is matched verbatim against the MCP tool name returned by Aperture's /v1/mcp endpoint. `connectorId` is the connector that exposes the tool (the tool name prefix before the first `_`). It is stored for traceability; matching is done by `toolName`.\n\nPinned tools are registered as first-class Pi tools instead of being reached through the connector proxy meta-tools. Entries whose `toolName` no longer exists on the gateway are silently skipped on registration, so stale entries are harmless.\n\nEach pinned tool adds its full schema to the system prompt, which raises context cost. Prefer pinning only the few tools you use every session."
+      "description": "Connector tools configuration.\n\n`enabled` gates the entire connectors feature: when `false`, the connectors extension registers nothing. When `true`, the gateway's `/v1/mcp` endpoint is registered with pi as a session-scoped MCP server (deferred exposure); per-tool exposure is pi-native (`toolExposure` in `mcp.json`), not part of this config."
     }
   }
 }

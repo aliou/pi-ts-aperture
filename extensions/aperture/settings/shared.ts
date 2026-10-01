@@ -4,7 +4,6 @@ import type {
   SettingsDetailField,
 } from "@aliou/pi-utils-settings";
 import type { ProviderCompatibility } from "../../../src/api/types";
-import { createMcpSession, type McpTool } from "../../../src/mcp-client";
 import {
   getApiForCompatibility,
   getSelectableApis,
@@ -14,13 +13,6 @@ import type {
   ResolvedConfig,
   RoutableApi,
 } from "../../shared/config/loader";
-
-/**
- * Above this many pinned tools, the submodule title warns about the system
- * prompt cost. Each pinned tool contributes its full JSON Schema to the
- * prompt; the proxy meta-tools exist precisely to keep that cost down.
- */
-export const CONTEXT_COST_WARNING_THRESHOLD = 10;
 
 /**
  * Aperture is a network-level concern: config is global only.
@@ -74,20 +66,6 @@ export function providerSummary(
 ): string {
   if (!enabled) return "disabled";
   return api ? `enabled · ${api}` : "enabled";
-}
-
-/**
- * Fetch the current connector tool list from the Aperture gateway.
- *
- * Used by the pinned-tools submenu so it always reflects live gateway
- * state rather than the cached set from the last session_start.
- */
-export async function listConnectorTools(
-  baseUrl: string,
-  signal?: AbortSignal,
-): Promise<McpTool[]> {
-  const session = await createMcpSession(baseUrl, signal);
-  return session.listTools(signal);
 }
 
 /**

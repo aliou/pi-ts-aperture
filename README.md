@@ -8,7 +8,7 @@ Aperture handles API key injection and request routing server-side, so Pi never 
 
 - **Dedicated** (default): a standalone `aperture` provider whose models come from the gateway.
 - **Proxy**: reroute existing Pi providers (anthropic, openai, openai-codex, ...) through Aperture.
-- **Connectors**: expose MCP tools from the gateway to Pi as discovery meta-tools or pinned first-class tools.
+- **Connectors**: register the gateway's MCP server with Pi's native MCP support, surfacing connector tools as `mcp__aperture__*`.
 
 ## Install
 
@@ -54,19 +54,33 @@ The Proxy tab in `/aperture:settings` lists gateway providers by name. Exact loc
 
 [![Connectors walkthrough](https://assets.aliou.me/pi-extensions/demos/aperture/v0.8.0/connectors.gif)](https://assets.aliou.me/pi-extensions/demos/aperture/v0.8.0/connectors.mp4)
 
-Aperture can expose MCP connectors (GitHub, your own internal tools, ...) at `/v1/mcp`. When enabled, this extension surfaces gateway tools to Pi in one of two ways:
+Aperture can expose MCP connectors (GitHub, your own internal tools, ...) at `/v1/mcp`. When enabled, this extension registers that endpoint with Pi's built-in MCP support as the `aperture` server with `deferred` exposure: tools surface as `mcp__aperture__*` and stay out of the system prompt until Pi's `tool_search` loads them.
 
-- **Discovery meta-tools** (default): `aperture_connector_list`, `aperture_connector_tool_search`, `aperture_connector_tool_describe`, and `aperture_connector_tool_call` let the model find and call connector tools on demand, keeping individual tool schemas out of the system prompt.
-- **Pinned tools**: an allow-list of gateway tools that register as first-class Pi tools. Pin a small set you use every session; each pin adds its full schema to the system prompt.
+Enable connectors in `/aperture:settings`. Manage the connection with `/mcp`. To pin tools (always declared to the model) or hide them, add a same-name entry to `~/.pi/agent/mcp.json` — a file entry takes precedence over the extension's registration:
 
-Enable connectors in `/aperture:settings`. Pin changes take effect on the next Pi restart (Pi cannot unregister tools at runtime).
+```json
+{
+  "mcpServers": {
+    "aperture": {
+      "url": "http://ai.pango-lin.ts.net/v1/mcp",
+      "exposure": "deferred",
+      "toolExposure": {
+        "github_list_repos": "direct",
+        "github_delete_*": "hidden"
+      }
+    }
+  }
+}
+```
+
+`toolExposure` keys are tool names or `*` patterns; values are `direct` (pin), `hidden` (suppress), `deferred` (tool_search discovery, the server default), or `codemode` (script-only). See pi's [tool exposure docs](https://pi.dev/docs/latest/mcp#control-tool-exposure).
 
 ## Commands
 
 | Command | Description |
 |---|---|
 | `/aperture:onboarding` | Onboarding wizard. Only available while onboarding is enabled. |
-| `/aperture:settings` | Edit connection, capabilities, providers, and pinned connector tools. |
+| `/aperture:settings` | Edit connection, capabilities, and providers. |
 
 ## Configuration
 
@@ -90,11 +104,7 @@ Configuration is saved globally to `~/.pi/agent/extensions/aperture.json`. The s
     ]
   },
   "connectors": {
-    "enabled": false,
-    "discoveryTools": true,
-    "pinnedTools": [
-      { "connectorId": "github", "toolName": "github_list_repos" }
-    ]
+    "enabled": false
   }
 }
 ```

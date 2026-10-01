@@ -24,7 +24,7 @@ test("registers placeholder auth before the gateway catalog fetch resolves", asy
       ],
     },
     dedicated: { enabled: false, providers: [] },
-    connectors: { enabled: false, pinnedTools: [], discoveryTools: true },
+    connectors: { enabled: false },
   });
 
   let resolveCatalog!: (value: never[]) => void;

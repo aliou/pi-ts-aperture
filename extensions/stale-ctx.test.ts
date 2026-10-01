@@ -1,7 +1,7 @@
 /**
  * Regression for stale `ctx` use after session replacement (#112).
  *
- * Drives the real extension factories through pi's real ExtensionRunner
+ * Drives the real extension factory through pi's real ExtensionRunner
  * (real stale-guarded ctx getters, real invalidate(), real emit dispatch);
  * only the network layer, config loader, and registry data are stubbed.
  * Deferred continuations from session_start must neither reject unhandled
@@ -15,9 +15,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { ApertureClient } from "../src/api/client";
-import { createMcpSession } from "../src/mcp-client";
 import apertureFactory from "./aperture/index";
-import connectorsFactory from "./connectors/index";
 import { configLoader } from "./shared/config/loader";
 import type { Api, Model, Provider } from "./shared/types";
 
@@ -29,14 +27,13 @@ vi.mock("./shared/config/loader", () => ({
   },
 }));
 vi.mock("../src/api/client", () => ({ ApertureClient: vi.fn() }));
-vi.mock("../src/mcp-client", () => ({ createMcpSession: vi.fn() }));
 
 const BASE_CONFIG = {
   baseUrl: "http://gateway.test",
   onboardingDone: true,
   onboarding: { enabled: false },
   dedicated: { enabled: false, providers: [] },
-  connectors: { enabled: false, pinnedTools: [], discoveryTools: true },
+  connectors: { enabled: false },
 };
 
 const unhandledRejections: unknown[] = [];
@@ -188,35 +185,5 @@ test("aperture: onSync continuations reject unhandled after session replacement"
 
   // Regression: 3 unhandled rejections, each
   // "This extension ctx is stale after session replacement or reload..."
-  expect(unhandledRejections).toEqual([]);
-});
-
-test("connectors: stale ctx touched in async session_start handler", async () => {
-  vi.mocked(configLoader.getConfig).mockReturnValue({
-    ...BASE_CONFIG,
-    proxy: { enabled: false, upstreamProviders: [] },
-    connectors: { enabled: true, pinnedTools: [], discoveryTools: true },
-  } as never);
-  const mcp = deferred<never>();
-  vi.mocked(createMcpSession).mockReturnValue(mcp.promise);
-  const { runner, errors } = await loadExtension(connectorsFactory, {
-    getAll: () => [],
-    find: () => undefined,
-    getProvider: () => undefined,
-    refresh: () => Promise.resolve({ errors: new Map() }),
-  });
-
-  const emitPromise = runner.emit({ type: "session_start" } as never);
-  await flush(); // handler parked on `await createMcpSession(baseUrl)`
-
-  runner.invalidate();
-  mcp.reject(new Error("connect failed")); // catch block calls ctx.ui.notify
-  await emitPromise;
-  await flush();
-
-  // Regression: one extension error
-  // "session_start: This extension ctx is stale after session replacement..."
-  // (contained by runner.emit's try/catch — no unhandled rejection here).
-  expect(errors).toEqual([]);
   expect(unhandledRejections).toEqual([]);
 });

@@ -55,34 +55,13 @@ export interface DedicatedProviderConfig {
 }
 
 /**
- * A pinned connector tool entry.
- *
- * `toolName` is matched verbatim against the MCP tool name returned by
- * Aperture's /v1/mcp endpoint. `connectorId` is the connector that exposes
- * the tool (the tool name prefix before the first `_`). It is stored for
- * traceability; matching is done by `toolName`.
- *
- * Pinned tools are registered as first-class Pi tools instead of being
- * reached through the connector proxy meta-tools. Entries whose `toolName`
- * no longer exists on the gateway are silently skipped on registration, so
- * stale entries are harmless.
- *
- * Each pinned tool adds its full schema to the system prompt, which raises
- * context cost. Prefer pinning only the few tools you use every session.
- */
-export interface PinnedConnectorTool {
-  /** Connector id exposing the tool (tool name prefix before the first `_`). */
-  connectorId: string;
-  /** MCP tool name (from Aperture `/v1/mcp` `tools/list`), matched verbatim. */
-  toolName: string;
-}
-
-/**
  * Connector tools configuration.
  *
- * `enabled` gates the entire connectors feature: when `false`, no connector
- * tools (pinned or discovery) are registered. It replaces the former
- * `features.connectors` flag.
+ * `enabled` gates the entire connectors feature: when `false`, the connectors
+ * extension registers nothing. When `true`, the gateway's `/v1/mcp` endpoint
+ * is registered with pi as a session-scoped MCP server (deferred exposure);
+ * per-tool exposure is pi-native (`toolExposure` in `mcp.json`), not part of
+ * this config.
  */
 export interface ConnectorsConfig {
   /**
@@ -90,24 +69,6 @@ export interface ConnectorsConfig {
    * extension registers nothing. Defaults to `false`.
    */
   enabled?: boolean;
-  /**
-   * MCP tools to register as first-class Pi tools instead of via the
-   * discovery meta-tools. Matching is by `toolName`; stale entries are
-   * silently skipped on registration.
-   *
-   * Each pinned tool adds its full JSON Schema to the system prompt, so
-   * prefer pinning only the few tools you use every session.
-   */
-  pinnedTools?: PinnedConnectorTool[];
-  /**
-   * Register the connector discovery meta-tools
-   * (list / search / describe / call).
-   *
-   * When `false`, only pinned tools are registered as first-class Pi tools.
-   * Decorrelated from `enabled`, which still gates whether pinning runs at
-   * all. Defaults to `true`.
-   */
-  discoveryTools?: boolean;
 }
 
 export interface ApertureConfig {
@@ -172,8 +133,6 @@ export interface ResolvedConfig {
   };
   connectors: {
     enabled: boolean;
-    pinnedTools: PinnedConnectorTool[];
-    discoveryTools: boolean;
   };
 }
 

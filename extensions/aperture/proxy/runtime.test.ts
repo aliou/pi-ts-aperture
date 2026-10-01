@@ -104,7 +104,7 @@ function proxyConfig(
       })),
     },
     dedicated: { enabled: false, providers: [] },
-    connectors: { enabled: false, pinnedTools: [], discoveryTools: true },
+    connectors: { enabled: false },
   };
 }
 
@@ -937,7 +937,7 @@ describe("ApertureRuntime.resolveProxyProviderSync", () => {
         })),
       },
       dedicated: { enabled: false, providers: [] },
-      connectors: { enabled: false, pinnedTools: [], discoveryTools: true },
+      connectors: { enabled: false },
     };
   }
 
