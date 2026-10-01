@@ -5,6 +5,7 @@ import type {
   RefreshModelsContext,
 } from "@earendil-works/pi-ai";
 import { buildStream, buildStreamSimple } from "../../shared/api-routing";
+import { withReasoningReplay } from "./reasoning-replay";
 
 export const DEDICATED_PROVIDER_ID = "aperture";
 
@@ -58,7 +59,7 @@ export function createDedicatedProvider(
         },
       });
     },
-    stream: buildStream(),
-    streamSimple: buildStreamSimple(),
+    stream: buildStream(withReasoningReplay),
+    streamSimple: buildStreamSimple(withReasoningReplay),
   };
 }

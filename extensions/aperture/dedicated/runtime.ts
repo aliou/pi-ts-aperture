@@ -16,6 +16,7 @@ import {
   type ModelsDevCatalog,
   resolveModelMetadata,
 } from "../../../src/model-metadata";
+import { resolveReasoningReplay } from "../../../src/reasoning-replay";
 import { resolveGatewayUrl, resolveProviderBaseUrl } from "../../../src/url";
 import {
   getApiForCompatibility,
@@ -146,6 +147,12 @@ function buildModels(
         registryModels: metadataRegistry,
         modelsDev,
       });
+      // Gateway modelInfo carries no reasoning_replay today (the client keeps
+      // only id + pricing); a future declaration would win over the table here.
+      const reasoningReplay = resolveReasoningReplay(
+        `${provider.id}/${modelId}`,
+        modelInfo,
+      );
       models.push({
         provider: PROVIDER_NAME,
         ...buildDefaultModelConfig({
@@ -158,6 +165,7 @@ function buildModels(
         }),
         api,
         baseUrl: getBaseUrlForApi(api, gatewayUrl, baseUrl, upstreamBaseUrl),
+        ...(reasoningReplay ? { reasoningReplay } : {}),
       } as Model<Api>);
     }
   }

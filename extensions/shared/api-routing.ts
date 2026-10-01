@@ -30,22 +30,41 @@ function requestModel(model: Model<Api>): Model<Api> {
   return { ...model, id: model.id.slice(slash + 1) };
 }
 
-/** Stream by dispatching to the upstream Pi API the model routes through. */
-export function buildStreamSimple() {
+type WrapOptions<TOptions> = (
+  model: Model<Api>,
+  options: TOptions | undefined,
+) => TOptions | undefined;
+
+/**
+ * Stream by dispatching to the upstream Pi API the model routes through.
+ * `wrapOptions` (dedicated-only, e.g. reasoning replay) sees the catalog
+ * model before any path-embedding id rewrite.
+ */
+export function buildStreamSimple(
+  wrapOptions?: WrapOptions<SimpleStreamOptions>,
+) {
   return (
     model: Model<Api>,
     context: TranscriptContext,
     options?: SimpleStreamOptions,
   ): AssistantMessageEventStream =>
-    providerFor(model).streamSimple(requestModel(model), context, options);
+    providerFor(model).streamSimple(
+      requestModel(model),
+      context,
+      wrapOptions ? wrapOptions(model, options) : options,
+    );
 }
 
 /** Full-stream counterpart of buildStreamSimple. */
-export function buildStream() {
+export function buildStream(wrapOptions?: WrapOptions<StreamOptions>) {
   return (
     model: Model<Api>,
     context: TranscriptContext,
     options?: StreamOptions,
   ): AssistantMessageEventStream =>
-    providerFor(model).stream(requestModel(model), context, options);
+    providerFor(model).stream(
+      requestModel(model),
+      context,
+      wrapOptions ? wrapOptions(model, options) : options,
+    );
 }

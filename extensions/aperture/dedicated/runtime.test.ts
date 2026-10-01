@@ -766,6 +766,105 @@ describe("refreshModels / provider-qualified model ids", () => {
   });
 });
 
+describe("refreshModels / reasoningReplay stamping", () => {
+  function stamped(model: Model<Api> | undefined): unknown {
+    return (model as { reasoningReplay?: unknown } | undefined)
+      ?.reasoningReplay;
+  }
+
+  /** modelInfoById entry carrying a gateway-declared reasoning_replay. */
+  function gatewayModelInfo(
+    modelId: string,
+    reasoning_replay: unknown,
+  ): ApertureProvider["modelInfoById"][string] {
+    return {
+      id: modelId,
+      reasoning_replay,
+    } as unknown as ApertureProvider["modelInfoById"][string];
+  }
+
+  test("stamps the repo-table knob onto knob-carrying models only", async () => {
+    providersMock.mockResolvedValue([
+      gatewayProvider("neuralwatt", ["kimi-k3", "glm-5.3"]),
+    ]);
+    const provider = register();
+
+    const models = await refresh(provider, memoryStore(), true);
+
+    expect(stamped(models[0])).toEqual({ field: "reasoning_content" });
+    expect(stamped(models[1])).toBeUndefined();
+  });
+
+  test("a gateway-declared reasoning_replay wins over the table", async () => {
+    providersMock.mockResolvedValue([
+      {
+        ...gatewayProvider("neuralwatt", ["kimi-k3"]),
+        modelInfoById: {
+          "kimi-k3": gatewayModelInfo("kimi-k3", { field: "reasoning" }),
+        },
+      },
+    ]);
+    const provider = register();
+
+    const models = await refresh(provider, memoryStore(), true);
+
+    expect(stamped(models[0])).toEqual({ field: "reasoning" });
+  });
+
+  test("a gateway declaration maps an id the table does not carry", async () => {
+    providersMock.mockResolvedValue([
+      {
+        ...gatewayProvider("openai", ["gpt-5"]),
+        modelInfoById: {
+          "gpt-5": gatewayModelInfo("gpt-5", {
+            field: "reasoning_content",
+            templateKwargs: { clear_thinking: false },
+          }),
+        },
+      },
+    ]);
+    const provider = register();
+
+    const models = await refresh(provider, memoryStore(), true);
+
+    expect(stamped(models[0])).toEqual({
+      field: "reasoning_content",
+      templateKwargs: { clear_thinking: false },
+    });
+  });
+
+  test("an invalid gateway declaration fails open to the table", async () => {
+    providersMock.mockResolvedValue([
+      {
+        ...gatewayProvider("neuralwatt", ["kimi-k3"]),
+        modelInfoById: {
+          "kimi-k3": gatewayModelInfo("kimi-k3", { field: "thoughts" }),
+        },
+      },
+    ]);
+    const provider = register();
+
+    const models = await refresh(provider, memoryStore(), true);
+
+    expect(stamped(models[0])).toEqual({ field: "reasoning_content" });
+  });
+
+  test("the stamp survives a cache-only restore", async () => {
+    providersMock.mockResolvedValue([
+      gatewayProvider("neuralwatt", ["kimi-k3"]),
+    ]);
+    const provider = register();
+    const store = memoryStore();
+    await refresh(provider, store, true);
+    providersMock.mockClear();
+
+    const models = await refresh(provider, store, false);
+
+    expect(stamped(models[0])).toEqual({ field: "reasoning_content" });
+    expect(providersMock).not.toHaveBeenCalled();
+  });
+});
+
 describe("refreshModels / api overrides", () => {
   function multiApiProvider(id: string, models: string[]): ApertureProvider {
     return {
