@@ -90,10 +90,16 @@ export function resolveReasoningReplay(
         )
       : undefined;
   if (declared) return declared;
-  const direct = REASONING_REPLAY[modelId];
+  const direct = tableKnob(modelId);
   if (direct) return direct;
   const slash = modelId.indexOf("/");
-  return slash === -1 ? undefined : REASONING_REPLAY[modelId.slice(slash + 1)];
+  return slash === -1 ? undefined : tableKnob(modelId.slice(slash + 1));
+}
+
+// The table is a plain object literal, so an own-property guard is required:
+// inherited members (`constructor`, `toString`, …) would otherwise resolve.
+function tableKnob(id: string): ReasoningReplay | undefined {
+  return Object.hasOwn(REASONING_REPLAY, id) ? REASONING_REPLAY[id] : undefined;
 }
 
 /**

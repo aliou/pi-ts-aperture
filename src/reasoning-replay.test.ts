@@ -92,6 +92,13 @@ describe("resolveReasoningReplay", () => {
     expect(resolveReasoningReplay("synthetic/nested/kimi-k3")).toBeUndefined();
   });
 
+  test("inherited Object members are knob-less, bare or qualified", () => {
+    expect(resolveReasoningReplay("constructor")).toBeUndefined();
+    expect(resolveReasoningReplay("toString")).toBeUndefined();
+    expect(resolveReasoningReplay("neuralwatt/constructor")).toBeUndefined();
+    expect(resolveReasoningReplay("neuralwatt/toString")).toBeUndefined();
+  });
+
   test("a gateway-declared reasoning_replay wins over the table", () => {
     const declared = { field: "reasoning" };
     expect(

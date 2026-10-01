@@ -15,10 +15,7 @@ import type {
 import { getApiProvider } from "@earendil-works/pi-ai/compat";
 import { beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 import { MODELS_DEV_URL } from "../../../src/model-metadata";
-import {
-  REASONING_REPLAY,
-  type ReasoningReplay,
-} from "../../../src/reasoning-replay";
+import type { ReasoningReplay } from "../../../src/reasoning-replay";
 import type { ResolvedConfig } from "../../shared/config/types";
 
 const GATEWAY = "https://ai.pango-lin.ts.net";
@@ -244,15 +241,32 @@ beforeEach(() => {
 });
 
 describe("catalog stamping", () => {
-  test.each(KNOBBED_IDS)("%s carries the table knob", (id) => {
-    const bareId = id.slice(id.indexOf("/") + 1);
-    expect(reasoningReplayFor(catalogModel(id))).toEqual(
-      REASONING_REPLAY[bareId],
-    );
+  // Literal pins, not table-derived: stamping must fail on table drift too.
+  const EXPECTED_KNOBS: Record<string, ReasoningReplay> = {
+    "neuralwatt/kimi-k3": { field: "reasoning_content" },
+    "neuralwatt/kimi-k3-fast": { field: "reasoning_content" },
+    "neuralwatt/kimi-k3-flex": { field: "reasoning_content" },
+    "synthetic/hf:moonshotai/Kimi-K3": { field: "reasoning_content" },
+    "neuralwatt/deepseek-v4.1-flash": { field: "reasoning_content" },
+    "synthetic/hf:deepseek-ai/DeepSeek-V4.1-Flash": {
+      field: "reasoning_content",
+    },
+    "synthetic/syn:large:text": { field: "reasoning_content" },
+    "synthetic/syn:large:vision": { field: "reasoning_content" },
+    "synthetic/hf:zai-org/GLM-5.3-Flash": {
+      field: "reasoning_content",
+      templateKwargs: { clear_thinking: false },
+    },
+  };
+
+  test.each(
+    Object.entries(EXPECTED_KNOBS),
+  )("%s carries its knob", (id, knob) => {
+    expect(reasoningReplayFor(catalogModel(id))).toEqual(knob);
     expect(
       (catalogModel(id) as { reasoningReplay?: ReasoningReplay })
         .reasoningReplay,
-    ).toEqual(REASONING_REPLAY[bareId]);
+    ).toEqual(knob);
   });
 
   test.each(KNOBLESS_IDS)("%s stays knob-less", (id) => {
