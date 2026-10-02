@@ -1,6 +1,10 @@
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import type { AssistantMessage } from "@earendil-works/pi-ai";
 import * as responsesAdapter from "@earendil-works/pi-ai/api/openai-responses";
-import { ModelRuntime } from "@earendil-works/pi-coding-agent";
+import { createAssistantMessageEventStream } from "@earendil-works/pi-ai/utils/event-stream";
+import { ModelRuntime, SessionManager } from "@earendil-works/pi-coding-agent";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { ApertureClient } from "../../../src/api/client";
 import { shouldUseGatewayRoot } from "../../../src/base-url-routing";
@@ -29,6 +33,32 @@ function model(
   baseUrl?: string,
 ): Model<Api> {
   return { provider, id, api, baseUrl } as Model<Api>;
+}
+
+// Fake upstream stream following the pi-ai adapter contract: the recorded
+// AssistantMessage carries the request model id (`model: model.id`).
+function doneStream(m: Model<Api>) {
+  const message = {
+    role: "assistant",
+    content: [],
+    api: m.api,
+    provider: m.provider,
+    model: m.id,
+    usage: {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 0,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    },
+    stopReason: "stop",
+    timestamp: Date.now(),
+  } as AssistantMessage;
+  const stream = createAssistantMessageEventStream();
+  stream.push({ type: "done", reason: "stop", message });
+  stream.end(message);
+  return stream;
 }
 
 // Builds SyncDeps whose getProvider returns a fake native provider backed by
@@ -379,8 +409,8 @@ describe("ApertureRuntime.sync provider-qualified model ids", () => {
   });
 
   test("getModels() keeps bare ids while stream dispatch rewrites them", async () => {
-    const stream = vi.fn().mockReturnValue("stream-result");
-    const streamSimple = vi.fn().mockReturnValue("stream-simple-result");
+    const stream = vi.fn().mockImplementation(doneStream);
+    const streamSimple = vi.fn().mockImplementation(doneStream);
     const native = {
       id: "synthetic",
       getModels: () => [model("synthetic", "foo")],
@@ -403,16 +433,20 @@ describe("ApertureRuntime.sync provider-qualified model ids", () => {
     expect(wrapped.getModels().map((m) => m.id)).toEqual(["foo"]);
 
     const context = {} as never;
-    expect(wrapped.stream(bareModel, context, undefined)).toBe("stream-result");
+    const streamed = await wrapped
+      .stream(bareModel, context, undefined)
+      .result();
+    expect(streamed.model).toBe("foo");
     expect(stream.mock.calls[0]?.[0]).toMatchObject({
       provider: "synthetic",
       id: "synthetic/foo",
     });
 
     stream.mockClear();
-    expect(wrapped.streamSimple(bareModel, context, undefined)).toBe(
-      "stream-simple-result",
-    );
+    const simple = await wrapped
+      .streamSimple(bareModel, context, undefined)
+      .result();
+    expect(simple.model).toBe("foo");
     expect(streamSimple.mock.calls[0]?.[0]).toMatchObject({
       provider: "synthetic",
       id: "synthetic/foo",
@@ -426,8 +460,8 @@ describe("ApertureRuntime.sync provider-qualified model ids", () => {
   // URL, which the gateway forwards verbatim upstream; qualifying it 404s.
   // Stream dispatch must keep the bare id for those APIs.
   test("stream dispatch keeps bare ids for path-embedding APIs", async () => {
-    const stream = vi.fn().mockReturnValue("stream-result");
-    const streamSimple = vi.fn().mockReturnValue("stream-simple-result");
+    const stream = vi.fn().mockImplementation(doneStream);
+    const streamSimple = vi.fn().mockImplementation(doneStream);
     const native = {
       id: "google",
       getModels: () => [
@@ -477,8 +511,8 @@ describe("ApertureRuntime.sync provider-qualified model ids", () => {
   // previous wrapper. Routing stream/streamSimple through `native` (the
   // wrapper) double-qualifies; delegate through the first-seen provider.
   test("stream dispatch does not double-qualify across re-syncs", async () => {
-    const stream = vi.fn().mockReturnValue("stream-result");
-    const streamSimple = vi.fn().mockReturnValue("stream-simple-result");
+    const stream = vi.fn().mockImplementation(doneStream);
+    const streamSimple = vi.fn().mockImplementation(doneStream);
     // An external store mimicking Pi's provider registry: registration
     // replaces the entry, so a later getProvider returns the wrapper.
     const store = new Map<string, unknown>();
@@ -661,8 +695,8 @@ describe("ApertureRuntime.sync OpenAI passthrough transport", () => {
       id: "openai",
       getModels: () => [model("openai", "gpt-6-sol", api, baseUrl)],
       auth: { apiKey: { resolve: vi.fn() } },
-      stream: vi.fn(),
-      streamSimple: vi.fn(),
+      stream: vi.fn().mockImplementation(doneStream),
+      streamSimple: vi.fn().mockImplementation(doneStream),
     };
     let current = native;
     const deps = {
@@ -789,6 +823,76 @@ describe("ApertureRuntime.sync OpenAI passthrough transport", () => {
     expect(proxyBody).toEqual({
       ...directBody,
       model: "openai-subscription/gpt-6-sol",
+    });
+  });
+});
+
+describe("ApertureRuntime.sync session model restore", () => {
+  // The proxy qualifies request model ids with the gateway id; pi-ai stamps
+  // that id onto the recorded AssistantMessage (`model: model.id`), and Pi
+  // restores a session from the last assistant message's { provider, model }.
+  // If the qualified id leaks into the session file, resume warns
+  // "Could not restore model anthropic/anthropic-oauth/claude-opus-5-5".
+  test("the model id recorded in the session file resolves on restore", async () => {
+    mockCatalog([provider("anthropic-oauth", ["claude-opus-5-5"])]);
+    getConfig.mockReturnValue(
+      proxyConfig([
+        {
+          id: "anthropic",
+          gatewayId: "anthropic-oauth",
+          shouldCheckGatewayModels: false,
+        },
+      ]),
+    );
+    const claude = model("anthropic", "claude-opus-5-5", "anthropic-messages");
+    const native = {
+      id: "anthropic",
+      getModels: () => [claude],
+      stream: doneStream,
+      streamSimple: doneStream,
+    };
+    const registerNativeProvider = vi.fn();
+
+    await new ApertureRuntime().sync({
+      getProvider: () => native,
+      registerNativeProvider,
+      getModels: () => [claude],
+    });
+    const wrapped = (
+      registerNativeProvider.mock.calls.at(-1) as [typeof native]
+    )[0];
+
+    const recorded = await wrapped
+      .stream(claude, {} as never, undefined)
+      .result();
+
+    const dir = mkdtempSync(join(tmpdir(), "aperture-session-"));
+    const session = SessionManager.create(dir, dir);
+    session.appendMessage(recorded);
+    const file = session.getSessionFile();
+    expect(file).toBeDefined();
+
+    // Mirror Pi's resume: last assistant message's { provider, model } is
+    // resolved against the registered models.
+    const restored = SessionManager.open(file as string);
+    const lastAssistant = restored
+      .getEntries()
+      .filter(
+        (entry) =>
+          entry.type === "message" && entry.message.role === "assistant",
+      )
+      .at(-1);
+    const saved =
+      lastAssistant?.type === "message" &&
+      lastAssistant.message.role === "assistant"
+        ? {
+            provider: lastAssistant.message.provider,
+            modelId: lastAssistant.message.model,
+          }
+        : undefined;
+    expect(saved).toEqual({
+      provider: "anthropic",
+      modelId: "claude-opus-5-5",
     });
   });
 });
@@ -1336,7 +1440,7 @@ describe("ApertureRuntime.sync api overrides", () => {
 
   test("stream dispatch delegates to the upstream provider without an override", async () => {
     mockCatalog([provider("groq", [])]);
-    const firstSeenStreamSimple = vi.fn();
+    const firstSeenStreamSimple = vi.fn().mockImplementation(doneStream);
     const native = {
       id: "groq",
       getModels: () => [
@@ -1347,7 +1451,7 @@ describe("ApertureRuntime.sync api overrides", () => {
           "https://api.groq.com/openai/v1",
         ),
       ],
-      stream: vi.fn(),
+      stream: vi.fn().mockImplementation(doneStream),
       streamSimple: firstSeenStreamSimple,
     };
     const registerNativeProvider = vi.fn();
@@ -1512,8 +1616,8 @@ describe("ApertureRuntime.sync passthrough auth", () => {
       id,
       getModels: () => models,
       auth: { apiKey: { name: `${id} key`, resolve } },
-      stream: vi.fn(),
-      streamSimple: vi.fn(),
+      stream: vi.fn().mockImplementation(doneStream),
+      streamSimple: vi.fn().mockImplementation(doneStream),
     };
   }
 
@@ -1722,12 +1826,12 @@ describe("ApertureRuntime.sync manual gateway mapping", () => {
         },
       ]),
     );
-    const stream = vi.fn();
+    const stream = vi.fn().mockImplementation(doneStream);
     const native = {
       id: "anthropic",
       getModels: () => [model("anthropic", "claude", "anthropic-messages")],
       stream,
-      streamSimple: vi.fn(),
+      streamSimple: vi.fn().mockImplementation(doneStream),
     };
     const registerNativeProvider = vi.fn();
     await new ApertureRuntime().sync({
@@ -1812,8 +1916,8 @@ describe("ApertureRuntime.sync manual gateway mapping", () => {
       id: "anthropic",
       auth,
       getModels: () => [model("anthropic", "claude", "anthropic-messages")],
-      stream: vi.fn(),
-      streamSimple: vi.fn(),
+      stream: vi.fn().mockImplementation(doneStream),
+      streamSimple: vi.fn().mockImplementation(doneStream),
     };
     const registerNativeProvider = vi.fn();
     await new ApertureRuntime().sync({
@@ -1842,8 +1946,8 @@ describe("ApertureRuntime.sync manual gateway mapping", () => {
       id: "local",
       auth,
       getModels: () => [model("local", "m-1")],
-      stream: vi.fn(),
-      streamSimple: vi.fn(),
+      stream: vi.fn().mockImplementation(doneStream),
+      streamSimple: vi.fn().mockImplementation(doneStream),
     };
     let current: typeof native = native;
     const registerNativeProvider = vi.fn((provider: typeof native) => {

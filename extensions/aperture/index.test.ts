@@ -3,6 +3,7 @@
  * Config, gateway fetches, and settings files are mocked.
  */
 import { join } from "node:path";
+import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import {
   type ExtensionAPI,
   getAgentDir,
@@ -263,7 +264,9 @@ describe("proxy shutdown cleanup", () => {
     "streamSimple",
   ] as const)("%s uses the current gateway after shutdown and reload", async (method) => {
     const { registry, native } = await setupRegistry();
-    const spy = vi.spyOn(native, method).mockReturnValue({} as never);
+    const spy = vi
+      .spyOn(native, method)
+      .mockReturnValue(createAssistantMessageEventStream());
     const first = await loadLifecycle(registry);
     await first.emit("session_start");
     await first.emit("session_shutdown");

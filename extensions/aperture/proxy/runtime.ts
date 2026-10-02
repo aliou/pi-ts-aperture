@@ -1,9 +1,6 @@
 import { ApertureClient } from "../../../src/api/client";
 import type { ApertureProvider } from "../../../src/api/types";
-import {
-  embedsModelIdInPath,
-  getBaseUrlForApi,
-} from "../../../src/base-url-routing";
+import { getBaseUrlForApi } from "../../../src/base-url-routing";
 import { resolveGatewayUrl, resolveProviderBaseUrl } from "../../../src/url";
 import { buildStream, buildStreamSimple } from "../../shared/api-routing";
 import { isSelectableApi } from "../../shared/api-selection";
@@ -17,23 +14,10 @@ import type {
   SyncDeps,
 } from "../../shared/types";
 
+import { qualifyModelId, withModelId } from "./model-id";
 import { OPENAI_BASE_URL, withOpenAIGatewayFetch } from "./openai-passthrough";
 
 const MAX_MISSING_MODELS_PER_PROVIDER = 5;
-
-function qualifyModelId<T extends Api>(
-  providerName: string,
-  model: Model<T>,
-): Model<T> {
-  // Path-embedding APIs (Gemini/Vertex/Bedrock) put the model id in the URL,
-  // which the gateway forwards verbatim upstream; qualifying it 404s. Body
-  // APIs keep the qualified id so the gateway can disambiguate duplicates.
-  if (embedsModelIdInPath(model.api)) return model;
-  // Skip re-prefixing an id a stale pre-reload wrapper already prefixed.
-  const prefix = `${providerName}/`;
-  if (model.id.startsWith(prefix)) return model;
-  return { ...model, id: `${prefix}${model.id}` };
-}
 
 export class ApertureRuntime {
   // Upstream provider base URLs captured on first registration. A settings
@@ -234,21 +218,23 @@ export class ApertureRuntime {
 
           stream: (model, context, options) => {
             const streamFn = apiOverride ? buildStream() : firstSeen.stream;
-            return streamFn(
+            const stream = streamFn(
               qualifyModelId(gatewayId, model),
               context,
               withOpenAIGatewayFetch(options, fetchGateway),
             );
+            return withModelId(stream, model.id);
           },
           streamSimple: (model, context, options) => {
             const streamSimpleFn = apiOverride
               ? buildStreamSimple()
               : firstSeen.streamSimple;
-            return streamSimpleFn(
+            const stream = streamSimpleFn(
               qualifyModelId(gatewayId, model),
               context,
               withOpenAIGatewayFetch(options, fetchGateway),
             );
+            return withModelId(stream, model.id);
           },
           // Override/none providers: the gateway injects the upstream credential,
           // so a placeholder key keeps them surfaced in the model picker.
