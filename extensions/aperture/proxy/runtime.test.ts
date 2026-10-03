@@ -1,10 +1,14 @@
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AssistantMessage } from "@earendil-works/pi-ai";
+import type { AssistantMessage, CredentialStore } from "@earendil-works/pi-ai";
 import * as responsesAdapter from "@earendil-works/pi-ai/api/openai-responses";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai/utils/event-stream";
-import { ModelRuntime, SessionManager } from "@earendil-works/pi-coding-agent";
+import {
+  ModelRegistry,
+  ModelRuntime,
+  SessionManager,
+} from "@earendil-works/pi-coding-agent";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { ApertureClient } from "../../../src/api/client";
 import { shouldUseGatewayRoot } from "../../../src/base-url-routing";
@@ -894,6 +898,68 @@ describe("ApertureRuntime.sync session model restore", () => {
       provider: "anthropic",
       modelId: "claude-opus-5-5",
     });
+  });
+});
+
+describe("ApertureRuntime.sync provider composition with models.json", () => {
+  test("the catalog Pi serves after registration keeps the gateway base URL", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "aperture-composition-"));
+    writeFileSync(
+      join(dir, "models.json"),
+      JSON.stringify({
+        providers: {
+          anthropic: { compat: { sendSessionAffinityHeaders: true } },
+        },
+      }),
+    );
+    const credentials: CredentialStore = {
+      read: async (id) =>
+        id === "anthropic"
+          ? {
+              type: "oauth",
+              access: "test-access",
+              refresh: "test-refresh",
+              expires: Date.now() + 3_600_000,
+            }
+          : undefined,
+      list: async () => [{ providerId: "anthropic", type: "oauth" }],
+      modify: async (id, mutate) => {
+        const current = await credentials.read(id);
+        return mutate(current);
+      },
+      delete: async () => {},
+    };
+    const runtime = await ModelRuntime.create({
+      credentials,
+      modelsPath: join(dir, "models.json"),
+      refreshOnCreate: false,
+    });
+    const registry = new ModelRegistry(runtime);
+    const claude = runtime
+      .getModels("anthropic")
+      .find((candidate) => candidate.api === "anthropic-messages");
+    if (!claude) throw new Error("no anthropic-messages model in the catalog");
+
+    mockCatalog([provider("anthropic-oauth", [claude.id])]);
+    getConfig.mockReturnValue(
+      proxyConfig([
+        {
+          id: "anthropic",
+          gatewayId: "anthropic-oauth",
+          shouldCheckGatewayModels: false,
+        },
+      ]),
+    );
+
+    await new ApertureRuntime().sync({
+      getProvider: (id) => registry.getProvider(id),
+      registerNativeProvider: (wrapped) => registry.registerProvider(wrapped),
+      getModels: () => registry.getAll(),
+    });
+
+    const wrapper = registry.getRegisteredNativeProvider("anthropic");
+    expect(wrapper?.getModels()[0]?.baseUrl).toBe(gatewayUrl);
+    expect(runtime.getModel("anthropic", claude.id)?.baseUrl).toBe(gatewayUrl);
   });
 });
 

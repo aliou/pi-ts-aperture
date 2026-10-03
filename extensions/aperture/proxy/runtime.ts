@@ -187,25 +187,34 @@ export class ApertureRuntime {
           const existing = registered.get(providerName);
           if (existing) {
             existing.getModels = () => [];
+            existing.getAllModels = () => [];
             deps.registerNativeProvider(existing);
           }
           continue;
         }
         const baseAuth = firstSeen.auth?.apiKey;
         if (!catalogSettled && !baseAuth) continue;
+        const serveGatewayModels = (
+          models: readonly Model<Api>[],
+        ): readonly Model<Api>[] =>
+          (servedIds === undefined
+            ? models
+            : models.filter((model) => servedIds.has(model.id))
+          ).map((model) => ({
+            ...model,
+            api,
+            baseUrl: providerBaseUrl,
+          }));
         const wrapped: Provider = {
           // Avoid copying composed methods that delegate back to this wrapper.
           ...firstSeen,
           id: providerName,
-          getModels: () =>
-            (servedIds === undefined
-              ? firstSeen.getModels()
-              : firstSeen.getModels().filter((model) => servedIds.has(model.id))
-            ).map((model) => ({
-              ...model,
-              api,
-              baseUrl: providerBaseUrl,
-            })),
+          getModels: () => serveGatewayModels(firstSeen.getModels()),
+          getAllModels: () =>
+            serveGatewayModels(
+              (firstSeen.getAllModels?.() ??
+                firstSeen.getModels()) as Model<Api>[],
+            ),
           // Delegate through `firstSeen`, not `native`: from the second sync
           // onwards `native` is our own previous wrapper, so routing its
           // streams would double-qualify the model id. Same rationale as
@@ -218,8 +227,10 @@ export class ApertureRuntime {
 
           stream: (model, context, options) => {
             const streamFn = apiOverride ? buildStream() : firstSeen.stream;
+            // Enforce the gateway URL: auth resolution (e.g. GitHub Copilot
+            // OAuth) can rewrite model.baseUrl before the request reaches us.
             const stream = streamFn(
-              qualifyModelId(gatewayId, model),
+              qualifyModelId(gatewayId, { ...model, baseUrl: providerBaseUrl }),
               context,
               withOpenAIGatewayFetch(options, fetchGateway),
             );
@@ -230,7 +241,7 @@ export class ApertureRuntime {
               ? buildStreamSimple()
               : firstSeen.streamSimple;
             const stream = streamSimpleFn(
-              qualifyModelId(gatewayId, model),
+              qualifyModelId(gatewayId, { ...model, baseUrl: providerBaseUrl }),
               context,
               withOpenAIGatewayFetch(options, fetchGateway),
             );
