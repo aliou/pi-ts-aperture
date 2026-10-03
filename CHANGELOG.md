@@ -1,5 +1,11 @@
 # @aliou/pi-ts-aperture
 
+## 0.17.1
+
+### Patch Changes
+
+- 04a9708: Preserve prior-turn reasoning and signatures in proxy mode by matching same-model history to the gateway request ID at dispatch. Keep stored model IDs bare so resumed sessions restore the selected model.
+
 ## 0.17.0
 
 ### Minor Changes
