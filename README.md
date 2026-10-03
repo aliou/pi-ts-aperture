@@ -44,6 +44,8 @@ Capabilities (context window, vision input, reasoning, thinking levels) come fro
 
 Reroutes existing Pi providers through Aperture. Each provider keeps its own model definitions and settings. Aperture injects server-side credentials or forwards Pi's native credential for passthrough providers.
 
+Session messages keep the local model ID so Pi can restore the selected model on resume. For each request, the proxy aligns matching prior assistant turns with the gateway-qualified request ID so Pi preserves reasoning and signatures during replay. Turns from other providers, APIs, or models keep Pi's normal cross-model conversion.
+
 Proxy wrappers are removed on session shutdown and rebuilt on session start. `/reload` applies gateway changes without retaining wrappers from the prior extension load.
 
 OpenAI Responses passthrough routes support Pi's **Sign in with ChatGPT** on Pi 0.99 or later. The extension preserves OpenAI's native base URL so Pi applies its subscription request rules, then redirects HTTP requests to the gateway through a custom fetch. OpenAI API keys use the same route with Pi's normal request parameters. Other routes rewrite the model's base URL to the gateway.

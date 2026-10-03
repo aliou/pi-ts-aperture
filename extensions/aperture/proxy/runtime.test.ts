@@ -2,8 +2,10 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AssistantMessage, CredentialStore } from "@earendil-works/pi-ai";
+import * as completionsAdapter from "@earendil-works/pi-ai/api/openai-completions";
 import * as responsesAdapter from "@earendil-works/pi-ai/api/openai-responses";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai/utils/event-stream";
+import { normalizeContext } from "@earendil-works/pi-ai/utils/transcript";
 import {
   ModelRegistry,
   ModelRuntime,
@@ -898,6 +900,99 @@ describe("ApertureRuntime.sync session model restore", () => {
       provider: "anthropic",
       modelId: "claude-opus-5-5",
     });
+  });
+});
+
+describe("ApertureRuntime.sync reasoning replay", () => {
+  test.each([
+    ["stream", false, "reasoning"],
+    ["streamSimple", false, "reasoning"],
+    ["stream", false, "reasoning_content"],
+    ["streamSimple", false, "reasoning_content"],
+    ["stream", true, "reasoning"],
+    ["streamSimple", true, "reasoning"],
+    ["stream", true, "reasoning_content"],
+    ["streamSimple", true, "reasoning_content"],
+  ] as const)("%s with API override %s replays %s", async (method, override, field) => {
+    const local = {
+      ...model("local-provider", "kimi-k3", "openai-completions"),
+      input: ["text"],
+      reasoning: true,
+      maxTokens: 128,
+      compat: { requiresThinkingAsText: false },
+    } as Model<"openai-completions">;
+    mockCatalog([
+      {
+        ...provider("gateway-provider", [local.id]),
+        compatibility: { openai_chat: true },
+      },
+    ]);
+    getConfig.mockReturnValue(
+      proxyConfig([
+        {
+          id: local.provider,
+          gatewayId: "gateway-provider",
+          shouldCheckGatewayModels: false,
+          api: override ? "openai-completions" : undefined,
+        },
+      ]),
+    );
+    const native = {
+      id: local.provider,
+      getModels: () => [local],
+      stream: completionsAdapter.stream,
+      streamSimple: completionsAdapter.streamSimple,
+    };
+    const registerNativeProvider = vi.fn();
+    await new ApertureRuntime().sync({
+      getProvider: () => native,
+      registerNativeProvider,
+      getModels: () => [local],
+    });
+    const wrapped = registerNativeProvider.mock.calls.at(-1)?.[0];
+    const first = await doneStream(local).result();
+    first.content = [
+      {
+        type: "thinking",
+        thinking: "prior reasoning",
+        thinkingSignature: field,
+      },
+      { type: "text", text: "prior answer" },
+    ];
+    Object.freeze(first);
+    const context = normalizeContext({
+      systemPrompt: "Keep reasoning separate.",
+      messages: [first, { role: "user", content: "Continue", timestamp: 1 }],
+    });
+    const snapshot = structuredClone(context);
+    const fetch = vi.fn().mockResolvedValue(
+      new Response(
+        'data: {"choices":[{"delta":{"content":"next answer"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n',
+        {
+          headers: { "content-type": "text/event-stream" },
+        },
+      ),
+    );
+
+    const second = await wrapped[method](local, context, {
+      apiKey: "-",
+      fetch,
+      maxRetries: 0,
+    }).result();
+
+    const payload = JSON.parse(fetch.mock.calls[0][1].body);
+    expect(payload.model).toBe("gateway-provider/kimi-k3");
+    expect(
+      payload.messages.find((m: { role: string }) => m.role === "assistant"),
+    ).toMatchObject({
+      content: "prior answer",
+      [field]: "prior reasoning",
+    });
+    expect(second.stopReason).toBe("stop");
+    expect(second.model).toBe(local.id);
+    expect(context).toEqual(snapshot);
+    expect(first.model).toBe(local.id);
+    expect(wrapped.getModels()[0].id).toBe(local.id);
   });
 });
 

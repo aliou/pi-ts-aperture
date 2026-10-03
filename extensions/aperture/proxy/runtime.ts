@@ -14,7 +14,7 @@ import type {
   SyncDeps,
 } from "../../shared/types";
 
-import { qualifyModelId, withModelId } from "./model-id";
+import { qualifyModelId, withModelId, withRequestModelId } from "./model-id";
 import { OPENAI_BASE_URL, withOpenAIGatewayFetch } from "./openai-passthrough";
 
 const MAX_MISSING_MODELS_PER_PROVIDER = 5;
@@ -229,9 +229,13 @@ export class ApertureRuntime {
             const streamFn = apiOverride ? buildStream() : firstSeen.stream;
             // Enforce the gateway URL: auth resolution (e.g. GitHub Copilot
             // OAuth) can rewrite model.baseUrl before the request reaches us.
+            const requestModel = qualifyModelId(gatewayId, {
+              ...model,
+              baseUrl: providerBaseUrl,
+            });
             const stream = streamFn(
-              qualifyModelId(gatewayId, { ...model, baseUrl: providerBaseUrl }),
-              context,
+              requestModel,
+              withRequestModelId(context, model, requestModel),
               withOpenAIGatewayFetch(options, fetchGateway),
             );
             return withModelId(stream, model.id);
@@ -240,9 +244,13 @@ export class ApertureRuntime {
             const streamSimpleFn = apiOverride
               ? buildStreamSimple()
               : firstSeen.streamSimple;
+            const requestModel = qualifyModelId(gatewayId, {
+              ...model,
+              baseUrl: providerBaseUrl,
+            });
             const stream = streamSimpleFn(
-              qualifyModelId(gatewayId, { ...model, baseUrl: providerBaseUrl }),
-              context,
+              requestModel,
+              withRequestModelId(context, model, requestModel),
               withOpenAIGatewayFetch(options, fetchGateway),
             );
             return withModelId(stream, model.id);

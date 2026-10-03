@@ -8,6 +8,7 @@ import type {
   Api,
   AssistantMessageEventStream,
   Model,
+  TranscriptContext,
 } from "../../shared/types";
 
 export function qualifyModelId<T extends Api>(
@@ -22,6 +23,32 @@ export function qualifyModelId<T extends Api>(
   const prefix = `${providerName}/`;
   if (model.id.startsWith(prefix)) return model;
   return { ...model, id: `${prefix}${model.id}` };
+}
+
+/**
+ * Match same-model history to the transport id before pi-ai converts it.
+ * Session messages keep public ids for restore; pi-ai compares them with the
+ * request id to decide whether reasoning and signatures are safe to replay.
+ * Copy only matching assistant envelopes, leaving session state untouched.
+ */
+export function withRequestModelId(
+  context: TranscriptContext,
+  model: Model<Api>,
+  requestModel: Model<Api>,
+): TranscriptContext {
+  if (model.id === requestModel.id) return context;
+  if (!context.messages?.length) return context;
+
+  return {
+    ...context,
+    messages: context.messages.map((message) => {
+      if (message.role !== "assistant") return message;
+      if (message.provider !== model.provider) return message;
+      if (message.api !== model.api) return message;
+      if (message.model !== model.id) return message;
+      return { ...message, model: requestModel.id };
+    }),
+  };
 }
 
 function eventMessage(event: AssistantMessageEvent): AssistantMessage {
