@@ -11,10 +11,12 @@ import {
   ExtensionRunner,
 } from "@earendil-works/pi-coding-agent";
 import { afterAll, afterEach, describe, expect, test, vi } from "vitest";
+import { configLoader } from "../shared/config/loader";
 import {
   APERTURE_FEATURE_REGISTER_EVENT,
   APERTURE_FEATURE_REQUEST_EVENT,
 } from "../shared/events";
+import { APERTURE_CONFIG_SYNC_EVENT } from "../shared/sync-bus";
 
 const EXTENSION_PATH = fileURLToPath(new URL("./index.ts", import.meta.url));
 
@@ -160,6 +162,123 @@ describe("mcp extension", () => {
 
     eventBus.emit(APERTURE_FEATURE_REQUEST_EVENT, {});
 
+    expect(received).toHaveLength(1);
+    expect(received[0]).toMatchObject({
+      source: "aperture",
+      feature: { id: "mcp" },
+    });
+  });
+
+  test("applies config changes on the sync event without a reload", async () => {
+    writeConfig({
+      baseUrl: "https://ai.pango-lin.ts.net",
+      mcp: { enabled: false },
+    });
+    const { eventBus, runtime, errors } = await load();
+    expect(errors).toEqual([]);
+    expect(runtime.mcpServers.list()).toEqual([]);
+
+    writeConfig({
+      baseUrl: "https://ai.pango-lin.ts.net",
+      mcp: { enabled: true },
+    });
+    eventBus.emit(APERTURE_CONFIG_SYNC_EVENT, {});
+    await vi.waitFor(() => {
+      expect(runtime.mcpServers.get("aperture")?.config).toMatchObject({
+        url: "https://ai.pango-lin.ts.net/v1/mcp",
+        exposure: "deferred",
+      });
+    });
+
+    writeConfig({
+      baseUrl: "https://ai.pango-lin.ts.net",
+      mcp: { enabled: false },
+    });
+    eventBus.emit(APERTURE_CONFIG_SYNC_EVENT, {});
+    await vi.waitFor(() => {
+      expect(runtime.mcpServers.list()).toEqual([]);
+    });
+  });
+
+  test("drops the stale-ctx error when the runner is invalidated mid-reconcile", async () => {
+    writeConfig({ mcp: { enabled: false } });
+    const { eventBus, runtime, errors } = await load();
+    expect(errors).toEqual([]);
+    expect(runtime.mcpServers.list()).toEqual([]);
+
+    const originalLoad = configLoader.load.bind(configLoader);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const loadSpy = vi
+      .spyOn(configLoader, "load")
+      .mockImplementation(() => gate.then(() => originalLoad()));
+
+    try {
+      writeConfig({
+        baseUrl: "https://ai.pango-lin.ts.net",
+        mcp: { enabled: true },
+      });
+      eventBus.emit(APERTURE_CONFIG_SYNC_EVENT, {});
+      runtime.invalidate();
+      release();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    } finally {
+      loadSpy.mockRestore();
+    }
+
+    expect(runtime.mcpServers.list()).toEqual([]);
+  });
+
+  test("bails out of a sync-driven reconcile after session_shutdown", async () => {
+    writeConfig({
+      baseUrl: "https://ai.pango-lin.ts.net",
+      mcp: { enabled: true },
+    });
+    const { eventBus, runtime, extensions, errors } = await load();
+    expect(errors).toEqual([]);
+    expect(runtime.mcpServers.list()).toHaveLength(1);
+    const runner = new ExtensionRunner(
+      extensions,
+      runtime,
+      process.cwd(),
+      { getSessionId: () => "s1" } as never,
+      { getAll: () => [] } as never,
+    );
+
+    await runner.emit({ type: "session_shutdown" } as never);
+    expect(runtime.mcpServers.list()).toEqual([]);
+
+    eventBus.emit(APERTURE_CONFIG_SYNC_EVENT, {});
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(runtime.mcpServers.list()).toEqual([]);
+  });
+
+  test("answers feature requests only while registered", async () => {
+    writeConfig({
+      baseUrl: "https://ai.pango-lin.ts.net",
+      mcp: { enabled: false },
+    });
+    const { eventBus, runtime, errors } = await load();
+    expect(errors).toEqual([]);
+    const received: unknown[] = [];
+    eventBus.on(APERTURE_FEATURE_REGISTER_EVENT, (data) => received.push(data));
+
+    eventBus.emit(APERTURE_FEATURE_REQUEST_EVENT, {});
+    expect(received).toEqual([]);
+
+    writeConfig({
+      baseUrl: "https://ai.pango-lin.ts.net",
+      mcp: { enabled: true },
+    });
+    eventBus.emit(APERTURE_CONFIG_SYNC_EVENT, {});
+    await vi.waitFor(() => {
+      expect(runtime.mcpServers.list()).toHaveLength(1);
+    });
+
+    eventBus.emit(APERTURE_FEATURE_REQUEST_EVENT, {});
     expect(received).toHaveLength(1);
     expect(received[0]).toMatchObject({
       source: "aperture",
