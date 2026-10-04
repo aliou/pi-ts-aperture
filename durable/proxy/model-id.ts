@@ -1,36 +1,26 @@
-import {
-  type AssistantMessage,
-  type AssistantMessageEvent,
-  createAssistantMessageEventStream,
-} from "@earendil-works/pi-ai";
-import { embedsModelIdInPath } from "../../shared/base-url-routing";
 import type {
   Api,
   AssistantMessageEventStream,
   Model,
   TranscriptContext,
-} from "../../shared/types";
+} from "@earendil-works/pi-ai";
+import {
+  type AssistantMessage,
+  type AssistantMessageEvent,
+  createAssistantMessageEventStream,
+} from "@earendil-works/pi-ai";
+import { embedsModelIdInPath } from "../base-url-routing";
 
-export function qualifyModelId<T extends Api>(
+export function qualifyModelId<T extends { id: string; api: Api }>(
   providerName: string,
-  model: Model<T>,
-): Model<T> {
-  // Path-embedding APIs (Gemini/Vertex/Bedrock) put the model id in the URL,
-  // which the gateway forwards verbatim upstream; qualifying it 404s. Body
-  // APIs keep the qualified id so the gateway can disambiguate duplicates.
+  model: T,
+): T {
   if (embedsModelIdInPath(model.api)) return model;
-  // Skip re-prefixing an id a stale pre-reload wrapper already prefixed.
   const prefix = `${providerName}/`;
   if (model.id.startsWith(prefix)) return model;
   return { ...model, id: `${prefix}${model.id}` };
 }
 
-/**
- * Match same-model history to the transport id before pi-ai converts it.
- * Session messages keep public ids for restore; pi-ai compares them with the
- * request id to decide whether reasoning and signatures are safe to replay.
- * Copy only matching assistant envelopes, leaving session state untouched.
- */
 export function withRequestModelId(
   context: TranscriptContext,
   model: Model<Api>,
@@ -63,21 +53,17 @@ async function pipeWithModelId(
   modelId: string,
 ): Promise<void> {
   for await (const event of source) {
-    eventMessage(event).model = modelId;
+    const message = eventMessage(event);
+    message.model = modelId;
+    if (message.deferred) message.deferred = { ...message.deferred, modelId };
     target.push(event);
   }
   const result = await source.result();
   result.model = modelId;
+  if (result.deferred) result.deferred = { ...result.deferred, modelId };
   target.end(result);
 }
 
-/**
- * Report `modelId` on every message the stream emits.
- *
- * Adapters stamp the request model id onto the AssistantMessage, so a
- * qualified request id would land in the session file. Pi restores a session
- * model from the last assistant message and only knows the bare picker id.
- */
 export function withModelId(
   source: AssistantMessageEventStream,
   modelId: string,
