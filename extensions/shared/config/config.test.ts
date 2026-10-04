@@ -3,6 +3,7 @@ import { configLoader } from "./loader";
 import {
   gatewayIdMigration,
   legacyToV06Migration,
+  mcpRenameMigration,
   modeToCapabilitiesMigration,
   nativeMcpConnectorsMigration,
   normalizeCapabilitiesMigration,
@@ -11,6 +12,7 @@ import type {
   PreV17Config,
   V17Config,
 } from "./migration/005-native-mcp-connectors";
+import type { PreV18Config, V18Config } from "./migration/006-mcp-rename";
 
 describe("config migrations", () => {
   test("001 migrates old providers and checks to proxy capability", () => {
@@ -154,6 +156,26 @@ describe("config migrations", () => {
         expect(nativeMcpConnectorsMigration.shouldRun(post)).toBe(false);
       });
     }
+  });
+
+  test("006 renames the connectors config key to mcp", () => {
+    const pre: PreV18Config = {
+      baseUrl: "https://ai.pango-lin.ts.net",
+      connectors: { enabled: true },
+    };
+
+    expect(mcpRenameMigration.shouldRun(pre)).toBe(true);
+    const post: V18Config = mcpRenameMigration.run(pre, "/fake/path");
+    expect(post.mcp).toEqual({ enabled: true });
+    expect("connectors" in post).toBe(false);
+    expect(post.baseUrl).toBe(pre.baseUrl);
+    expect(mcpRenameMigration.shouldRun(post)).toBe(false);
+  });
+
+  test("006 skips configs without a connectors key", () => {
+    const pre: PreV18Config = { baseUrl: "https://ai.pango-lin.ts.net" };
+
+    expect(mcpRenameMigration.shouldRun(pre)).toBe(false);
   });
 });
 

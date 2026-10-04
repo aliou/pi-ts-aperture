@@ -28,7 +28,7 @@
   "pi": {
     "extensions": [
       "./extensions/aperture/index.ts",
-      "./extensions/connectors/index.ts"
+      "./extensions/mcp/index.ts"
     ],
     "video": "https://assets.aliou.me/github/aliou/pi-ts-aperture/demo.mp4",
     "image": "https://assets.aliou.me/github/aliou/pi-ts-aperture/banner.png"

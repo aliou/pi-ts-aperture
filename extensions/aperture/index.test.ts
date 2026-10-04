@@ -23,7 +23,7 @@ const mocks = vi.hoisted(() => ({
     onboarding: { enabled: false },
     proxy: { enabled: false, upstreamProviders: [] },
     dedicated: { enabled: false, providers: [] },
-    connectors: { enabled: false },
+    mcp: { enabled: false },
   } as ResolvedConfig,
   /** Fake settings files, keyed by path; real fs used for everything else. */
   fakeFiles: new Map<string, string>(),

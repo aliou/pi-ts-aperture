@@ -55,18 +55,18 @@ export interface DedicatedProviderConfig {
 }
 
 /**
- * Connector tools configuration.
+ * MCP tools configuration.
  *
- * `enabled` gates the entire connectors feature: when `false`, the connectors
- * extension registers nothing. When `true`, the gateway's `/v1/mcp` endpoint
- * is registered with pi as a session-scoped MCP server (deferred exposure);
+ * `enabled` gates the entire MCP feature: when `false`, the mcp extension
+ * registers nothing. When `true`, the gateway's `/v1/mcp` endpoint is
+ * registered with pi as a session-scoped MCP server (deferred exposure);
  * per-tool exposure is pi-native (`toolExposure` in `mcp.json`), not part of
  * this config.
  */
-export interface ConnectorsConfig {
+export interface McpConfig {
   /**
-   * Master switch for the connectors feature. When `false`, the connectors
-   * extension registers nothing. Defaults to `false`.
+   * Master switch for the MCP feature. When `false`, the mcp extension
+   * registers nothing. Defaults to `false`.
    */
   enabled?: boolean;
 }
@@ -110,7 +110,7 @@ export interface ApertureConfig {
     enabled?: boolean;
     providers?: DedicatedProviderConfig[];
   };
-  connectors?: ConnectorsConfig;
+  mcp?: McpConfig;
 }
 
 export interface ResolvedConfig {
@@ -131,7 +131,7 @@ export interface ResolvedConfig {
     enabled: boolean;
     providers: DedicatedProviderConfig[];
   };
-  connectors: {
+  mcp: {
     enabled: boolean;
   };
 }

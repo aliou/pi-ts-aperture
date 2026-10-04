@@ -22,7 +22,7 @@ const agentDir = vi.hoisted(() => {
   const fs = process.getBuiltinModule("node:fs");
   const os = process.getBuiltinModule("node:os");
   const path = process.getBuiltinModule("node:path");
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "aperture-connectors-"));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "aperture-mcp-"));
   process.env.PI_CODING_AGENT_DIR = dir;
   return dir;
 });
@@ -59,11 +59,11 @@ async function load(extraPaths: string[] = []) {
   };
 }
 
-describe("connectors extension", () => {
+describe("mcp extension", () => {
   test("registers the gateway MCP server at load with deferred exposure", async () => {
     writeConfig({
       baseUrl: "https://ai.pango-lin.ts.net",
-      connectors: { enabled: true },
+      mcp: { enabled: true },
     });
 
     const { runtime, errors } = await load();
@@ -78,7 +78,7 @@ describe("connectors extension", () => {
   test("normalizes a trailing slash in a hand-edited base URL", async () => {
     writeConfig({
       baseUrl: "https://ai.pango-lin.ts.net/",
-      connectors: { enabled: true },
+      mcp: { enabled: true },
     });
 
     const { runtime, errors } = await load();
@@ -92,7 +92,7 @@ describe("connectors extension", () => {
   test("derives the registration URL from the APERTURE_BASE_URL override", async () => {
     writeConfig({
       baseUrl: "https://ai.pango-lin.ts.net",
-      connectors: { enabled: true },
+      mcp: { enabled: true },
     });
     vi.stubEnv(
       "APERTURE_BASE_URL",
@@ -106,10 +106,10 @@ describe("connectors extension", () => {
     });
   });
 
-  test("registers nothing when connectors are disabled", async () => {
+  test("registers nothing when MCP is disabled", async () => {
     writeConfig({
       baseUrl: "https://ai.pango-lin.ts.net",
-      connectors: { enabled: false },
+      mcp: { enabled: false },
     });
 
     const { runtime, errors } = await load();
@@ -119,7 +119,7 @@ describe("connectors extension", () => {
   });
 
   test("registers nothing without a base URL", async () => {
-    writeConfig({ connectors: { enabled: true } });
+    writeConfig({ mcp: { enabled: true } });
 
     const { runtime, errors } = await load();
 
@@ -130,7 +130,7 @@ describe("connectors extension", () => {
   test("unregisters the server when the runner dispatches session_shutdown", async () => {
     writeConfig({
       baseUrl: "https://ai.pango-lin.ts.net",
-      connectors: { enabled: true },
+      mcp: { enabled: true },
     });
     const { runtime, extensions, errors } = await load();
     expect(errors).toEqual([]);
@@ -148,10 +148,10 @@ describe("connectors extension", () => {
     expect(runtime.mcpServers.list()).toEqual([]);
   });
 
-  test("announces the connectors feature over the real event bus", async () => {
+  test("announces the mcp feature over the real event bus", async () => {
     writeConfig({
       baseUrl: "https://ai.pango-lin.ts.net",
-      connectors: { enabled: true },
+      mcp: { enabled: true },
     });
     const { eventBus, errors } = await load();
     expect(errors).toEqual([]);
@@ -163,14 +163,14 @@ describe("connectors extension", () => {
     expect(received).toHaveLength(1);
     expect(received[0]).toMatchObject({
       source: "aperture",
-      feature: { id: "connectors" },
+      feature: { id: "mcp" },
     });
   });
 
   test("fails to load when another extension already owns the name", async () => {
     writeConfig({
       baseUrl: "https://ai.pango-lin.ts.net",
-      connectors: { enabled: true },
+      mcp: { enabled: true },
     });
     const rival = join(agentDir, "rival.ts");
     writeFileSync(

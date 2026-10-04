@@ -2,13 +2,13 @@
 
 # pi-ts-aperture
 
-Route Pi LLM providers and connector tools through [Tailscale Aperture](https://tailscale.com/docs/features/aperture), a managed AI gateway on your tailnet.
+Route Pi LLM providers and MCP tools through [Tailscale Aperture](https://tailscale.com/docs/features/aperture), a managed AI gateway on your tailnet.
 
 Aperture handles API key injection and request routing server-side, so Pi never needs upstream provider credentials. This extension offers three capabilities:
 
 - **Dedicated** (default): a standalone `aperture` provider whose models come from the gateway.
 - **Proxy**: reroute existing Pi providers (anthropic, openai, openai-codex, ...) through Aperture.
-- **Connectors**: register the gateway's MCP server with Pi's native MCP support, surfacing connector tools as `mcp__aperture__*`.
+- **MCP tools**: register the gateway's MCP server with Pi's native MCP support, surfacing them as `mcp__aperture__*`.
 
 ## Install
 
@@ -52,13 +52,13 @@ OpenAI Responses passthrough routes support Pi's **Sign in with ChatGPT** on Pi 
 
 The Proxy tab in `/aperture:settings` lists gateway providers by name. Exact local matches show `disabled` until routed, configured routes show their enabled state, and providers without a local match show `select`. Opening a `select` row goes straight to a searchable local-provider multi-select; submitting opens routing settings. Other rows open routing settings directly. Use **Local Pi providers** in those settings to change the selection. When several local providers share a gateway target, each has its own routing settings. A local provider can use a different gateway id (for example, `anthropic` → `anthropic-oauth`). Optional per-provider verification warns when configured local models are missing from the gateway. Set `keepGatewayModelsOnly: true` on a provider to filter those models out of the model picker entirely.
 
-### Connectors
+### MCP tools
 
-[![Connectors walkthrough](https://assets.aliou.me/pi-extensions/demos/aperture/v0.8.0/connectors.gif)](https://assets.aliou.me/pi-extensions/demos/aperture/v0.8.0/connectors.mp4)
+[![MCP walkthrough](https://assets.aliou.me/pi-extensions/demos/aperture/v0.8.0/connectors.gif)](https://assets.aliou.me/pi-extensions/demos/aperture/v0.8.0/connectors.mp4)
 
-Aperture can expose MCP connectors (GitHub, your own internal tools, ...) at `/v1/mcp`. When enabled, this extension registers that endpoint with Pi's built-in MCP support as the `aperture` server with `deferred` exposure: tools surface as `mcp__aperture__*` and stay out of the system prompt until Pi's `tool_search` loads them.
+Aperture can expose MCP tools (GitHub, your own internal tools, ...) at `/v1/mcp`. When enabled, this extension registers that endpoint with Pi's built-in MCP support as the `aperture` server with `deferred` exposure: tools surface as `mcp__aperture__*` and stay out of the system prompt until Pi's `tool_search` loads them.
 
-Enable connectors in `/aperture:settings`; the toggle applies on the next `/reload` (registration happens at extension load). Manage the connection with `/mcp`. To pin tools (always declared to the model) or hide them, add a same-name entry to `~/.pi/agent/mcp.json` — a file entry takes precedence over the extension's registration:
+Enable MCP tools in `/aperture:settings`; the toggle applies on the next `/reload` (registration happens at extension load). Manage the connection with `/mcp`. To pin tools (always declared to the model) or hide them, add a same-name entry to `~/.pi/agent/mcp.json` — a file entry takes precedence over the extension's registration:
 
 ```json
 {
@@ -105,7 +105,7 @@ Configuration is saved globally to `~/.pi/agent/extensions/aperture.json`. The s
       { "id": "google", "name": "Google", "enabled": false }
     ]
   },
-  "connectors": {
+  "mcp": {
     "enabled": false
   }
 }
