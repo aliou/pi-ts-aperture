@@ -26,7 +26,7 @@ After installing, run the onboarding wizard:
 
 [![Onboarding walkthrough](https://assets.aliou.me/pi-extensions/demos/aperture/v0.8.0/onboarding.gif)](https://assets.aliou.me/pi-extensions/demos/aperture/v0.8.0/onboarding.mp4)
 
-The wizard asks for your Aperture URL (with a health check), lets you pick capabilities and providers, then saves and reloads Pi. You can change everything later with `/aperture:settings`.
+The wizard asks for your Aperture URL (with a health check), lets you pick capabilities, providers, and whether to register the gateway's MCP tools (off by default), then saves and reloads Pi. You can change everything later with `/aperture:settings`.
 
 ## Capabilities
 

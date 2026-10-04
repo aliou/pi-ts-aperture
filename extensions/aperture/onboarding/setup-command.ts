@@ -41,6 +41,7 @@ export function registerOnboardingCommand(pi: ExtensionAPI): void {
           result.baseUrl,
           result.proxyEnabled,
           result.dedicatedEnabled,
+          result.mcpEnabled,
           result.upstreamProviders,
           result.dedicatedProviders,
         ),
