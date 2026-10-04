@@ -58,7 +58,7 @@ The Proxy tab in `/aperture:settings` lists gateway providers by name. Exact loc
 
 Aperture can expose MCP tools (GitHub, your own internal tools, ...) at `/v1/mcp`. When enabled, this extension registers that endpoint with Pi's built-in MCP support as the `aperture` server with `deferred` exposure: tools surface as `mcp__aperture__*` and stay out of the system prompt until Pi's `tool_search` loads them.
 
-Enable MCP tools in `/aperture:settings`; the toggle applies on the next `/reload` (registration happens at extension load). Manage the connection with `/mcp`. To pin tools (always declared to the model) or hide them, add a same-name entry to `~/.pi/agent/mcp.json` — a file entry takes precedence over the extension's registration:
+Enable MCP tools in `/aperture:settings`; the change applies immediately, no reload needed. Manage the connection with `/mcp`. To pin tools (always declared to the model) or hide them, add a same-name entry to `~/.pi/agent/mcp.json` — a file entry takes precedence over the extension's registration:
 
 ```json
 {

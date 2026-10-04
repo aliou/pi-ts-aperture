@@ -181,7 +181,7 @@ export default async function (pi: ExtensionAPI): Promise<void> {
 
   const onSync = (ctx: ExtensionContext): void => {
     updateKnownModels(ctx);
-    emitConfigSync();
+    emitConfigSync(pi);
     const config = configLoader.getConfig();
 
     const { next: nextProxyProviders, unregister } =

@@ -1,12 +1,11 @@
-type SyncCallback = () => void;
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
-const listeners = new Set<SyncCallback>();
+export const APERTURE_CONFIG_SYNC_EVENT = "aperture:config:sync";
 
-export function onConfigSync(cb: SyncCallback): () => void {
-  listeners.add(cb);
-  return () => listeners.delete(cb);
+export function onConfigSync(pi: ExtensionAPI, cb: () => void): () => void {
+  return pi.events.on(APERTURE_CONFIG_SYNC_EVENT, cb);
 }
 
-export function emitConfigSync(): void {
-  for (const listener of listeners) listener();
+export function emitConfigSync(pi: ExtensionAPI): void {
+  pi.events.emit(APERTURE_CONFIG_SYNC_EVENT, {});
 }
