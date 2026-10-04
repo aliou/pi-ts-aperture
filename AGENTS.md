@@ -6,8 +6,13 @@ Pi extension that routes LLM traffic through [Tailscale Aperture](https://tailsc
 
 - `extensions/aperture/` - Main extension: proxy mode (`proxy/`), the dedicated `aperture` provider (`dedicated/`), onboarding wizard (`onboarding/`), settings UI (`settings/`).
 - `extensions/connectors/` - Registers Aperture's `/v1/mcp` endpoint as a session-scoped MCP server via pi's built-in MCP support (`pi.registerMcpServer`, `exposure: "deferred"`; tools surface as `mcp__aperture__*`).
-- `extensions/shared/` - Config (types, defaults, loader, migrations), sync bus between the two extensions, provider mapping, Pi API selection, api routing (registry-dispatch stream helpers shared by dedicated and proxy in `api-routing.ts`), provenance (telemetry-gated header injection in `provenance.ts`).
-- `src/` - Pi-agnostic code: Aperture API client, gateway base-URL routing, model metadata resolution, retryable-error tagging.
+- `extensions/shared/` - Extension config, sync bus, provider mapping, model metadata, API routing, retry tagging, and provenance.
+- `src/` - Pi-agnostic gateway API client and URL helpers only. No Pi SDK imports or provider logic.
+- `durable/` - Experimental pi-durable provider and proxy, with their own API client, routing, metadata, tests, build config, and package checks. Built exports live in `durable/dist/`.
+
+**Keep the implementations separate.** Extensions must not import durable code. Durable code must not import `extensions/` or `src/`. Duplicate the needed logic instead of extracting a shared provider or routing layer. Runtime and declaration imports from durable must not reach coding-agent, pi-tui, UI utilities, or extension config loaders; pi-ai is allowed.
+
+When changing durable exports, read `durable/provider.ts`, `durable/provider/catalog.ts`, `durable/proxy/runtime.ts`, `durable/tsconfig.build.json`, `durable/README.md`, and `package.json`.
 
 Config types and defaults: `extensions/shared/config/types.ts` and `defaults.ts`. Read those instead of trusting any restated shape.
 
@@ -20,7 +25,9 @@ Development (`pnpm`):
 | `pnpm typecheck` | `tsc --noEmit` |
 | `pnpm lint` | `biome check` |
 | `pnpm format` | `biome check --write` |
-| `pnpm test` | `vitest run` |
+| `pnpm build` | Bundle durable libraries and emit declarations in `durable/dist/` |
+| `pnpm test` | Build, then `vitest run` |
+| `pnpm test:package` | Install a packed artifact; check Node imports, NodeNext declarations, mocked durable requests, and Pi package discovery/loading (downloads npm dependencies) |
 | `pnpm gen:schema` | Regenerate `schema.json` from config types |
 | `pnpm changeset` / `pnpm release` | Changeset entry / publish |
 
@@ -33,10 +40,12 @@ User-facing commands: `/aperture:onboarding` (visible only while onboarding is p
 These are not obvious from reading the code. The code shows what happens; these say why and what not to break.
 
 - **Global-only config.** Aperture is a network concern, so config lives at `~/.pi/agent/extensions/aperture.json` and has no per-project scope.
+- **Durable config and catalogs.** The public factory takes explicit options and reads no extension config or environment override. pi-ai's default models store is in-memory; pi-durable session storage does not persist catalogs. Persistent stores must retain the complete entry and `catalogKey`. Cache-only restore rejects a different gateway origin, filter, or API override. Catalog keys belong to the durable provider; retain compatibility with persisted durable entries when changing their format.
 - **Base URL override.** The gateway base URL can be overridden with the `APERTURE_BASE_URL` environment variable, which takes precedence over the config file value (applied in the config loader's `afterMerge` hook, normalized via `normalizeInputUrl`, and never persisted back to disk).
 - **No secrets, no hardcoded IDs.** `apiKey` is `"-"` because the gateway injects credentials server-side. Never hardcode provider IDs, URLs, or keys; the extension must work against any Aperture instance with any providers. Pi OAuth credentials still take precedence when present.
 - **Connector exposure is pi-native.** The extension registers only the `aperture` MCP server, session-scoped at load; a same-name `mcp.json` entry wins over it. Pinning or hiding connector tools is the user's `toolExposure` in `mcp.json`, not extension config — there is no extension-side pin list to keep in sync.
 - **Proxy shutdown cleanup.** The main factory tracks proxy providers it actually registers. On `session_shutdown`, mark the runtime invalidated before unregistering those providers while Pi's API is still active. `/reload` reuses Pi's model runtime, so cleanup must remove wrappers before the next factory captures native providers. Remove ids from the tracked set when settings unregister a route.
+- **Durable proxy ownership.** Public syncs are latest-wins; abort/restore invalidate pending work. Restore only the installed provider identity, never a host replacement. Repeated sync reads live catalogs without stacking wrappers. The Pi extension maintains its own lifecycle separately.
 - **Fail open on gateway fetches.** Catalog fetches (auth reconciliation, model filtering, api-override validation) that fail must leave behavior unchanged rather than break the session.
 - **OpenAI subscription transport.** Passthrough `openai-responses` routes whose upstream base URL is exactly `https://api.openai.com/v1` keep that URL on models and redirect HTTP requests through `options.fetch` in `extensions/aperture/proxy/openai-passthrough.ts`. Pi's ChatGPT sign-in detection needs the native URL to apply its request rules. Do not copy its unsupported-field list or change native auth. Other routes keep gateway base-URL rewriting.
 - **Synchronous auth placeholder.** Proxy providers get the placeholder-key auth override synchronously before the catalog fetch is awaited, so an immediate `/spawn` cannot race auth setup. Keep that ordering.
@@ -44,17 +53,17 @@ These are not obvious from reading the code. The code shows what happens; these 
 - **Gateway URL must survive composition and dispatch.** Pi's provider composer builds the served catalog from `getAllModels()` when present (falling back to `getModels()`), so the proxy wrapper must rewrite both; and auth resolution can rewrite `model.baseUrl` before a request reaches the provider (e.g. GitHub Copilot OAuth), so proxy streams re-stamp the gateway URL at dispatch. Without these, gateway-qualified ids go straight to the upstream vendor and 404.
 - **Proxy mapping uses two ids.** `proxy.upstreamProviders[].id` names the local Pi provider for registration and unregistering; required `gatewayId` names the gateway catalog target for compatibility, filtering, passthrough auth, and request model-id qualification. Migration 004 fills missing `gatewayId` with `id`. Settings lists gateway providers by name. Exact matches and mapped rows open routing settings; rows without a local provider open a searchable local-provider multi-select first. The routing settings contain one **Local Pi providers** multi-select. Unknown targets stay unrouted with one warning per sync; catalog fetch failure still fails open.
 - **Model metadata belongs in `~/.pi/agent/models.json`, not in extension config.** No gateway model cache is persisted in the extension config file.
-- **Retryable errors are tagged, not classified.** Pi's retry classifier is hardcoded, so a `message_end` handler appends ` (service unavailable)` to transient Aperture errors. New patterns go in `TRANSIENT_APERTURE_ERROR_PATTERNS` in `src/retryable-errors.ts`.
+- **Retryable errors are tagged, not classified.** Pi's retry classifier is hardcoded, so a `message_end` handler appends ` (service unavailable)` to transient Aperture errors. New patterns go in `TRANSIENT_APERTURE_ERROR_PATTERNS` in `extensions/shared/retryable-errors.ts`.
 - **Config migrations are mandatory on format change.** Migrations live in `extensions/shared/config/migration/`; existing user config must keep working across releases.
 - **Headers are injected per-request.** `Referer` and `x-session-id` go through the `before_provider_headers` hook so the session id stays current across `/fork`, `/new`, `/resume`. Do not bake headers into provider registration. Injection is gated per request on the `shouldSendProvenanceHeaders` config option (default `true`, toggleable in `/aperture:settings`) and on Pi's telemetry gate — a memoized read-only mirror of `PI_TELEMETRY` / `enableInstallTelemetry` in `extensions/shared/provenance.ts`.
 
 ## Testing
 
-- Unit tests live next to source as `*.test.ts`.
+- Unit tests live next to source as `*.test.ts`. `durable/boundaries.test.ts` enforces directory ownership and keeps Pi SDK code out of `src/`.
 - Integration tests in `src/api/*.integration.test.ts` hit a live Aperture instance and are skipped without credentials.
 - CI runs lint + typecheck + tests on push/PR; publish runs after CI succeeds on `main`.
 - **Example URLs in tests.** Always use `ai.pango-lin.ts.net` (the same placeholder the onboarding wizard shows) as the example Aperture hostname in tests and fixtures — never a real tailnet URL. Other clearly-fake hosts like `aperture.example.ts.net` or `ai.host.ts.net` are fine for cases where a generic hostname is more readable.
 
 ## Documentation update triggers
 
-Update `AGENTS.md` and `README.md` when config shape or defaults change, a `/aperture:*` command changes, registered tool names change, provider registration/routing/credentials behavior changes, or the `extensions/` / `src/` split changes meaningfully.
+Update `AGENTS.md` and `README.md` when config shape or defaults change, a `/aperture:*` command changes, registered tool names change, provider registration/routing/credentials behavior changes, or the `extensions/` / `src/` / `durable/` split changes meaningfully. Update `durable/README.md` when its public APIs or lifecycle change.

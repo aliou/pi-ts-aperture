@@ -1,19 +1,15 @@
-import type { ProviderModelConfig } from "@earendil-works/pi-coding-agent";
-import type { ApertureModelPricing } from "../../../src/api/types";
-import type { ModelMetadata } from "../../shared/model-metadata";
+import type { Api, Model } from "@earendil-works/pi-ai";
+import type { ApertureModelPricing } from "../api/types";
+import type { ModelMetadata } from "../model-metadata";
 
 export interface ApertureModelDefaultsInput {
   id: string;
   name?: string;
-  providerId: string;
-  provider?: {
-    id: string;
-    name?: string;
-  };
   pricing?: ApertureModelPricing;
-  /** Resolved capability metadata (Pi registry / models.dev). */
   metadata?: ModelMetadata;
 }
+
+type ApertureModelDefaults = Omit<Model<Api>, "api" | "provider" | "baseUrl">;
 
 const TOKENS_PER_MILLION = 1_000_000;
 
@@ -22,16 +18,10 @@ function parsePrice(value: string): number {
   return Number.isFinite(n) ? n * TOKENS_PER_MILLION : 0;
 }
 
-/**
- * Merge gateway pricing field-by-field over the metadata cost. Every rate the
- * gateway reports wins; rates it omits keep the registry/models.dev value.
- * A partial pricing response (e.g. only cache rates) must not zero out the
- * other fields or be discarded entirely.
- */
 function mergeCost(
   pricing: ApertureModelPricing | undefined,
-  base: ProviderModelConfig["cost"] | undefined,
-): ProviderModelConfig["cost"] {
+  base: ApertureModelDefaults["cost"] | undefined,
+): ApertureModelDefaults["cost"] {
   const cost = base ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
   if (!pricing) return cost;
   return {
@@ -47,14 +37,9 @@ function mergeCost(
   };
 }
 
-/**
- * Build a model config from safe defaults, resolved metadata, and gateway
- * pricing. Precedence: defaults < metadata (models.dev < Pi registry, merged
- * upstream by the resolver) < gateway pricing (cost only).
- */
 export function buildDefaultModelConfig(
   model: ApertureModelDefaultsInput,
-): ProviderModelConfig {
+): ApertureModelDefaults {
   const id = model.id;
   const metadata = model.metadata;
   const cost = mergeCost(model.pricing, metadata?.cost);

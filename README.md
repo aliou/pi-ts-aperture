@@ -6,7 +6,7 @@ Route Pi LLM providers and connector tools through [Tailscale Aperture](https://
 
 Aperture handles API key injection and request routing server-side, so Pi never needs upstream provider credentials. This extension offers three capabilities:
 
-- **Dedicated** (default): a standalone `aperture` provider whose models come from the gateway.
+- **Dedicated** (default): register an `aperture` provider with models from the gateway.
 - **Proxy**: reroute existing Pi providers (anthropic, openai, openai-codex, ...) through Aperture.
 - **Connectors**: register the gateway's MCP server with Pi's native MCP support, surfacing connector tools as `mcp__aperture__*`.
 
@@ -15,6 +15,10 @@ Aperture handles API key injection and request routing server-side, so Pi never 
 ```bash
 pi install npm:@aliou/pi-ts-aperture
 ```
+
+## pi-durable (experimental)
+
+Standalone provider and proxy exports live in `durable/`. They have their own implementations and do not load the Pi extension. See [durable/README.md](durable/README.md) for setup, catalog persistence, and request headers.
 
 ## First run
 
@@ -127,3 +131,9 @@ Notes:
 - A Tailscale tailnet with Aperture configured.
 - The device running Pi must be able to reach your Aperture endpoint.
 - Use the URL/scheme that matches your deployment (`http://` or `https://`).
+
+## Development
+
+From the repository root: `pnpm install`, then `pnpm typecheck`, `pnpm lint`, and `pnpm test`. Tests build both public exports before importing them. Run `pnpm test:package` to pack and install them in a temporary Node app, check NodeNext declarations, make mocked durable model requests through both APIs, and load the packed extension sources with Pi's package discovery and loader. That check downloads npm dependencies but makes no paid model calls.
+
+`pnpm build` bundles extensionless TypeScript imports into `durable/dist/provider.js` and `durable/dist/proxy.js` and emits declarations. `pnpm pack` runs the build through `prepack`; the Pi extensions remain TypeScript entry points.

@@ -8,7 +8,7 @@ import type {
 } from "@earendil-works/pi-ai";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import type { ApertureProvider } from "../../../src/api/types";
-import type { ModelsDevCatalog } from "../../../src/model-metadata";
+import type { ModelsDevCatalog } from "../../shared/model-metadata";
 
 // vi.hoisted gives access to the mock fns inside hoisted vi.mock factories
 // (which run before top-level bindings are initialized).
@@ -36,9 +36,9 @@ vi.mock("../../../src/api/client", () => ({
 }));
 
 // Mock the models.dev fetch; individual tests provide a catalog when needed.
-vi.mock("../../../src/model-metadata", async (importOriginal) => {
+vi.mock("../../shared/model-metadata", async (importOriginal) => {
   const original =
-    await importOriginal<typeof import("../../../src/model-metadata")>();
+    await importOriginal<typeof import("../../shared/model-metadata")>();
   return {
     ...original,
     fetchModelsDevCatalog: mocks.fetchModelsDevCatalog,
