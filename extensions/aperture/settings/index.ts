@@ -28,6 +28,10 @@ export const APERTURE_SETTINGS_COMMAND = "aperture:settings" as const;
  * plus one extra tab per capability (Proxy, Dedicated, MCP), built
  * in `settings/<tab>-tab.ts` and assembled here into a single
  * {@link SettingsCommandOptions} handed to {@link registerSettingsCommand}.
+ *
+ * Tab shortcut aliases (`/aperture:proxy`, `/aperture:dedicated`,
+ * `/aperture:mcp`) open the same UI on a preselected tab; tab ids are
+ * validated by `registerSettingsCommand` at registration time.
  */
 export function registerApertureSettings(
   pi: ExtensionAPI,
@@ -38,6 +42,23 @@ export function registerApertureSettings(
     commandName: APERTURE_SETTINGS_COMMAND,
     title: "Aperture Settings",
     configStore: configLoader,
+    aliases: [
+      {
+        commandName: "aperture:proxy",
+        tabId: "proxy",
+        description: "Edit Aperture proxy routing",
+      },
+      {
+        commandName: "aperture:dedicated",
+        tabId: "dedicated",
+        description: "Edit Aperture dedicated providers",
+      },
+      {
+        commandName: "aperture:mcp",
+        tabId: "mcp",
+        description: "Edit Aperture MCP settings",
+      },
+    ],
     // Fixed body height; editors built by the tabs use the same budget
     // (SETTINGS_CONTENT_HEIGHT) so submenus share the panel's flex layout.
     contentHeight: SETTINGS_CONTENT_HEIGHT,

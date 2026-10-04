@@ -83,6 +83,9 @@ Enable MCP tools in `/aperture:settings`; the change applies immediately, no rel
 |---|---|
 | `/aperture:onboarding` | Onboarding wizard. Only available while onboarding is enabled. |
 | `/aperture:settings` | Edit connection, capabilities, and providers. |
+| `/aperture:proxy` | Shortcut for `/aperture:settings` on the Proxy tab. |
+| `/aperture:dedicated` | Shortcut for `/aperture:settings` on the Dedicated tab. |
+| `/aperture:mcp` | Shortcut for `/aperture:settings` on the MCP tab. |
 
 ## Configuration
 
