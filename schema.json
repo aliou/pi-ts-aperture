@@ -75,8 +75,8 @@
           },
           "additionalProperties": false
         },
-        "connectors": {
-          "$ref": "#/definitions/ConnectorsConfig"
+        "mcp": {
+          "$ref": "#/definitions/McpConfig"
         }
       },
       "additionalProperties": false
@@ -153,16 +153,16 @@
       ],
       "additionalProperties": false
     },
-    "ConnectorsConfig": {
+    "McpConfig": {
       "type": "object",
       "properties": {
         "enabled": {
           "type": "boolean",
-          "description": "Master switch for the connectors feature. When `false`, the connectors extension registers nothing. Defaults to `false`."
+          "description": "Master switch for the MCP feature. When `false`, the mcp extension registers nothing. Defaults to `false`."
         }
       },
       "additionalProperties": false,
-      "description": "Connector tools configuration.\n\n`enabled` gates the entire connectors feature: when `false`, the connectors extension registers nothing. When `true`, the gateway's `/v1/mcp` endpoint is registered with pi as a session-scoped MCP server (deferred exposure); per-tool exposure is pi-native (`toolExposure` in `mcp.json`), not part of this config."
+      "description": "MCP tools configuration.\n\n`enabled` gates the entire MCP feature: when `false`, the mcp extension registers nothing. When `true`, the gateway's `/v1/mcp` endpoint is registered with pi as a session-scoped MCP server (deferred exposure); per-tool exposure is pi-native (`toolExposure` in `mcp.json`), not part of this config."
     }
   }
 }

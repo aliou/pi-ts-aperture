@@ -33,7 +33,7 @@ const BASE_CONFIG = {
   onboardingDone: true,
   onboarding: { enabled: false },
   dedicated: { enabled: false, providers: [] },
-  connectors: { enabled: false },
+  mcp: { enabled: false },
 };
 
 const unhandledRejections: unknown[] = [];

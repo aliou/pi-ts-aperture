@@ -3,7 +3,7 @@
  *
  * Registration is session-scoped and re-declared on every load, so a
  * same-name `mcp.json` entry takes precedence over it. `exposure:
- * "deferred"` keeps connector tool schemas out of the system prompt until
+ * "deferred"` keeps MCP tool schemas out of the system prompt until
  * pi's `tool_search` loads them; pinning and hiding live in `mcp.json`
  * (`toolExposure`) and the connection is managed with `/mcp`.
  */
@@ -17,13 +17,11 @@ import {
   createFeatureRegisterPayload,
 } from "../shared/events";
 
-export default async function apertureConnectors(
-  pi: ExtensionAPI,
-): Promise<void> {
+export default async function apertureMcp(pi: ExtensionAPI): Promise<void> {
   await configLoader.load();
   const config = configLoader.getConfig();
 
-  if (!config.connectors.enabled) {
+  if (!config.mcp.enabled) {
     return;
   }
 
@@ -35,13 +33,12 @@ export default async function apertureConnectors(
   pi.events.on(APERTURE_FEATURE_REQUEST_EVENT, () => {
     pi.events.emit(
       APERTURE_FEATURE_REGISTER_EVENT,
-      createFeatureRegisterPayload("connectors"),
+      createFeatureRegisterPayload("mcp"),
     );
   });
 
   // Register unconditionally so a host without MCP handling reports the
-  // registration as an extension error instead of silently dropping the
-  // connector.
+  // registration as an extension error instead of silently dropping it.
   pi.registerMcpServer("aperture", {
     url: `${baseUrl}/v1/mcp`,
     exposure: "deferred",

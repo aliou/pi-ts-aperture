@@ -3,7 +3,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 export const APERTURE_FEATURE_REQUEST_EVENT = "aperture:feature:request";
 export const APERTURE_FEATURE_REGISTER_EVENT = "aperture:feature:register";
 
-export type ApertureFeatureId = "connectors";
+export type ApertureFeatureId = "mcp";
 
 export interface ApertureFeatureRequestPayload {
   source: "aperture";

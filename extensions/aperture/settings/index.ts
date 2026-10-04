@@ -13,9 +13,9 @@ import type {
   ResolvedConfig,
 } from "../../shared/config/loader";
 import { configLoader } from "../../shared/config/loader";
-import { buildConnectorsTab } from "./connectors-tab";
 import { buildDedicatedTab } from "./dedicated-tab";
 import { buildGlobalSections } from "./global-tab";
+import { buildMcpTab } from "./mcp-tab";
 import { buildProxyTab } from "./proxy-tab";
 import { SETTINGS_CONTENT_HEIGHT } from "./shared";
 
@@ -25,7 +25,7 @@ export const APERTURE_SETTINGS_COMMAND = "aperture:settings" as const;
  * Register the `/aperture:settings` command.
  *
  * The settings UI is split into one Global scope tab (Connection + Setup)
- * plus one extra tab per capability (Proxy, Dedicated, Connectors), built
+ * plus one extra tab per capability (Proxy, Dedicated, MCP), built
  * in `settings/<tab>-tab.ts` and assembled here into a single
  * {@link SettingsCommandOptions} handed to {@link registerSettingsCommand}.
  */
@@ -47,7 +47,7 @@ export function registerApertureSettings(
     extraTabs: [
       buildProxyTab(getKnownModels),
       buildDedicatedTab(),
-      buildConnectorsTab(),
+      buildMcpTab(),
     ],
 
     onSettingChange: (id, newValue, config) => {
@@ -62,9 +62,9 @@ export function registerApertureSettings(
           ...updated.dedicated,
           enabled: newValue === "enabled",
         };
-      if (id === "connectors.enabled")
-        updated.connectors = {
-          ...updated.connectors,
+      if (id === "mcp.enabled")
+        updated.mcp = {
+          ...updated.mcp,
           enabled: newValue === "enabled",
         };
       if (id === "onboardingDone") {

@@ -140,7 +140,7 @@ function proxyConfig(
       })),
     },
     dedicated: { enabled: false, providers: [] },
-    connectors: { enabled: false },
+    mcp: { enabled: false },
   };
 }
 
@@ -1202,7 +1202,7 @@ describe("ApertureRuntime.resolveProxyProviderSync", () => {
         })),
       },
       dedicated: { enabled: false, providers: [] },
-      connectors: { enabled: false },
+      mcp: { enabled: false },
     };
   }
 
