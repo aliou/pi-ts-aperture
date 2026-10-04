@@ -5,8 +5,9 @@
  * 1. Welcome -- explain Aperture and the two modes
  * 2. URL -- input with inline health check
  * 3. Mode -- choose dedicated or proxy
- * 4. Providers -- context-dependent: proxy providers or dedicated gateway providers
- * 5. Recap -- summary before saving
+ * 4. MCP -- enable the gateway's MCP tools
+ * 5. Providers -- context-dependent: proxy providers or dedicated gateway providers
+ * 6. Recap -- summary before saving
  */
 
 import {
@@ -42,6 +43,7 @@ export interface OnboardingResult {
   baseUrl: string;
   proxyEnabled: boolean;
   dedicatedEnabled: boolean;
+  mcpEnabled: boolean;
   upstreamProviders: { id: string; shouldCheckGatewayModels: boolean }[];
   dedicatedProviders: DedicatedProviderConfig[];
 }
@@ -50,6 +52,7 @@ interface OnboardingState {
   baseUrl: string;
   proxyEnabled: boolean;
   dedicatedEnabled: boolean;
+  mcpEnabled: boolean;
   upstreamProviders: { id: string; shouldCheckGatewayModels: boolean }[];
   dedicatedProviders: DedicatedProviderConfig[];
 }
@@ -67,7 +70,7 @@ class IntroStep implements Component {
 
   render(width: number): string[] {
     this.introText.setText(
-      'Aperture lets you route LLM traffic through your Tailscale tailnet.\n\nYou can use it two ways:\n\n- Dedicated provider: a standalone "aperture" provider with all models from your gateway\n- Proxy: reroute existing Pi providers (e.g. anthropic, openai) through Aperture\n\nYou can change these settings later in /aperture:settings.',
+      'Aperture lets you route LLM traffic through your Tailscale tailnet.\n\nYou can use it two ways:\n\n- Dedicated provider: a standalone "aperture" provider with all models from your gateway\n- Proxy: reroute existing Pi providers (e.g. anthropic, openai) through Aperture\n\nIt can also register your gateway\'s MCP tools as an "aperture" MCP server.\n\nYou can change these settings later in /aperture:settings.',
     );
 
     return [
@@ -173,6 +176,88 @@ class CapabilitiesStep implements Component {
         this.selectedIndex === 0 || this.selectedIndex === 2;
       this.state.proxyEnabled =
         this.selectedIndex === 1 || this.selectedIndex === 2;
+      this.wizCtx.markComplete();
+      this.onSelected();
+    }
+  }
+}
+
+class McpStep implements Component {
+  private selectedIndex: number;
+  private readonly settingsTheme: SettingsTheme;
+
+  constructor(
+    private readonly theme: Theme,
+    private readonly state: OnboardingState,
+    private readonly wizCtx: WizardStepContext,
+    private readonly onSelected: () => void,
+  ) {
+    this.settingsTheme = getSettingsTheme(theme);
+    this.selectedIndex = state.mcpEnabled ? 0 : 1;
+  }
+
+  invalidate() {}
+
+  render(width: number): string[] {
+    const options = ["Enabled", "Disabled"];
+    const explanations = [
+      [
+        "Register the gateway as an `aperture` MCP server.",
+        "",
+        "- Gateway MCP tools surface as `mcp__aperture__*`",
+        "- Tools are discovered on demand via tool search",
+        "- Manage the connection with `/mcp`",
+      ].join("\n"),
+      [
+        "Skip the gateway's MCP tools.",
+        "",
+        "- You can enable them later in /aperture:settings",
+      ].join("\n"),
+    ];
+
+    const lines: string[] = ["  Register the gateway's MCP tools?", ""];
+
+    for (let i = 0; i < options.length; i++) {
+      const option = options[i];
+      if (!option) continue;
+      const selected = i === this.selectedIndex;
+      const prefix = selected ? this.settingsTheme.cursor : "  ";
+      const label = this.settingsTheme.value(` ${option}`, selected);
+      lines.push(`${prefix}${label}`);
+    }
+
+    lines.push("");
+
+    const explanationBox = new Box(1, 0, (s: string) => s);
+    explanationBox.addChild(
+      new Markdown(
+        explanations[this.selectedIndex] ?? "",
+        0,
+        0,
+        getMarkdownTheme(),
+        {
+          color: (s: string) => this.theme.fg("text", s),
+        },
+      ),
+    );
+
+    lines.push(...explanationBox.render(Math.max(1, width)));
+
+    return lines;
+  }
+
+  handleInput(data: string): void {
+    if (matchesKey(data, Key.up) || data === "k") {
+      this.selectedIndex = this.selectedIndex === 0 ? 1 : 0;
+      return;
+    }
+    if (matchesKey(data, Key.down) || data === "j") {
+      this.selectedIndex = this.selectedIndex === 1 ? 0 : 1;
+      return;
+    }
+
+    if (matchesKey(data, Key.enter)) {
+      this.state.mcpEnabled = this.selectedIndex === 0;
       this.wizCtx.markComplete();
       this.onSelected();
     }
@@ -336,7 +421,7 @@ class FinishStep implements Component {
         : "Dedicated provider"
       : "Proxy existing providers";
 
-    let content = `**URL**: \`${this.state.baseUrl || "(not set)"}\`\n\n**Capabilities**: ${capabilityLabel}`;
+    let content = `**URL**: \`${this.state.baseUrl || "(not set)"}\`\n\n**Capabilities**: ${capabilityLabel}\n\n**MCP tools**: ${this.state.mcpEnabled ? "enabled" : "disabled"}`;
 
     if (this.state.proxyEnabled) {
       const count = this.state.upstreamProviders.length;
@@ -397,6 +482,7 @@ export function createOnboardingWizard(
     baseUrl: currentConfig?.baseUrl ?? "",
     proxyEnabled: currentConfig?.proxy?.enabled ?? false,
     dedicatedEnabled: currentConfig?.dedicated?.enabled ?? true,
+    mcpEnabled: currentConfig?.mcp?.enabled ?? false,
     upstreamProviders:
       currentConfig?.proxy?.upstreamProviders?.map((p) => ({
         id: p.id,
@@ -428,9 +514,22 @@ export function createOnboardingWizard(
       baseUrl: state.baseUrl,
       proxyEnabled: state.proxyEnabled,
       dedicatedEnabled: state.dedicatedEnabled,
+      mcpEnabled: state.mcpEnabled,
       upstreamProviders: state.upstreamProviders,
       dedicatedProviders: state.dedicatedProviders,
     });
+  };
+
+  const providerStepLabel = () =>
+    state.dedicatedEnabled
+      ? "Dedicated"
+      : state.proxyEnabled
+        ? "Proxy"
+        : "Recap";
+
+  const advanceToProviderStep = () => {
+    wizard = buildWizard(providerStepLabel());
+    tui.requestRender();
   };
 
   const buildWizard = (activeLabel?: string): Wizard => {
@@ -461,15 +560,12 @@ export function createOnboardingWizard(
       {
         label: "Capabilities",
         build: (ctx: WizardStepContext) =>
-          new CapabilitiesStep(theme, state, ctx, () => {
-            const nextLabel = state.dedicatedEnabled
-              ? "Dedicated"
-              : state.proxyEnabled
-                ? "Proxy"
-                : "Recap";
-            wizard = buildWizard(nextLabel);
-            tui.requestRender();
-          }),
+          new CapabilitiesStep(theme, state, ctx, advanceToProviderStep),
+      },
+      {
+        label: "MCP",
+        build: (ctx: WizardStepContext) =>
+          new McpStep(theme, state, ctx, advanceToProviderStep),
       },
       ...(state.dedicatedEnabled
         ? [
@@ -506,6 +602,7 @@ export function createOnboardingWizard(
           baseUrl: state.baseUrl,
           proxyEnabled: state.proxyEnabled,
           dedicatedEnabled: state.dedicatedEnabled,
+          mcpEnabled: state.mcpEnabled,
           upstreamProviders: state.upstreamProviders,
           dedicatedProviders: state.dedicatedProviders,
         });
@@ -516,6 +613,7 @@ export function createOnboardingWizard(
           baseUrl: state.baseUrl,
           proxyEnabled: state.proxyEnabled,
           dedicatedEnabled: state.dedicatedEnabled,
+          mcpEnabled: state.mcpEnabled,
           upstreamProviders: state.upstreamProviders,
           dedicatedProviders: state.dedicatedProviders,
         }),
@@ -695,6 +793,7 @@ export function buildOnboardedConfig(
   baseUrl: string,
   proxyEnabled: boolean,
   dedicatedEnabled: boolean,
+  mcpEnabled: boolean,
   upstreamProviders: { id: string; shouldCheckGatewayModels: boolean }[],
   dedicatedProviders: DedicatedProviderConfig[],
 ): ApertureConfig {
@@ -715,6 +814,9 @@ export function buildOnboardedConfig(
     dedicated: {
       enabled: dedicatedEnabled,
       providers: dedicatedProviders,
+    },
+    mcp: {
+      enabled: mcpEnabled,
     },
   };
 }
