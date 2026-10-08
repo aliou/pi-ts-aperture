@@ -72,12 +72,21 @@ function doneStream(m: Model<Api>) {
 // on the wrapped provider's rewritten getModels() baseUrl.
 function syncDeps(models: () => Model<Api>[]) {
   const registerNativeProvider = vi.fn();
-  const store = new Map<string, { getModels: () => Model<Api>[] }>();
+  const store = new Map<
+    string,
+    { getModels: () => Model<Api>[]; getAllModels?: () => Model<Api>[] }
+  >();
   const deps = {
     getProvider: (id: string) => {
       if (!store.has(id)) {
         store.set(id, {
-          getModels: () => models().filter((m) => m.provider === id),
+          getModels: () =>
+            models().filter(
+              (m) =>
+                m.provider === id &&
+                ((m as { type?: string }).type ?? "chat") === "chat",
+            ),
+          getAllModels: () => models().filter((m) => m.provider === id),
         });
       }
       return store.get(id);
@@ -2192,5 +2201,37 @@ describe("ApertureRuntime.sync manual gateway mapping", () => {
     );
     expect(notify.mock.calls[0]?.[0]).toContain("anthropic: missing");
     expect(notify.mock.calls[0]?.[0]).not.toContain("claude,");
+  });
+});
+
+describe("ApertureRuntime.sync non-chat models", () => {
+  test("getAllModels() rewrites chat models but passes non-chat models through untouched", async () => {
+    mockCatalog([provider("neuralwatt", ["kimi-k3"])]);
+    getConfig.mockReturnValue(
+      proxyConfig([{ id: "neuralwatt", shouldCheckGatewayModels: false }]),
+    );
+    const upstream = "https://api.neuralwatt.com/v1";
+    const classifier = {
+      provider: "neuralwatt",
+      id: "clef-flash",
+      type: "classifier",
+      api: "typesafe-system-one",
+      baseUrl: upstream,
+    } as unknown as Model<Api>;
+    const { deps, registerNativeProvider } = syncDeps(() => [
+      model("neuralwatt", "kimi-k3", "openai-completions", upstream),
+      classifier,
+    ]);
+
+    await new ApertureRuntime().sync(deps);
+
+    const wrapped = registerNativeProvider.mock.calls
+      .map(([p]: unknown[]) => p as { getAllModels?: () => Model<Api>[] })
+      .at(-1);
+    const served = wrapped?.getAllModels?.() ?? [];
+    const decision = served.find((m) => m.id === "clef-flash");
+    const chat = served.find((m) => m.id === "kimi-k3");
+    expect(decision).toBe(classifier);
+    expect(chat?.baseUrl).not.toBe(upstream);
   });
 });
