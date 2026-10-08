@@ -1,4 +1,3 @@
-import { isModelType } from "@earendil-works/pi-ai/utils/model-operations";
 import { ApertureClient } from "../../../src/api/client";
 import type { ApertureProvider } from "../../../src/api/types";
 import { getBaseUrlForApi } from "../../../src/base-url-routing";
@@ -205,7 +204,7 @@ export class ApertureRuntime {
             // Non-chat models (classifiers, images) keep their own api and
             // upstream base URL: the gateway only routes chat API shapes, and
             // rewriting their api would break the provider's one-shot dispatch.
-            isModelType(model, "chat")
+            ((model as { type?: string }).type ?? "chat") === "chat"
               ? { ...model, api, baseUrl: providerBaseUrl }
               : model,
           );
