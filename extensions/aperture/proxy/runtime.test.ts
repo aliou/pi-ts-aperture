@@ -1418,6 +1418,51 @@ describe("ApertureRuntime.sync gateway model filtering", () => {
   });
 });
 
+describe("ApertureRuntime.sync non-chat models", () => {
+  test("leaves classifier models on their own api and baseUrl", async () => {
+    mockCatalog([provider("neuralwatt", ["kimi-k3", "clef-flash"])]);
+    getConfig.mockReturnValue(
+      proxyConfig([
+        {
+          id: "neuralwatt",
+          shouldCheckGatewayModels: false,
+          keepGatewayModelsOnly: true,
+        },
+      ]),
+    );
+    const upstreamBaseUrl = "https://api.neuralwatt.com/v1";
+    const chat = model(
+      "neuralwatt",
+      "kimi-k3",
+      "openai-completions",
+      upstreamBaseUrl,
+    );
+    const classifier = {
+      ...model("neuralwatt", "clef-flash", "neuralwatt-system-one" as Api),
+      baseUrl: upstreamBaseUrl,
+      type: "classifier",
+    } as unknown as Model<Api>;
+    const registerNativeProvider = vi.fn();
+    const native = {
+      id: "neuralwatt",
+      getModels: () => [chat],
+      getAllModels: () => [chat, classifier],
+    };
+
+    await new ApertureRuntime().sync({
+      getProvider: () => native as never,
+      registerNativeProvider,
+      getModels: () => [chat],
+    });
+
+    const wrapped = registerNativeProvider.mock.calls.at(-1)?.[0];
+    expect(wrapped.getAllModels()).toEqual([
+      { ...chat, baseUrl: `${gatewayUrl}/v1` },
+      classifier,
+    ]);
+  });
+});
+
 describe("ApertureRuntime.sync api overrides", () => {
   function mockGatewayCompatibility(
     list: { id: string; compatibility: Record<string, boolean> }[],

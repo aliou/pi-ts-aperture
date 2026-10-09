@@ -19,6 +19,10 @@ import { OPENAI_BASE_URL, withOpenAIGatewayFetch } from "./openai-passthrough";
 
 const MAX_MISSING_MODELS_PER_PROVIDER = 5;
 
+function isChatModel(model: Model<Api>): boolean {
+  return (model.type ?? "chat") === "chat";
+}
+
 export class ApertureRuntime {
   // Upstream provider base URLs captured on first registration. A settings
   // reload re-runs sync, but by then the model list is already rewritten to
@@ -194,17 +198,19 @@ export class ApertureRuntime {
         }
         const baseAuth = firstSeen.auth?.apiKey;
         if (!catalogSettled && !baseAuth) continue;
+        // The gateway only serves chat APIs. Classifier and image models keep
+        // the api and baseUrl their provider expects.
         const serveGatewayModels = (
           models: readonly Model<Api>[],
         ): readonly Model<Api>[] =>
           (servedIds === undefined
             ? models
             : models.filter((model) => servedIds.has(model.id))
-          ).map((model) => ({
-            ...model,
-            api,
-            baseUrl: providerBaseUrl,
-          }));
+          ).map((model) =>
+            isChatModel(model)
+              ? { ...model, api, baseUrl: providerBaseUrl }
+              : model,
+          );
         const wrapped: Provider = {
           // Avoid copying composed methods that delegate back to this wrapper.
           ...firstSeen,
