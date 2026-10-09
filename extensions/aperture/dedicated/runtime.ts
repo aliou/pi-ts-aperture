@@ -154,6 +154,10 @@ function buildModels(
           providerId: provider.id,
           provider: { id: provider.id, name: provider.name },
           pricing: modelInfo?.pricing,
+          limits: {
+            context_window_tokens: modelInfo?.context_window_tokens,
+            max_output_tokens: modelInfo?.max_output_tokens,
+          },
           metadata,
         }),
         api,

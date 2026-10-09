@@ -1,5 +1,8 @@
 import type { ProviderModelConfig } from "@earendil-works/pi-coding-agent";
-import type { ApertureModelPricing } from "../../../src/api/types";
+import type {
+  ApertureModelLimits,
+  ApertureModelPricing,
+} from "../../../src/api/types";
 import type { ModelMetadata } from "../../../src/model-metadata";
 
 export interface ApertureModelDefaultsInput {
@@ -11,8 +14,15 @@ export interface ApertureModelDefaultsInput {
     name?: string;
   };
   pricing?: ApertureModelPricing;
+  /** Token limits the gateway advertises for this model on this route. */
+  limits?: ApertureModelLimits;
   /** Resolved capability metadata (Pi registry / models.dev). */
   metadata?: ModelMetadata;
+}
+
+/** Non-positive limits mean "not reported". */
+function reportedLimit(value: number | undefined): number | undefined {
+  return value !== undefined && value > 0 ? value : undefined;
 }
 
 const TOKENS_PER_MILLION = 1_000_000;
@@ -48,9 +58,15 @@ function mergeCost(
 }
 
 /**
- * Build a model config from safe defaults, resolved metadata, and gateway
- * pricing. Precedence: defaults < metadata (models.dev < Pi registry, merged
- * upstream by the resolver) < gateway pricing (cost only).
+ * Build a model config from safe defaults, resolved metadata, and the gateway's
+ * own numbers. Precedence: defaults < metadata (models.dev < Pi registry,
+ * merged upstream by the resolver) < gateway (cost, and the token limits it
+ * advertises for the route).
+ *
+ * Gateway limits win because they describe the endpoint Pi actually calls: a
+ * catalog entry names the model's native capacity, while the route may cap it
+ * lower, and an over-reported limit is a rejected request rather than a
+ * slightly early compaction.
  */
 export function buildDefaultModelConfig(
   model: ApertureModelDefaultsInput,
@@ -58,6 +74,14 @@ export function buildDefaultModelConfig(
   const id = model.id;
   const metadata = model.metadata;
   const cost = mergeCost(model.pricing, metadata?.cost);
+  const contextWindow =
+    reportedLimit(model.limits?.context_window_tokens) ??
+    metadata?.contextWindow ??
+    128_000;
+  const maxTokens =
+    reportedLimit(model.limits?.max_output_tokens) ??
+    metadata?.maxTokens ??
+    8_192;
 
   return {
     id,
@@ -68,8 +92,8 @@ export function buildDefaultModelConfig(
       : {}),
     input: metadata?.input ?? ["text"],
     cost,
-    contextWindow: metadata?.contextWindow ?? 128_000,
-    maxTokens: metadata?.maxTokens ?? 8_192,
+    contextWindow,
+    maxTokens,
     ...(metadata?.compat ? { compat: metadata.compat } : {}),
   };
 }

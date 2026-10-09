@@ -36,7 +36,7 @@ The wizard asks for your Aperture URL (with a health check), lets you pick capab
 
 Registers a standalone `aperture` provider listing the models your gateway exposes. Include all gateway providers or filter to specific ones, and each model is routed through the Pi API that matches its Aperture compatibility.
 
-Capabilities (context window, vision input, reasoning, thinking levels) come from the first source that knows the model: `~/.pi/agent/models.json`, then Pi's model registry, then [models.dev](https://models.dev), then safe defaults. Costs come from the gateway. The resolved catalog is cached in Pi's models store, so models load instantly on startup, even offline.
+Capabilities (vision input, reasoning, thinking levels) come from the first source that knows the model: `~/.pi/agent/models.json`, then Pi's model registry, then [models.dev](https://models.dev), then safe defaults. Costs, the context window, and the output limit come from the gateway where it reports them, because they describe the route Pi calls and a reseller can cap a model below its native capacity. The resolved catalog is cached in Pi's models store, so models load instantly on startup, even offline.
 
 ### Proxy existing providers
 
