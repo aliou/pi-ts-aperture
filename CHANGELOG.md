@@ -1,5 +1,18 @@
 # @aliou/pi-ts-aperture
 
+## 0.18.0
+
+### Minor Changes
+
+- ca2a023: Apply MCP enable/disable changes immediately: the mcp extension reconciles the gateway MCP server registration on config sync, so toggling MCP tools in `/aperture:settings` no longer requires a reload.
+- 1c0383f: Rename the connectors feature to MCP. The settings tab is now "MCP", the extension lives at `extensions/mcp/`, and the config key is `mcp` — migration 006 moves existing `connectors` config over, so no action is needed.
+- 749d95c: Add an MCP step to the onboarding wizard: after picking capabilities, the wizard asks whether to register the gateway's MCP tools (off by default) and includes the choice in the saved config.
+- a3cb74e: Add settings tab shortcuts: `/aperture:proxy`, `/aperture:dedicated`, and `/aperture:mcp` open the settings UI directly on the corresponding tab.
+
+### Patch Changes
+
+- 007e511: Proxy mode no longer rewrites classifier and image models to the gateway chat api and URL. They keep the upstream provider's own api and baseUrl, so provider classifiers such as Neuralwatt's `clef-flash` work again.
+
 ## 0.17.1
 
 ### Patch Changes
