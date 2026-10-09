@@ -142,6 +142,36 @@ describe("ApertureClient", () => {
     });
   });
 
+  test("providers() retains gateway token limits on modelInfoById", async () => {
+    mockFetch((url) => {
+      if (url.endsWith("/v1/models")) {
+        return {
+          data: [
+            model(
+              "xai/grok-4.5",
+              { id: "vercel-ent-zdr", name: "Vercel (ZDR)" },
+              {
+                context_window_tokens: 500_000,
+                max_output_tokens: 500_000,
+                supported_endpoints: ["/v1/chat/completions"],
+              },
+            ),
+          ],
+        };
+      }
+      return notOk(404, "Not Found");
+    });
+
+    const providers = await new ApertureClient(
+      "http://gateway.test",
+    ).providers();
+    expect(providers[0].modelInfoById["xai/grok-4.5"]).toEqual({
+      id: "xai/grok-4.5",
+      context_window_tokens: 500_000,
+      max_output_tokens: 500_000,
+    });
+  });
+
   test("providers() skips entries without provider metadata", async () => {
     mockFetch((url) => {
       if (url.endsWith("/v1/models")) {

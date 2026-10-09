@@ -42,11 +42,26 @@ export const ApertureModelInfoSchema = Type.Object(
   {
     id: Type.String(),
     pricing: Type.Optional(ApertureModelPricingSchema),
+    /** Maximum input the model accepts, as advertised for this route. */
+    context_window_tokens: Type.Optional(Type.Integer({ minimum: 0 })),
+    /** Maximum tokens the model can produce, as advertised for this route. */
+    max_output_tokens: Type.Optional(Type.Integer({ minimum: 0 })),
   },
   { additionalProperties: true },
 );
 
 export type ApertureModelInfo = Static<typeof ApertureModelInfoSchema>;
+
+/**
+ * Token limits a gateway entry advertises for a model. They describe the
+ * route the request takes, not the model, so they outrank catalog metadata.
+ * Non-positive values mean "not reported" (the gateway clamps zeroed limits
+ * to absent).
+ */
+export type ApertureModelLimits = Pick<
+  ApertureModelInfo,
+  "context_window_tokens" | "max_output_tokens"
+>;
 
 /** A `/v1/models` entry. */
 export const ApertureModelEntrySchema = Type.Object(
@@ -68,6 +83,8 @@ export const ApertureModelEntrySchema = Type.Object(
     ),
     supported_endpoints: Type.Array(Type.String(), { default: [] }),
     pricing: Type.Optional(ApertureModelPricingSchema),
+    context_window_tokens: Type.Optional(Type.Integer({ minimum: 0 })),
+    max_output_tokens: Type.Optional(Type.Integer({ minimum: 0 })),
   },
   { additionalProperties: true },
 );

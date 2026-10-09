@@ -115,6 +115,8 @@ export class ApertureClient {
       provider.modelInfoById[entry.id] = {
         id: entry.id,
         pricing: entry.pricing,
+        context_window_tokens: entry.context_window_tokens,
+        max_output_tokens: entry.max_output_tokens,
       };
       for (const endpoint of entry.supported_endpoints) {
         const flag = compatibilityFlag(endpoint);

@@ -88,6 +88,17 @@ function gatewayProviderWithPricing(
   };
 }
 
+function gatewayProviderWithLimits(
+  id: string,
+  modelId: string,
+  limits: { context_window_tokens?: number; max_output_tokens?: number },
+): ApertureProvider {
+  return {
+    ...gatewayProvider(id, [modelId]),
+    modelInfoById: { [modelId]: { id: modelId, ...limits } },
+  };
+}
+
 function nativeModel(
   provider: string,
   id: string,
@@ -615,6 +626,66 @@ describe("refreshModels / metadata enrichment", () => {
 
     const models = await refresh(provider, memoryStore(), true);
     // models.dev metadata applies because the self-match was excluded.
+    expect(models[0].contextWindow).toBe(1_000_000);
+    expect(models[0].maxTokens).toBe(65_536);
+  });
+
+  test("uses gateway limits when no catalog knows the model", async () => {
+    providersMock.mockResolvedValue([
+      gatewayProviderWithLimits("vercel-ent-zdr", "anthropic/claude-opus-5-5", {
+        context_window_tokens: 1_000_000,
+        max_output_tokens: 128_000,
+      }),
+    ]);
+    const provider = register(() => []);
+
+    const models = await refresh(provider, memoryStore(), true);
+    expect(models[0].contextWindow).toBe(1_000_000);
+    expect(models[0].maxTokens).toBe(128_000);
+  });
+
+  test("gateway limits win over registry metadata", async () => {
+    // The serving endpoint's advertised limits are what the request is held
+    // to; a vendor-native catalog entry describes the model, not the route.
+    providersMock.mockResolvedValue([
+      gatewayProviderWithLimits("vercel-ent-zdr", "xai/grok-4.5", {
+        context_window_tokens: 500_000,
+        max_output_tokens: 500_000,
+      }),
+    ]);
+    const provider = register(() => [
+      nativeModel("xai", "grok-4.5", "https://api.x.ai/v1", {
+        contextWindow: 128_000,
+        maxTokens: 8_192,
+      }),
+    ]);
+
+    const models = await refresh(provider, memoryStore(), true);
+    expect(models[0].contextWindow).toBe(500_000);
+    expect(models[0].maxTokens).toBe(500_000);
+  });
+
+  test("gateway limits merge field-by-field over metadata", async () => {
+    // A gateway that reports only the context window must not zero the output
+    // limit resolved from metadata.
+    providersMock.mockResolvedValue([
+      gatewayProviderWithLimits("vercel-ent-zdr", "google/gemini-3.8-flash", {
+        context_window_tokens: 1_000_000,
+      }),
+    ]);
+    const provider = register(() => [
+      nativeModel(
+        "vercel-ai-gateway",
+        "google/gemini-3.8-flash",
+        "https://ai-gateway.vercel.sh/v1",
+        {
+          contextWindow: 1_048_576,
+          maxTokens: 65_536,
+        },
+      ),
+    ]);
+
+    const models = await refresh(provider, memoryStore(), true);
     expect(models[0].contextWindow).toBe(1_000_000);
     expect(models[0].maxTokens).toBe(65_536);
   });
