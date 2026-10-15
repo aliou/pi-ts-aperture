@@ -12,6 +12,10 @@ export const DEDICATED_MODELS: Readonly<Record<string, string>> = {
   openrouter: "anthropic/claude-sonnet-5",
 };
 
+export const DEDICATED_CLASSIFIER_MODELS: Readonly<Record<string, string>> = {
+  neuralwatt: "clef-flash",
+};
+
 // Proxy mode wraps local Pi providers by id; only these have one.
 export const PROXY_MODELS: Readonly<Record<string, string>> = {
   synthetic: "syn:small:text",

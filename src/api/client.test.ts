@@ -70,7 +70,12 @@ describe("ApertureClient", () => {
         models: ["claude-sonnet-4"],
         compatibility: { anthropic_messages: true },
         requires_client_auth: false,
-        modelInfoById: { "claude-sonnet-4": { id: "claude-sonnet-4" } },
+        modelInfoById: {
+          "claude-sonnet-4": {
+            id: "claude-sonnet-4",
+            system_one: false,
+          },
+        },
       },
       {
         id: "openai",
@@ -80,8 +85,8 @@ describe("ApertureClient", () => {
         compatibility: { openai_chat: true, openai_responses: true },
         requires_client_auth: true,
         modelInfoById: {
-          "gpt-5": { id: "gpt-5" },
-          "gpt-5-mini": { id: "gpt-5-mini" },
+          "gpt-5": { id: "gpt-5", system_one: false },
+          "gpt-5-mini": { id: "gpt-5-mini", system_one: false },
         },
       },
     ]);
@@ -139,6 +144,7 @@ describe("ApertureClient", () => {
     expect(providers[0].modelInfoById["syn:large:text"]).toEqual({
       id: "syn:large:text",
       pricing,
+      system_one: false,
     });
   });
 
@@ -169,6 +175,42 @@ describe("ApertureClient", () => {
       id: "xai/grok-4.5",
       context_window_tokens: 500_000,
       max_output_tokens: 500_000,
+      system_one: false,
+    });
+  });
+
+  test("providers() flags System One capability per model", async () => {
+    mockFetch((url) => {
+      if (url.endsWith("/v1/models")) {
+        return {
+          data: [
+            model(
+              "jev-latest",
+              { id: "typesafe", name: "TypeSafe" },
+              { supported_endpoints: ["/v1/systemone"] },
+            ),
+            model(
+              "clef-flash",
+              { id: "neuralwatt", name: "Neuralwatt" },
+              { supported_endpoints: ["/v1/messages", "/v1/systemone"] },
+            ),
+          ],
+        };
+      }
+      return notOk(404, "Not Found");
+    });
+
+    const providers = await new ApertureClient(
+      "http://gateway.test",
+    ).providers();
+    // Per-model flag: presence of /v1/systemone in the entry's endpoints.
+    expect(providers[0].modelInfoById["jev-latest"]).toEqual({
+      id: "jev-latest",
+      system_one: true,
+    });
+    expect(providers[1].modelInfoById["clef-flash"]).toEqual({
+      id: "clef-flash",
+      system_one: true,
     });
   });
 

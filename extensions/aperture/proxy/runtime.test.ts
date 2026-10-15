@@ -1418,8 +1418,8 @@ describe("ApertureRuntime.sync gateway model filtering", () => {
   });
 });
 
-describe("ApertureRuntime.sync non-chat models", () => {
-  test("leaves classifier models on their own api and baseUrl", async () => {
+describe("ApertureRuntime.sync classifier models", () => {
+  test("rewrites classifier models to the gateway, keeping their own api", async () => {
     mockCatalog([provider("neuralwatt", ["kimi-k3", "clef-flash"])]);
     getConfig.mockReturnValue(
       proxyConfig([
@@ -1458,7 +1458,35 @@ describe("ApertureRuntime.sync non-chat models", () => {
     const wrapped = registerNativeProvider.mock.calls.at(-1)?.[0];
     expect(wrapped.getAllModels()).toEqual([
       { ...chat, baseUrl: `${gatewayUrl}/v1` },
-      classifier,
+      { ...classifier, baseUrl: `${gatewayUrl}/v1` },
+    ]);
+  });
+
+  test("registers classifier-only providers and routes them through the gateway", async () => {
+    mockCatalog([provider("typesafe", ["jev-latest"])]);
+    getConfig.mockReturnValue(proxyConfig([{ id: "typesafe" }]));
+    const classifier = {
+      ...model("typesafe", "jev-latest", "typesafe-system-one" as Api),
+      baseUrl: "https://api.typesafe.ai/v1/",
+      type: "classifier",
+    } as unknown as Model<Api>;
+    const registerNativeProvider = vi.fn();
+    const native = {
+      id: "typesafe",
+      getModels: () => [],
+      getAllModels: () => [classifier],
+    };
+
+    await new ApertureRuntime().sync({
+      getProvider: () => native as never,
+      registerNativeProvider,
+      getModels: () => [classifier],
+    });
+
+    const wrapped = registerNativeProvider.mock.calls.at(-1)?.[0];
+    expect(wrapped.getModels()).toEqual([]);
+    expect(wrapped.getAllModels()).toEqual([
+      { ...classifier, baseUrl: `${gatewayUrl}/v1` },
     ]);
   });
 });
@@ -2237,5 +2265,123 @@ describe("ApertureRuntime.sync manual gateway mapping", () => {
     );
     expect(notify.mock.calls[0]?.[0]).toContain("anthropic: missing");
     expect(notify.mock.calls[0]?.[0]).not.toContain("claude,");
+  });
+});
+
+describe("ApertureRuntime.sync classifier dispatch", () => {
+  function classifierProvider(
+    served: string[],
+    overrides: { keepGatewayModelsOnly?: boolean; auth?: boolean } = {},
+  ) {
+    mockCatalog([provider("typesafe", served)]);
+    getConfig.mockReturnValue(
+      proxyConfig([
+        {
+          id: "typesafe",
+          ...(overrides.keepGatewayModelsOnly
+            ? { keepGatewayModelsOnly: true }
+            : {}),
+        },
+      ]),
+    );
+    const classifier = {
+      ...model("typesafe", "jev-latest", "typesafe-system-one" as Api),
+      baseUrl: "https://api.typesafe.ai/v1/",
+      type: "classifier",
+    } as unknown as Model<Api>;
+    const classify = vi.fn(async () => ({}) as never);
+    const native = {
+      id: "typesafe",
+      getModels: () => [],
+      getAllModels: () => [classifier],
+      classify,
+      ...(overrides.auth
+        ? {
+            auth: {
+              apiKey: {
+                name: "typesafe key",
+                resolve: async () => ({
+                  auth: { apiKey: "real-key" },
+                  source: "env",
+                }),
+              },
+            },
+          }
+        : {}),
+    };
+    const registered: unknown[] = [];
+    let current: unknown = native;
+    const registerNativeProvider = vi.fn((p: unknown) => {
+      registered.push(p);
+      current = p;
+    });
+    return {
+      classifier,
+      classify,
+      native,
+      registerNativeProvider,
+      deps: {
+        getProvider: () => current,
+        registerNativeProvider,
+        getModels: () => [classifier],
+      },
+    };
+  }
+
+  function lastWrapped(registerNativeProvider: ReturnType<typeof vi.fn>) {
+    return registerNativeProvider.mock.calls.at(-1)?.[0] as {
+      getModels?: () => Model<Api>[];
+      getAllModels?: () => Model<Api>[];
+      classify?: (m: unknown, c: unknown, o: unknown) => Promise<unknown>;
+    };
+  }
+
+  test("qualifies classifier ids and re-stamps the gateway url at dispatch", async () => {
+    const { classify, registerNativeProvider, deps } = classifierProvider([
+      "jev-latest",
+    ]);
+
+    await new ApertureRuntime().sync(deps);
+
+    const wrapped = lastWrapped(registerNativeProvider);
+    const tampered = {
+      id: "jev-latest",
+      api: "typesafe-system-one",
+      baseUrl: "https://upstream.typesafe.ai/v1/",
+    };
+    await wrapped.classify?.(tampered, {}, undefined);
+
+    expect(classify).toHaveBeenCalledOnce();
+    const [requestModel] = classify.mock.calls[0] as unknown as [Model<Api>];
+    expect(requestModel.id).toBe("typesafe/jev-latest");
+    expect(requestModel.baseUrl).toBe(`${gatewayUrl}/v1`);
+  });
+
+  test("keeps classifier-only providers when keepGatewayModelsOnly is on", async () => {
+    const { classifier, registerNativeProvider, deps } = classifierProvider(
+      ["jev-latest"],
+      { keepGatewayModelsOnly: true },
+    );
+
+    await new ApertureRuntime().sync(deps);
+
+    const wrapped = lastWrapped(registerNativeProvider);
+    expect(wrapped.getAllModels?.()).toEqual([
+      { ...classifier, baseUrl: `${gatewayUrl}/v1` },
+    ]);
+  });
+
+  test("empties the route when the gateway serves none of its models", async () => {
+    const { native, registerNativeProvider, deps } = classifierProvider(
+      ["other-model"],
+      { keepGatewayModelsOnly: true, auth: true },
+    );
+
+    await new ApertureRuntime().sync(deps);
+
+    const wrapped = lastWrapped(registerNativeProvider);
+    expect(wrapped).not.toBe(native);
+    expect(wrapped.getModels?.()).toEqual([]);
+    expect(wrapped.getAllModels?.()).toEqual([]);
   });
 });

@@ -1,14 +1,21 @@
 import type {
   AnyModel,
   Api,
+  ClassifierApi,
+  ClassifierContext,
+  ClassifierModel,
   Model,
   ModelsStoreEntry,
   Provider,
   ProviderModelsStore,
   RefreshModelsContext,
 } from "@earendil-works/pi-ai";
+import { getModelType } from "@earendil-works/pi-ai";
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import type { ApertureProvider } from "../../../src/api/types";
+import type {
+  ApertureModelInfo,
+  ApertureProvider,
+} from "../../../src/api/types";
 import type { ModelsDevCatalog } from "../../../src/model-metadata";
 
 // vi.hoisted gives access to the mock fns inside hoisted vi.mock factories
@@ -78,25 +85,18 @@ function gatewayProvider(id: string, models: string[]): ApertureProvider {
   };
 }
 
-function gatewayProviderWithPricing(
+function gatewayProviderWithModels(
   id: string,
-  modelId: string,
-  pricing: Record<string, string>,
+  models: Record<string, Partial<ApertureModelInfo>>,
 ): ApertureProvider {
   return {
-    ...gatewayProvider(id, [modelId]),
-    modelInfoById: { [modelId]: { id: modelId, pricing } },
-  };
-}
-
-function gatewayProviderWithLimits(
-  id: string,
-  modelId: string,
-  limits: { context_window_tokens?: number; max_output_tokens?: number },
-): ApertureProvider {
-  return {
-    ...gatewayProvider(id, [modelId]),
-    modelInfoById: { [modelId]: { id: modelId, ...limits } },
+    ...gatewayProvider(id, Object.keys(models)),
+    modelInfoById: Object.fromEntries(
+      Object.entries(models).map(([modelId, info]) => [
+        modelId,
+        { id: modelId, ...info },
+      ]),
+    ),
   };
 }
 
@@ -308,7 +308,7 @@ describe("refreshModels / cache-only restore", () => {
         },
       ] as unknown as Model<Api>[],
       checkedAt: Date.now(),
-      catalogKey: `${GATEWAY} * v2`,
+      catalogKey: `${GATEWAY} * v3`,
     });
 
     const models = await refresh(provider, store, false);
@@ -479,11 +479,15 @@ describe("refreshModels / networked refresh", () => {
 
   test("attaches gateway pricing to model cost", async () => {
     providersMock.mockResolvedValue([
-      gatewayProviderWithPricing("synthetic", "syn:large:text", {
-        input: "0.00000093",
-        input_cache_read: "0.00000018",
-        input_cache_write: "0.00000300",
-        output: "0.00000300",
+      gatewayProviderWithModels("synthetic", {
+        "syn:large:text": {
+          pricing: {
+            input: "0.00000093",
+            input_cache_read: "0.00000018",
+            input_cache_write: "0.00000300",
+            output: "0.00000300",
+          },
+        },
       }),
     ]);
     const provider = register();
@@ -524,8 +528,10 @@ describe("refreshModels / metadata enrichment", () => {
     // Gateway reports only a cache-read rate; input/output/cacheWrite must
     // keep the registry values instead of being zeroed or discarded.
     providersMock.mockResolvedValue([
-      gatewayProviderWithPricing("openai", "gpt-5", {
-        input_cache_read: "0.00000020",
+      gatewayProviderWithModels("openai", {
+        "gpt-5": {
+          pricing: { input_cache_read: "0.00000020" },
+        },
       }),
     ]);
     const provider = register(() => [
@@ -543,9 +549,10 @@ describe("refreshModels / metadata enrichment", () => {
 
   test("gateway pricing wins over registry cost", async () => {
     providersMock.mockResolvedValue([
-      gatewayProviderWithPricing("openai", "gpt-5", {
-        input: "0.00000200",
-        output: "0.00000900",
+      gatewayProviderWithModels("openai", {
+        "gpt-5": {
+          pricing: { input: "0.00000200", output: "0.00000900" },
+        },
       }),
     ]);
     const provider = register(() => [
@@ -633,9 +640,11 @@ describe("refreshModels / metadata enrichment", () => {
 
   test("uses gateway limits when no catalog knows the model", async () => {
     providersMock.mockResolvedValue([
-      gatewayProviderWithLimits("vercel-ent-zdr", "anthropic/claude-opus-5-5", {
-        context_window_tokens: 1_000_000,
-        max_output_tokens: 128_000,
+      gatewayProviderWithModels("vercel-ent-zdr", {
+        "anthropic/claude-opus-5-5": {
+          context_window_tokens: 1_000_000,
+          max_output_tokens: 128_000,
+        },
       }),
     ]);
     const provider = register(() => []);
@@ -649,9 +658,11 @@ describe("refreshModels / metadata enrichment", () => {
     // The serving endpoint's advertised limits are what the request is held
     // to; a vendor-native catalog entry describes the model, not the route.
     providersMock.mockResolvedValue([
-      gatewayProviderWithLimits("vercel-ent-zdr", "xai/grok-4.5", {
-        context_window_tokens: 500_000,
-        max_output_tokens: 500_000,
+      gatewayProviderWithModels("vercel-ent-zdr", {
+        "xai/grok-4.5": {
+          context_window_tokens: 500_000,
+          max_output_tokens: 500_000,
+        },
       }),
     ]);
     const provider = register(() => [
@@ -670,8 +681,10 @@ describe("refreshModels / metadata enrichment", () => {
     // A gateway that reports only the context window must not zero the output
     // limit resolved from metadata.
     providersMock.mockResolvedValue([
-      gatewayProviderWithLimits("vercel-ent-zdr", "google/gemini-3.8-flash", {
-        context_window_tokens: 1_000_000,
+      gatewayProviderWithModels("vercel-ent-zdr", {
+        "google/gemini-3.8-flash": {
+          context_window_tokens: 1_000_000,
+        },
       }),
     ]);
     const provider = register(() => [
@@ -920,5 +933,110 @@ describe("refreshModels / api overrides", () => {
     expect(models.map((m) => m.id)).toEqual(["openrouter/m-1"]);
     expect(models[0]?.api).toBe("anthropic-messages");
     expect(providersMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("refreshModels / classifier models", () => {
+  test("System One models become classifiers instead of chat models", async () => {
+    providersMock.mockResolvedValue([
+      gatewayProviderWithModels("typesafe", {
+        "jev-latest": { system_one: true },
+      }),
+    ]);
+    const provider = register();
+
+    const models = await refresh(provider, memoryStore(), true);
+
+    expect(models).toHaveLength(1);
+    expect(models[0].id).toBe("typesafe/jev-latest");
+    expect(getModelType(models[0])).toBe("classifier");
+    expect(models[0].api).toBe("typesafe-system-one");
+    expect(models[0].baseUrl).toBe(`${GATEWAY}/v1`);
+  });
+});
+
+describe("dedicated provider classify", () => {
+  test("routes System One calls to the gateway with placeholder auth", async () => {
+    providersMock.mockResolvedValue([
+      gatewayProviderWithModels("typesafe", {
+        "jev-latest": { system_one: true },
+      }),
+    ]);
+    const provider = register();
+    await refresh(provider, memoryStore(), true);
+    const model = provider
+      .getAllModels?.()
+      .at(-1) as unknown as ClassifierModel<ClassifierApi>;
+
+    const fetchMock = vi.fn(async () =>
+      Response.json(
+        {
+          answers: {
+            topic: {
+              type: "choice",
+              choice: "billing",
+              probabilities: { billing: 0.9 },
+              confidence: 0.9,
+            },
+          },
+          usage: { input_tokens: 10, output_tokens: 2 },
+        },
+        { status: 200 },
+      ),
+    );
+    const result = await provider.classify?.(
+      model,
+      {
+        questions: {
+          topic: { type: "choice", options: ["billing", "other"] },
+        },
+      } as unknown as ClassifierContext,
+      { apiKey: "-", fetch: fetchMock as unknown as typeof fetch },
+    );
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [
+      URL,
+      { headers: Record<string, string>; body: string },
+    ];
+    expect(url.toString()).toBe(`${GATEWAY}/v1/systemone`);
+    expect(init.headers.authorization).toBe("Bearer -");
+    expect(JSON.parse(init.body).model).toBe("typesafe/jev-latest");
+    expect(result?.stopReason).toBe("stop");
+    expect(result?.answers.topic).toEqual({
+      type: "choice",
+      choice: "billing",
+      probabilities: { billing: 0.9 },
+      confidence: 0.9,
+    });
+    expect(result?.usage?.totalTokens).toBe(12);
+  });
+});
+
+describe("dedicated provider model surfaces", () => {
+  test("classifier records stay out of getModels and ride on getAllModels", async () => {
+    providersMock.mockResolvedValue([
+      gatewayProviderWithModels("typesafe", {
+        "jev-latest": { system_one: true },
+      }),
+      gatewayProviderWithModels("neuralwatt", {
+        "clef-flash": { system_one: true },
+        "kimi-k3": {},
+      }),
+    ]);
+    const provider = register();
+    await refresh(provider, memoryStore(), true);
+
+    expect(provider?.getModels().map((m) => m.id)).toEqual([
+      "neuralwatt/kimi-k3",
+    ]);
+    expect(provider?.getAllModels?.().map((m) => m.id)).toEqual([
+      "typesafe/jev-latest",
+      "neuralwatt/clef-flash",
+      "neuralwatt/kimi-k3",
+    ]);
+    expect(getModelType(provider?.getAllModels?.()[0] as AnyModel)).toBe(
+      "classifier",
+    );
   });
 });

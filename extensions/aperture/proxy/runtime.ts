@@ -201,9 +201,14 @@ export class ApertureRuntime {
         // Chat models are rewritten to the route's api and base URL. Classifier
         // models keep their api but call the gateway. Everything else (image
         // models) keeps its own routing.
+        const gatewayUrlFor = (api: Api) =>
+          getBaseUrlForApi(api, gatewayRoot, baseUrl, upstreamBaseUrl);
         const routeModel = (model: AnyModel): AnyModel => {
           if (isModelType(model, "chat")) {
             return { ...model, api, baseUrl: providerBaseUrl };
+          }
+          if (isModelType(model, "classifier")) {
+            return { ...model, baseUrl: gatewayUrlFor(model.api) };
           }
           return model;
         };
@@ -214,6 +219,7 @@ export class ApertureRuntime {
             ? models
             : models.filter((model) => servedIds.has(model.id))
           ).map(routeModel);
+        const nativeClassify = firstSeen.classify;
         const wrapped: Provider = {
           // Avoid copying composed methods that delegate back to this wrapper.
           ...firstSeen,
@@ -224,6 +230,17 @@ export class ApertureRuntime {
             serveGatewayModels(
               firstSeen.getAllModels?.() ?? firstSeen.getModels(),
             ),
+          classify: nativeClassify
+            ? (model, context, options) =>
+                nativeClassify(
+                  qualifyModelId(gatewayId, {
+                    ...model,
+                    baseUrl: gatewayUrlFor(model.api),
+                  }),
+                  context,
+                  options,
+                )
+            : undefined,
           // Delegate through `firstSeen`, not `native`: from the second sync
           // onwards `native` is our own previous wrapper, so routing its
           // streams would double-qualify the model id. Same rationale as

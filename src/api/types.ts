@@ -46,6 +46,8 @@ export const ApertureModelInfoSchema = Type.Object(
     context_window_tokens: Type.Optional(Type.Integer({ minimum: 0 })),
     /** Maximum tokens the model can produce, as advertised for this route. */
     max_output_tokens: Type.Optional(Type.Integer({ minimum: 0 })),
+    /** The gateway serves this model over the System One classifier protocol. */
+    system_one: Type.Optional(Type.Boolean()),
   },
   { additionalProperties: true },
 );

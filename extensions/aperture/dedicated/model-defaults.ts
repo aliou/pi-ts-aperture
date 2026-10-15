@@ -95,3 +95,28 @@ export function buildDefaultModelConfig(model: ApertureModelDefaultsInput) {
     ...(metadata?.compat ? { compat: metadata.compat } : {}),
   };
 }
+
+export interface ApertureClassifierDefaultsInput {
+  id: string;
+  name?: string;
+  pricing?: ApertureModelPricing;
+  limits?: Pick<ApertureModelLimits, "context_window_tokens">;
+  metadata?: ModelMetadata;
+}
+
+export function buildClassifierModelConfig(
+  model: ApertureClassifierDefaultsInput,
+) {
+  const cost = mergeCost(model.pricing, model.metadata?.cost);
+  const contextWindow =
+    reportedLimit(model.limits?.context_window_tokens) ??
+    model.metadata?.contextWindow ??
+    128_000;
+  return {
+    id: model.id,
+    name: model.metadata?.name ?? model.name ?? model.id,
+    input: ["text" as const],
+    cost,
+    contextWindow,
+  };
+}
