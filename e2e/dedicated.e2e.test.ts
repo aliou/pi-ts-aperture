@@ -7,8 +7,14 @@ import type {
   Provider,
   RefreshModelsContext,
 } from "@earendil-works/pi-ai";
+import { isModelType } from "@earendil-works/pi-ai";
 import { beforeAll, describe, expect, test } from "vitest";
-import { DEDICATED_MODELS, GATEWAY, isAccessible } from "./helpers";
+import {
+  DEDICATED_CLASSIFIER_MODELS,
+  DEDICATED_MODELS,
+  GATEWAY,
+  isAccessible,
+} from "./helpers";
 
 // The config loader singleton resolves ~/.pi/agent at import time: point HOME
 // at a scratch dir and set APERTURE_BASE_URL before importing it.
@@ -28,6 +34,7 @@ const accessible = await isAccessible(GATEWAY);
 describe.skipIf(!accessible)("dedicated provider e2e", () => {
   let provider: Provider;
   let models: Model<Api>[];
+  let allModels: readonly Model<Api>[];
 
   beforeAll(async () => {
     await configLoader.load();
@@ -49,6 +56,7 @@ describe.skipIf(!accessible)("dedicated provider e2e", () => {
 
     await provider.refreshModels?.(context);
     models = provider.getModels();
+    allModels = provider.getAllModels?.() ?? [];
   });
 
   test("refresh publishes a provider-qualified catalog under the gateway", () => {
@@ -106,5 +114,50 @@ describe.skipIf(!accessible)("dedicated provider e2e", () => {
     expect(
       result.content.filter((block) => block.type !== "toolcall").length,
     ).toBeGreaterThan(0);
+  });
+
+  test.each(
+    Object.entries(DEDICATED_CLASSIFIER_MODELS),
+  )("classifies %s/%s", async (providerId, modelId) => {
+    const classifier = allModels.find(
+      (m) => m.id === `${providerId}/${modelId}`,
+    );
+    expect(
+      classifier,
+      `catalog does not contain ${providerId}/${modelId}`,
+    ).toBeDefined();
+    expect(
+      classifier && isModelType(classifier, "classifier"),
+      `${providerId}/${modelId} is not a classifier model`,
+    ).toBe(true);
+    if (!classifier || !isModelType(classifier, "classifier")) return;
+    expect(classifier.api).toBe("typesafe-system-one");
+    expect(models.map((m) => m.id)).not.toContain(classifier.id);
+
+    const result = await provider.classify?.(
+      classifier,
+      {
+        state: {},
+        questions: {
+          topic: {
+            type: "choice",
+            instructions: "Classify the support ticket.",
+            criteria: {
+              billing: "Invoices, payments, or refunds.",
+              other: "Anything else.",
+            },
+          },
+        },
+      },
+      { apiKey: "-" },
+    );
+
+    expect(result?.stopReason).toBe("stop");
+    expect(result?.answers.topic).toMatchObject({
+      type: "choice",
+      choice: expect.stringMatching(/^billing|other$/u),
+      confidence: expect.any(Number),
+    });
+    expect(result?.usage?.totalTokens).toBeGreaterThan(0);
   });
 });

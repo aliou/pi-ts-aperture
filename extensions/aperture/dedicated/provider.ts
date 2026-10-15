@@ -7,6 +7,10 @@ import type {
 } from "@earendil-works/pi-ai";
 import { isModelType } from "@earendil-works/pi-ai";
 import { buildStream, buildStreamSimple } from "../../shared/api-routing";
+import {
+  APERTURE_SYSTEM_ONE_API,
+  classify as classifySystemOne,
+} from "./system-one";
 
 export const DEDICATED_PROVIDER_ID = "aperture";
 
@@ -54,6 +58,15 @@ export function createDedicatedProvider(
       liveModels.filter(
         (model): model is Model<Api> => !isModelType(model, "classifier"),
       ),
+    getAllModels: () => liveModels,
+    classify: (model, context, options) => {
+      if (model.api !== APERTURE_SYSTEM_ONE_API) {
+        throw new Error(
+          `Aperture provider has no classifier implementation for "${model.api}"`,
+        );
+      }
+      return classifySystemOne(model, context, options);
+    },
     refreshModels: async (context) => {
       const models = await refresh(context);
       if (models === undefined) return;

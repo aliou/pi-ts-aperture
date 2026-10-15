@@ -31,6 +31,9 @@ function compatibilityFlag(
   }
 }
 
+/** Aperture's path for the System One classifier protocol. */
+const SYSTEM_ONE_ENDPOINT = "/v1/systemone";
+
 /**
  * HTTP error raised by {@link ApertureClient._fetch} on non-OK responses.
  */
@@ -117,6 +120,7 @@ export class ApertureClient {
         pricing: entry.pricing,
         context_window_tokens: entry.context_window_tokens,
         max_output_tokens: entry.max_output_tokens,
+        system_one: entry.supported_endpoints.includes(SYSTEM_ONE_ENDPOINT),
       };
       for (const endpoint of entry.supported_endpoints) {
         const flag = compatibilityFlag(endpoint);

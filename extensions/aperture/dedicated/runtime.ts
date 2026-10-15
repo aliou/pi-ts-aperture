@@ -1,6 +1,8 @@
 import type {
   AnyModel,
   Api,
+  ClassifierApi,
+  ClassifierModel,
   Model,
   ModelsStoreEntry,
   RefreshModelsContext,
@@ -21,8 +23,12 @@ import {
   isSelectableApi,
 } from "../../shared/api-selection";
 import { configLoader, type ResolvedConfig } from "../../shared/config/loader";
-import { buildDefaultModelConfig } from "./model-defaults";
+import {
+  buildClassifierModelConfig,
+  buildDefaultModelConfig,
+} from "./model-defaults";
 import { createDedicatedProvider, DEDICATED_PROVIDER_ID } from "./provider";
+import { APERTURE_SYSTEM_ONE_API } from "./system-one";
 
 const PROVIDER_NAME = DEDICATED_PROVIDER_ID;
 
@@ -66,7 +72,7 @@ function buildCatalogKey(gatewayUrl: string, config: ResolvedConfig): string {
     .sort();
   const filter =
     config.dedicated.providers.length === 0 ? "*" : enabled.join(",");
-  return `${origin} ${filter} v2`;
+  return `${origin} ${filter} v3`;
 }
 
 function filterProviders(
@@ -153,7 +159,32 @@ function buildModels(
         modelsDev,
       });
 
-      models.push({
+      if (modelInfo?.system_one === true) {
+        const classifier: ClassifierModel<ClassifierApi> = {
+          provider: PROVIDER_NAME,
+          type: "classifier",
+          ...buildClassifierModelConfig({
+            id: `${provider.id}/${modelId}`,
+            name: modelId,
+            pricing: modelInfo?.pricing,
+            limits: {
+              context_window_tokens: modelInfo?.context_window_tokens,
+            },
+            metadata,
+          }),
+          api: APERTURE_SYSTEM_ONE_API,
+          baseUrl: getBaseUrlForApi(
+            APERTURE_SYSTEM_ONE_API,
+            gatewayUrl,
+            baseUrl,
+            upstreamBaseUrl,
+          ),
+        };
+        models.push(classifier);
+        continue;
+      }
+
+      const chat: Model<Api> = {
         provider: PROVIDER_NAME,
         ...buildDefaultModelConfig({
           id: `${provider.id}/${modelId}`,
@@ -169,7 +200,8 @@ function buildModels(
         }),
         api,
         baseUrl: getBaseUrlForApi(api, gatewayUrl, baseUrl, upstreamBaseUrl),
-      });
+      };
+      models.push(chat);
     }
   }
 

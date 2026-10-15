@@ -12,6 +12,7 @@ import {
   emitModelsSynced,
 } from "../shared/events";
 import { isProvenanceTelemetryAllowed } from "../shared/provenance";
+import { chatAndClassifierModels } from "../shared/registry-snapshot";
 import { isStaleCtxError } from "../shared/stale-ctx";
 import { emitConfigSync } from "../shared/sync-bus";
 import {
@@ -21,6 +22,12 @@ import {
 import { registerOnboarding } from "./onboarding";
 import { ApertureRuntime } from "./proxy/runtime";
 import { registerApertureSettings } from "./settings";
+
+function registryModelSnapshot(
+  registry: ExtensionContext["modelRegistry"],
+): AnyModel[] {
+  return chatAndClassifierModels(registry);
+}
 
 export default async function (pi: ExtensionAPI): Promise<void> {
   await configLoader.load();
@@ -175,7 +182,7 @@ export default async function (pi: ExtensionAPI): Promise<void> {
   });
 
   const updateKnownModels = (ctx: ExtensionContext): void => {
-    knownModels = ctx.modelRegistry.getAll();
+    knownModels = registryModelSnapshot(ctx.modelRegistry);
   };
 
   const onSync = (ctx: ExtensionContext): void => {
@@ -199,7 +206,7 @@ export default async function (pi: ExtensionAPI): Promise<void> {
           pi.registerProvider(provider);
           registeredProxyProviders.add(provider.id);
         },
-        getModels: () => ctx.modelRegistry.getAll(),
+        getModels: () => registryModelSnapshot(ctx.modelRegistry),
         notify: (msg, type) => ctx.ui.notify(msg, type),
         isStale: () => invalidated,
       })
@@ -216,7 +223,7 @@ export default async function (pi: ExtensionAPI): Promise<void> {
 
     const missingModelsSettled = proxyRuntime
       .checkMissingModels({
-        getModels: () => ctx.modelRegistry.getAll(),
+        getModels: () => registryModelSnapshot(ctx.modelRegistry),
         notify: (msg, type) => ctx.ui.notify(msg, type),
         isStale: () => invalidated,
       })

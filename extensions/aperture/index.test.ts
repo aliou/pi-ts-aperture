@@ -202,6 +202,7 @@ describe("proxy shutdown cleanup", () => {
     const ctx = {
       modelRegistry: {
         getAll: () => [...registry.getModels()],
+        getModelsOfType: () => [],
         getProvider: (id: string) => registry.getProvider(id),
         refresh: async () => ({ errors: new Map() }),
       },

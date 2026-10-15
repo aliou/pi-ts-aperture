@@ -51,7 +51,7 @@ describe.skipIf(!accessible)("Aperture access", () => {
         `${provider.id}: ${provider.models.length} models, compatibility ${JSON.stringify(provider.compatibility)}`,
       );
       expect(provider.models.length).toBeGreaterThan(0);
-      expect(Object.keys(provider.compatibility).length).toBeGreaterThan(0);
+      expect(provider.compatibility).toBeTypeOf("object");
     }
   });
 

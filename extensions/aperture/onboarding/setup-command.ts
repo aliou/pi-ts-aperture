@@ -3,6 +3,7 @@ import type {
   ExtensionCommandContext,
 } from "@earendil-works/pi-coding-agent";
 import { configLoader } from "../../shared/config/loader";
+import { chatAndClassifierModels } from "../../shared/registry-snapshot";
 import {
   buildOnboardedConfig,
   createOnboardingWizard,
@@ -22,7 +23,7 @@ export function registerOnboardingCommand(pi: ExtensionAPI): void {
       }
 
       const globalConfig = configLoader.getRawConfig("global");
-      const knownModels = ctx.modelRegistry.getAll();
+      const knownModels = chatAndClassifierModels(ctx.modelRegistry);
 
       const result = await ctx.ui.custom<OnboardingResult>(
         (tui, theme, _kb, done) =>
