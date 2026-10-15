@@ -13,6 +13,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { ApertureClient } from "../../src/api/client";
 import type { ApertureProvider } from "../../src/api/types";
 import type { ResolvedConfig } from "../shared/config/types";
+import { APERTURE_MODELS_SYNCED_EVENT } from "../shared/events";
 import type { Provider } from "../shared/types";
 
 const mocks = vi.hoisted(() => ({
@@ -207,6 +208,7 @@ describe("proxy shutdown cleanup", () => {
       ui: { notify: vi.fn() },
     };
     const handlers = new Map<string, LifecycleHandler[]>();
+    const emitted: string[] = [];
     const registerProvider = vi.fn((provider: Provider) => {
       registry.registerNativeProvider(provider);
     });
@@ -220,7 +222,12 @@ describe("proxy shutdown cleanup", () => {
         },
         registerProvider,
         unregisterProvider,
-        events: { on: () => {}, emit: () => {} },
+        events: {
+          on: () => {},
+          emit: (channel: string) => {
+            emitted.push(channel);
+          },
+        },
       },
       { get: (t, p, r) => (p in t ? Reflect.get(t, p, r) : () => {}) },
     );
@@ -228,6 +235,7 @@ describe("proxy shutdown cleanup", () => {
     return {
       registerProvider,
       unregisterProvider,
+      emitted,
       emit: async (type: string) => {
         for (const handler of handlers.get(type) ?? []) {
           await handler({ type }, ctx);
@@ -317,5 +325,12 @@ describe("proxy shutdown cleanup", () => {
     expect(registry.getProvider("openai")?.getModels()).toEqual(
       native.getModels(),
     );
+  });
+
+  test("emits the models-synced event after the startup sync settles", async () => {
+    const { registry } = await setupRegistry();
+    const lifecycle = await loadLifecycle(registry);
+    await lifecycle.emit("session_start");
+    expect(lifecycle.emitted).toContain(APERTURE_MODELS_SYNCED_EVENT);
   });
 });

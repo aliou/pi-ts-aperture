@@ -9,6 +9,7 @@ import {
   APERTURE_FEATURE_REGISTER_EVENT,
   APERTURE_FEATURE_REQUEST_EVENT,
   createFeatureRequestPayload,
+  emitModelsSynced,
 } from "../shared/events";
 import { isProvenanceTelemetryAllowed } from "../shared/provenance";
 import { isStaleCtxError } from "../shared/stale-ctx";
@@ -193,7 +194,7 @@ export default async function (pi: ExtensionAPI): Promise<void> {
     }
     lastProxyProviders = nextProxyProviders;
 
-    void proxyRuntime
+    const syncSettled = proxyRuntime
       .sync({
         getProvider: (id) => ctx.modelRegistry.getProvider(id),
         registerNativeProvider: (provider) => {
@@ -215,7 +216,7 @@ export default async function (pi: ExtensionAPI): Promise<void> {
       })
       .catch(suppressStaleRejection);
 
-    void proxyRuntime
+    const missingModelsSettled = proxyRuntime
       .checkMissingModels({
         getModels: () => ctx.modelRegistry.getAll(),
         notify: (msg, type) => ctx.ui.notify(msg, type),
@@ -249,7 +250,7 @@ export default async function (pi: ExtensionAPI): Promise<void> {
         invalidated = true;
       }
     };
-    void ctx.modelRegistry
+    const refreshSettled = ctx.modelRegistry
       .refresh()
       .then((result) => {
         if (invalidated) return;
@@ -258,6 +259,14 @@ export default async function (pi: ExtensionAPI): Promise<void> {
         if (error) notifyRefreshFailure(error);
       })
       .catch(notifyRefreshFailure);
+
+    // Emit only after every catalog-affecting step settles.
+    void Promise.allSettled([syncSettled, missingModelsSettled, refreshSettled])
+      .then(() => {
+        if (invalidated) return;
+        emitModelsSynced(pi);
+      })
+      .catch(suppressStaleRejection);
   };
 
   pi.on("session_start", (_event, ctx) => {
