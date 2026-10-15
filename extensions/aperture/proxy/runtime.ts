@@ -1,3 +1,4 @@
+import { type AnyModel, isModelType } from "@earendil-works/pi-ai";
 import { ApertureClient } from "../../../src/api/client";
 import type { ApertureProvider } from "../../../src/api/types";
 import { getBaseUrlForApi } from "../../../src/base-url-routing";
@@ -18,10 +19,6 @@ import { qualifyModelId, withModelId, withRequestModelId } from "./model-id";
 import { OPENAI_BASE_URL, withOpenAIGatewayFetch } from "./openai-passthrough";
 
 const MAX_MISSING_MODELS_PER_PROVIDER = 5;
-
-function isChatModel(model: Model<Api>): boolean {
-  return (model.type ?? "chat") === "chat";
-}
 
 export class ApertureRuntime {
   // Upstream provider base URLs captured on first registration. A settings
@@ -183,7 +180,9 @@ export class ApertureRuntime {
             : undefined;
         if (
           servedIds !== undefined &&
-          !firstSeen.getModels().some((model) => servedIds.has(model.id))
+          !(firstSeen.getAllModels?.() ?? firstSeen.getModels()).some((model) =>
+            servedIds.has(model.id),
+          )
         ) {
           // The synchronous pre-fetch registration may have exposed this
           // provider's unfiltered models. Re-register it empty once the gateway
@@ -198,28 +197,32 @@ export class ApertureRuntime {
         }
         const baseAuth = firstSeen.auth?.apiKey;
         if (!catalogSettled && !baseAuth) continue;
-        // The gateway only serves chat APIs. Classifier and image models keep
-        // the api and baseUrl their provider expects.
+
+        // Chat models are rewritten to the route's api and base URL. Classifier
+        // models keep their api but call the gateway. Everything else (image
+        // models) keeps its own routing.
+        const routeModel = (model: AnyModel): AnyModel => {
+          if (isModelType(model, "chat")) {
+            return { ...model, api, baseUrl: providerBaseUrl };
+          }
+          return model;
+        };
         const serveGatewayModels = (
-          models: readonly Model<Api>[],
-        ): readonly Model<Api>[] =>
+          models: readonly AnyModel[],
+        ): readonly AnyModel[] =>
           (servedIds === undefined
             ? models
             : models.filter((model) => servedIds.has(model.id))
-          ).map((model) =>
-            isChatModel(model)
-              ? { ...model, api, baseUrl: providerBaseUrl }
-              : model,
-          );
+          ).map(routeModel);
         const wrapped: Provider = {
           // Avoid copying composed methods that delegate back to this wrapper.
           ...firstSeen,
           id: providerName,
-          getModels: () => serveGatewayModels(firstSeen.getModels()),
+          getModels: () =>
+            serveGatewayModels(firstSeen.getModels()) as readonly Model<Api>[],
           getAllModels: () =>
             serveGatewayModels(
-              (firstSeen.getAllModels?.() ??
-                firstSeen.getModels()) as Model<Api>[],
+              firstSeen.getAllModels?.() ?? firstSeen.getModels(),
             ),
           // Delegate through `firstSeen`, not `native`: from the second sync
           // onwards `native` is our own previous wrapper, so routing its
@@ -371,7 +374,7 @@ export class ApertureRuntime {
 
     if (missingModels.length === 0) return;
 
-    const missingByProvider = new Map<string, Model<Api>[]>();
+    const missingByProvider = new Map<string, AnyModel[]>();
     for (const model of missingModels) {
       const providerModels = missingByProvider.get(model.provider) ?? [];
       providerModels.push(model);

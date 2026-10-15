@@ -1,4 +1,5 @@
 import type {
+  AnyModel,
   Api,
   Model,
   ModelsStoreEntry,
@@ -144,7 +145,7 @@ interface DedicatedPublication {
 
 /** Register the provider against a fake pi and return the native Provider. */
 function register(
-  getModels: () => Model<Api>[] = () => [],
+  getModels: () => AnyModel[] = () => [],
   notify?: (warning: string) => void,
 ): Provider | null {
   const registerProvider = vi.fn();
@@ -164,12 +165,12 @@ async function refresh(
   provider: Provider | null,
   store: ProviderModelsStore,
   allowNetwork: boolean,
-): Promise<readonly Model<Api>[]> {
+): Promise<readonly AnyModel[]> {
   if (!provider?.refreshModels) throw new Error("no refreshModels on provider");
   const tracked = store as ProviderModelsStore & {
     entry: ModelsStoreEntry | undefined;
   };
-  const context = {
+  const context: RefreshModelsContext = {
     allowNetwork,
     signal: new AbortController().signal,
     get stored() {
@@ -180,9 +181,9 @@ async function refresh(
       publication.update?.();
       return true;
     },
-  } as unknown as RefreshModelsContext;
+  };
   await provider.refreshModels(context);
-  return provider.getModels();
+  return provider.getAllModels?.() ?? provider.getModels();
 }
 
 beforeEach(() => {

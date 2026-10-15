@@ -1,4 +1,4 @@
-import type { AssistantMessage } from "@earendil-works/pi-ai";
+import type { AnyModel, AssistantMessage } from "@earendil-works/pi-ai";
 import type {
   ExtensionAPI,
   ExtensionContext,
@@ -64,9 +64,7 @@ export default async function (pi: ExtensionAPI): Promise<void> {
   // reload (pi invalidates the runner and every ctx accessor throws), while
   // a snapshot can only go slightly stale, which is harmless for metadata
   // and base URL inference.
-  let knownModels = [] as ReturnType<
-    ExtensionContext["modelRegistry"]["getAll"]
-  >;
+  let knownModels: AnyModel[] = [];
   const getRegistryModels = () => knownModels;
 
   // Inject a provenance header and the live session id on every provider

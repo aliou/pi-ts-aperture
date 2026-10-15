@@ -1,4 +1,4 @@
-import type { Api, Model } from "@earendil-works/pi-ai";
+import type { AnyModel } from "@earendil-works/pi-ai";
 import type { ApertureProvider } from "../../src/api/types";
 import type {
   DedicatedProviderConfig,
@@ -7,7 +7,7 @@ import type {
 
 /** List local providers, using exact gateway id matches only as defaults. */
 export function mapProxyProviders(
-  localModels: readonly Model<Api>[],
+  localModels: readonly AnyModel[],
   gatewayProviders: ApertureProvider[],
   existingProviders: ProxiedProviderConfig[],
 ) {
@@ -48,7 +48,7 @@ export function mapProxyProviders(
 
 /** One row per gateway target, regardless of how many local providers exist. */
 export function mapGatewayProxyProviders(
-  localModels: readonly Model<Api>[],
+  localModels: readonly AnyModel[],
   gatewayProviders: ApertureProvider[],
   existingProviders: ProxiedProviderConfig[],
 ) {

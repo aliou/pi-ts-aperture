@@ -5,28 +5,39 @@ import {
 import type { Component } from "@earendil-works/pi-tui";
 import { Key, matchesKey } from "@earendil-works/pi-tui";
 
-/** Keep selection changes local until Enter; Esc leaves the mappings intact. */
-export class LocalProviderSelector implements Component {
-  private readonly selector: FuzzyMultiSelector;
+export interface ModelMultiSelectorOptions {
+  /** Heading shown above the list. */
+  title: string;
+  /** Selectable model/provider ids. */
+  ids: string[];
+  /** Ids checked when the selector opens. */
+  selectedIds: string[];
+  theme: SettingsTheme;
+  hideHint?: boolean;
+  /** Called with the checked ids on Enter. */
+  onSubmit: (ids: string[]) => void;
+  /** Called on Esc; the caller's selection stays untouched. */
+  onCancel: () => void;
+}
 
-  constructor(
-    label: string,
-    localIds: string[],
-    selectedIds: string[],
-    theme: SettingsTheme,
-    hideHint: boolean,
-    private readonly onSubmit: (ids: string[]) => void,
-    private readonly onCancel: () => void,
-  ) {
+/** Keep selection changes local until Enter; Esc leaves the mappings intact. */
+export class ModelMultiSelector implements Component {
+  private readonly selector: FuzzyMultiSelector;
+  private readonly onSubmit: (ids: string[]) => void;
+  private readonly onCancel: () => void;
+
+  constructor(options: ModelMultiSelectorOptions) {
     this.selector = new FuzzyMultiSelector({
-      label: `Local Pi providers for ${label}`,
-      items: localIds.map((id) => ({
+      label: options.title,
+      items: options.ids.map((id) => ({
         label: id,
-        checked: selectedIds.includes(id),
+        checked: options.selectedIds.includes(id),
       })),
-      theme,
-      hideHint,
+      theme: options.theme,
+      hideHint: options.hideHint,
     });
+    this.onSubmit = options.onSubmit;
+    this.onCancel = options.onCancel;
   }
 
   render(width: number): string[] {

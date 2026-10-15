@@ -1,6 +1,6 @@
 import type { SettingsTheme } from "@aliou/pi-utils-settings";
 import { describe, expect, test, vi } from "vitest";
-import { LocalProviderSelector } from "./local-provider-selector";
+import { ModelMultiSelector } from "./model-multi-selector";
 
 const theme = {
   label: (text: string) => text,
@@ -9,19 +9,19 @@ const theme = {
   cursor: "> ",
 } as SettingsTheme;
 
-describe("LocalProviderSelector", () => {
+describe("ModelMultiSelector", () => {
   test("commits all checked providers only on Enter", () => {
     const submit = vi.fn();
     const cancel = vi.fn();
-    const selector = new LocalProviderSelector(
-      "Anthropic",
-      ["anthropic", "openai"],
-      ["anthropic"],
+    const selector = new ModelMultiSelector({
+      title: "Anthropic",
+      ids: ["anthropic", "openai"],
+      selectedIds: ["anthropic"],
       theme,
-      true,
-      submit,
-      cancel,
-    );
+      hideHint: true,
+      onSubmit: submit,
+      onCancel: cancel,
+    });
     selector.handleInput("\x1b[B");
     selector.handleInput(" ");
     expect(submit).not.toHaveBeenCalled();
@@ -33,15 +33,15 @@ describe("LocalProviderSelector", () => {
   test("Esc cancels without committing", () => {
     const submit = vi.fn();
     const cancel = vi.fn();
-    const selector = new LocalProviderSelector(
-      "Anthropic",
-      ["anthropic"],
-      [],
+    const selector = new ModelMultiSelector({
+      title: "Anthropic",
+      ids: ["anthropic"],
+      selectedIds: [],
       theme,
-      true,
-      submit,
-      cancel,
-    );
+      hideHint: true,
+      onSubmit: submit,
+      onCancel: cancel,
+    });
     selector.handleInput(" ");
     selector.handleInput("\x1b");
     expect(cancel).toHaveBeenCalledOnce();
