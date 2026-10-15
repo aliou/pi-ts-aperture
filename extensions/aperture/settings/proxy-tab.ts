@@ -5,7 +5,7 @@ import {
   type SettingsSection,
   type SettingsSubmenuContext,
 } from "@aliou/pi-utils-settings";
-import type { Api, Model } from "@earendil-works/pi-ai";
+import type { AnyModel } from "@earendil-works/pi-ai";
 import type { Component } from "@earendil-works/pi-tui";
 import { ApertureClient } from "../../../src/api/client";
 import type { ApertureProvider } from "../../../src/api/types";
@@ -17,7 +17,7 @@ import type {
 } from "../../shared/config/loader";
 import { mapGatewayProxyProviders } from "../../shared/provider-mapping";
 import { AsyncEditor } from "./async-editor";
-import { LocalProviderSelector } from "./local-provider-selector";
+import { ModelMultiSelector } from "./model-multi-selector";
 import {
   apiSelectionField,
   boolLabel,
@@ -29,7 +29,7 @@ import {
 
 /** The gateway catalog bounds the visible list; local providers appear only in pickers. */
 export function buildProxyTab(
-  getKnownModels: () => Model<Api>[],
+  getKnownModels: () => AnyModel[],
 ): ExtraSettingsTab<ApertureConfig, ResolvedConfig> {
   return {
     id: "proxy",
@@ -192,18 +192,18 @@ export function buildProxyTab(
                         persistProviders();
                       };
                       const selector = (
-                        submit: (ids: string[]) => void,
-                        cancel: () => void,
+                        onSubmit: (ids: string[]) => void,
+                        onCancel: () => void,
                       ) =>
-                        new LocalProviderSelector(
-                          provider.name ?? provider.id,
-                          localIds,
-                          selected(),
-                          settingsTheme,
-                          providerCtx.hideHint ?? false,
-                          submit,
-                          cancel,
-                        );
+                        new ModelMultiSelector({
+                          title: `Local Pi providers for ${provider.name ?? provider.id}`,
+                          ids: localIds,
+                          selectedIds: selected(),
+                          theme: settingsTheme,
+                          hideHint: providerCtx.hideHint,
+                          onSubmit,
+                          onCancel,
+                        });
                       const options = (id: string): SettingsDetailField[] => {
                         const apiField = apiSelectionField({
                           id: `provider.${id}.api`,

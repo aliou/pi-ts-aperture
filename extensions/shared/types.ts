@@ -3,6 +3,7 @@
  */
 
 import type {
+  AnyModel,
   Api,
   AssistantMessageEventStream,
   Context,
@@ -13,6 +14,7 @@ import type {
 } from "@earendil-works/pi-ai";
 
 export type {
+  AnyModel,
   Api,
   AssistantMessageEventStream,
   Context,
@@ -28,7 +30,8 @@ export type {
 export interface SyncDeps {
   getProvider: (id: string) => Provider | undefined;
   registerNativeProvider: (provider: Provider) => void;
-  getModels: () => Model<Api>[];
+  /** Chat and classifier models known to the registry. */
+  getModels: () => AnyModel[];
   notify?: (msg: string, type: "warning" | "info") => void;
   /**
    * True when the extension instance that supplied these deps was
@@ -44,7 +47,8 @@ export interface SyncDeps {
  * Dependencies for ApertureRuntime.checkMissingModels()
  */
 export interface CheckDeps {
-  getModels: () => Model<Api>[];
+  /** Chat and classifier models known to the registry. */
+  getModels: () => AnyModel[];
   notify: (msg: string, type: "warning" | "info") => void;
   /** See SyncDeps.isStale. */
   isStale?: () => boolean;

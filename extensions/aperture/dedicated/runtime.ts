@@ -1,13 +1,12 @@
 import type {
+  AnyModel,
   Api,
   Model,
   ModelsStoreEntry,
   RefreshModelsContext,
 } from "@earendil-works/pi-ai";
-import type {
-  ExtensionAPI,
-  ProviderModelConfig,
-} from "@earendil-works/pi-coding-agent";
+import { getModelType } from "@earendil-works/pi-ai";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { ApertureClient } from "../../../src/api/client";
 import type { ApertureProvider } from "../../../src/api/types";
 import { getBaseUrlForApi } from "../../../src/base-url-routing";
@@ -34,7 +33,7 @@ const PROVIDER_NAME = DEDICATED_PROVIDER_ID;
  * before any registry access exists (`session_start` provides it), and later
  * refreshes must see a live view, not a snapshot.
  */
-export type GetRegistryModels = () => Model<Api>[];
+export type GetRegistryModels = () => AnyModel[];
 
 /**
  * Store entry with the catalog identity it was built for. Restores are only
@@ -60,7 +59,10 @@ function buildCatalogKey(gatewayUrl: string, config: ResolvedConfig): string {
   }
   const enabled = config.dedicated.providers
     .filter((p) => p.enabled)
-    .map((p) => (p.api ? `${p.id}@${p.api}` : p.id))
+    .map((p) => {
+      const base = p.api ? `${p.id}@${p.api}` : p.id;
+      return base;
+    })
     .sort();
   const filter =
     config.dedicated.providers.length === 0 ? "*" : enabled.join(",");
@@ -89,11 +91,11 @@ function buildModels(
   providers: ApertureProvider[],
   gatewayUrl: string,
   baseUrl: string,
-  registryModels: Model<Api>[],
+  registryModels: AnyModel[],
   modelsDev: ModelsDevCatalog | null,
   apiOverrides: ReadonlyMap<string, Api>,
   notify?: (warning: string) => void,
-): Model<Api>[] {
+): AnyModel[] {
   // Look up native upstream base URLs from Pi's model registry. Prefer a
   // provider-id match (same naming as the gateway), then a model-id match
   // (model ids are upstream-standardized, so they survive provider renaming).
@@ -117,11 +119,15 @@ function buildModels(
   // they carry the safe defaults from a previous sync and would shadow real
   // metadata on re-sync. Proxy-rewritten providers keep their native model
   // definitions, so they stay useful for metadata.
+  // Metadata matching excludes the dedicated provider's own registry entries:
+  // they carry the safe defaults from a previous sync and would shadow real
+  // metadata on re-sync. Metadata fields only exist on chat models.
   const metadataRegistry = registryModels.filter(
-    (m) => m.provider !== PROVIDER_NAME,
+    (m): m is Model<Api> =>
+      getModelType(m) === "chat" && m.provider !== PROVIDER_NAME,
   );
 
-  const models: Model<Api>[] = [];
+  const models: AnyModel[] = [];
 
   for (const provider of providers) {
     const override = apiOverrides.get(provider.id);
@@ -146,6 +152,7 @@ function buildModels(
         registryModels: metadataRegistry,
         modelsDev,
       });
+
       models.push({
         provider: PROVIDER_NAME,
         ...buildDefaultModelConfig({
@@ -162,20 +169,17 @@ function buildModels(
         }),
         api,
         baseUrl: getBaseUrlForApi(api, gatewayUrl, baseUrl, upstreamBaseUrl),
-      } as Model<Api>);
+      });
     }
   }
 
   return models;
 }
 
-function normalizeDedicatedModels(models: ProviderModelConfig[]): Model<Api>[] {
-  return models.map(
-    (model) =>
-      ({
-        ...model,
-        provider: (model as Partial<Model<Api>>).provider ?? PROVIDER_NAME,
-      }) as Model<Api>,
+/** Legacy store entries may omit `provider`; every model belongs to us. */
+function withProviderDefaults(models: readonly AnyModel[]): AnyModel[] {
+  return models.map((model) =>
+    model.provider ? model : { ...model, provider: PROVIDER_NAME },
   );
 }
 
@@ -188,14 +192,12 @@ function normalizeDedicatedModels(models: ProviderModelConfig[]): Model<Api>[] {
 function storedCatalogModels(
   stored: ModelsStoreEntry | undefined,
   catalogKey: string,
-): Model<Api>[] {
+): AnyModel[] {
   try {
     const entry = stored as DedicatedStoreEntry | undefined;
     if (!entry || !Array.isArray(entry.models)) return [];
     if (entry.catalogKey !== catalogKey) return [];
-    return normalizeDedicatedModels(
-      entry.models as unknown as ProviderModelConfig[],
-    );
+    return withProviderDefaults(entry.models);
   } catch {
     return [];
   }
@@ -220,7 +222,7 @@ export async function refreshDedicatedCatalog(
   context: RefreshModelsContext,
   getModels: GetRegistryModels,
   notify?: (warning: string) => void,
-): Promise<Model<Api>[]> {
+): Promise<AnyModel[]> {
   const config = configLoader.getConfig();
   if (!config.dedicated.enabled) return [];
   const gatewayUrl = resolveGatewayUrl(config);
@@ -230,7 +232,7 @@ export async function refreshDedicatedCatalog(
   const catalogKey = buildCatalogKey(gatewayUrl, config);
 
   if (!context.allowNetwork) {
-    return storedCatalogModels(context.stored, catalogKey) as Model<Api>[];
+    return storedCatalogModels(context.stored, catalogKey);
   }
 
   const client = new ApertureClient(gatewayUrl);
@@ -257,12 +259,12 @@ export async function refreshDedicatedCatalog(
   context.signal?.throwIfAborted();
 
   const entry: DedicatedStoreEntry = {
-    models: catalog as unknown as Model<Api>[],
+    models: catalog,
     checkedAt: Date.now(),
     catalogKey,
   };
   await context.publish({ persist: entry });
-  return catalog as unknown as Model<Api>[];
+  return catalog;
 }
 
 /**

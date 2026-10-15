@@ -1,4 +1,4 @@
-import type { ProviderModelConfig } from "@earendil-works/pi-coding-agent";
+import type { AnyModel } from "@earendil-works/pi-ai";
 import type {
   ApertureModelLimits,
   ApertureModelPricing,
@@ -40,8 +40,8 @@ function parsePrice(value: string): number {
  */
 function mergeCost(
   pricing: ApertureModelPricing | undefined,
-  base: ProviderModelConfig["cost"] | undefined,
-): ProviderModelConfig["cost"] {
+  base: AnyModel["cost"] | undefined,
+): AnyModel["cost"] {
   const cost = base ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
   if (!pricing) return cost;
   return {
@@ -68,9 +68,7 @@ function mergeCost(
  * lower, and an over-reported limit is a rejected request rather than a
  * slightly early compaction.
  */
-export function buildDefaultModelConfig(
-  model: ApertureModelDefaultsInput,
-): ProviderModelConfig {
+export function buildDefaultModelConfig(model: ApertureModelDefaultsInput) {
   const id = model.id;
   const metadata = model.metadata;
   const cost = mergeCost(model.pricing, metadata?.cost);

@@ -16,7 +16,7 @@ import {
   Wizard,
   type WizardStepContext,
 } from "@aliou/pi-utils-settings";
-import type { Api, Model } from "@earendil-works/pi-ai";
+import type { AnyModel } from "@earendil-works/pi-ai";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { getMarkdownTheme } from "@earendil-works/pi-coding-agent";
 import type { Component, TUI } from "@earendil-works/pi-tui";
@@ -277,7 +277,7 @@ class ProxyProvidersStep implements Component {
     theme: Theme,
     private readonly tui: TUI,
     private readonly state: OnboardingState,
-    private readonly knownModels: Model<Api>[],
+    private readonly knownModels: AnyModel[],
     private readonly wizCtx: WizardStepContext,
   ) {
     this.settingsTheme = getSettingsTheme(theme);
@@ -475,7 +475,7 @@ export function createOnboardingWizard(
   theme: Theme,
   tui: TUI,
   done: (result: OnboardingResult) => void,
-  knownModels: Model<Api>[],
+  knownModels: AnyModel[],
   currentConfig: ApertureConfig | null,
 ): Component {
   const state: OnboardingState = {

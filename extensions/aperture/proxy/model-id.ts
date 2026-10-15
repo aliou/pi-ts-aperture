@@ -5,16 +5,17 @@ import {
 } from "@earendil-works/pi-ai";
 import { embedsModelIdInPath } from "../../../src/base-url-routing";
 import type {
+  AnyModel,
   Api,
   AssistantMessageEventStream,
   Model,
   TranscriptContext,
 } from "../../shared/types";
 
-export function qualifyModelId<T extends Api>(
+export function qualifyModelId<T extends AnyModel>(
   providerName: string,
-  model: Model<T>,
-): Model<T> {
+  model: T,
+): T {
   // Path-embedding APIs (Gemini/Vertex/Bedrock) put the model id in the URL,
   // which the gateway forwards verbatim upstream; qualifying it 404s. Body
   // APIs keep the qualified id so the gateway can disambiguate duplicates.

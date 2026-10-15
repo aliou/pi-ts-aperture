@@ -2,7 +2,7 @@ import {
   registerSettingsCommand,
   type SettingsCommandOptions,
 } from "@aliou/pi-utils-settings";
-import type { Api, Model } from "@earendil-works/pi-ai";
+import type { AnyModel } from "@earendil-works/pi-ai";
 import type {
   ExtensionAPI,
   ExtensionContext,
@@ -36,7 +36,7 @@ export const APERTURE_SETTINGS_COMMAND = "aperture:settings" as const;
 export function registerApertureSettings(
   pi: ExtensionAPI,
   onSync: (ctx: ExtensionContext) => void,
-  getKnownModels: () => Model<Api>[],
+  getKnownModels: () => AnyModel[],
 ): void {
   registerSettingsCommand<ApertureConfig, ResolvedConfig>(pi, {
     commandName: APERTURE_SETTINGS_COMMAND,

@@ -1,9 +1,11 @@
 import type {
+  AnyModel,
   Api,
   Model,
   Provider,
   RefreshModelsContext,
 } from "@earendil-works/pi-ai";
+import { isModelType } from "@earendil-works/pi-ai";
 import { buildStream, buildStreamSimple } from "../../shared/api-routing";
 
 export const DEDICATED_PROVIDER_ID = "aperture";
@@ -15,7 +17,7 @@ export const DEDICATED_PROVIDER_ID = "aperture";
  */
 export type RefreshDedicatedCatalog = (
   context: RefreshModelsContext,
-) => Promise<Model<Api>[] | undefined>;
+) => Promise<AnyModel[] | undefined>;
 
 /**
  * Assemble the dedicated `aperture` provider as a native pi-ai Provider.
@@ -30,7 +32,7 @@ export function createDedicatedProvider(
   baseUrl: string,
   refresh: RefreshDedicatedCatalog,
 ): Provider {
-  let liveModels: Model<Api>[] = [];
+  let liveModels: AnyModel[] = [];
 
   return {
     id: DEDICATED_PROVIDER_ID,
@@ -48,7 +50,10 @@ export function createDedicatedProvider(
         }),
       },
     },
-    getModels: () => liveModels,
+    getModels: () =>
+      liveModels.filter(
+        (model): model is Model<Api> => !isModelType(model, "classifier"),
+      ),
     refreshModels: async (context) => {
       const models = await refresh(context);
       if (models === undefined) return;

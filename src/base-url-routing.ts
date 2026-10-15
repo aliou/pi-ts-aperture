@@ -91,7 +91,7 @@ export function shouldUseGatewayRoot(
  * therefore send the bare id on path-embedding APIs and keep the qualified
  * form everywhere else.
  */
-export function embedsModelIdInPath(api: Api): boolean {
+export function embedsModelIdInPath(api: string): boolean {
   switch (api) {
     case "google-generative-ai":
     case "google-vertex":
