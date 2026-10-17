@@ -5,6 +5,16 @@
   "type": "module",
   "license": "MIT",
   "private": false,
+  "exports": {
+    "./provider": {
+      "types": "./durable/dist/provider.d.ts",
+      "import": "./durable/dist/provider.js"
+    },
+    "./proxy": {
+      "types": "./durable/dist/proxy.d.ts",
+      "import": "./durable/dist/proxy.js"
+    }
+  },
   "keywords": [
     "pi-package",
     "pi-extension",
@@ -19,10 +29,16 @@
     "provenance": true
   },
   "files": [
+    "durable/dist/provider.js",
+    "durable/dist/provider.d.ts",
+    "durable/dist/proxy.js",
+    "durable/dist/proxy.d.ts",
+    "durable/README.md",
     "src",
     "extensions",
     "README.md",
     "schema.json",
+    "!extensions/fixtures/**",
     "!**/*.test.ts"
   ],
   "pi": {
@@ -40,7 +56,8 @@
   "peerDependencies": {
     "@earendil-works/pi-ai": ">=1.0.0",
     "@earendil-works/pi-coding-agent": ">=1.0.0",
-    "@earendil-works/pi-tui": ">=1.0.0"
+    "@earendil-works/pi-tui": ">=1.0.0",
+    "typebox": "^1.3.27"
   },
   "peerDependenciesMeta": {
     "@earendil-works/pi-coding-agent": {
@@ -54,6 +71,8 @@
     }
   },
   "scripts": {
+    "build": "esbuild durable/provider.ts durable/proxy.ts --bundle --platform=node --format=esm --packages=external --outdir=durable/dist && tsc -p durable/tsconfig.build.json",
+    "prepack": "pnpm build",
     "typecheck": "tsc --noEmit",
     "lint": "biome check",
     "format": "biome check --write",
@@ -62,8 +81,9 @@
     "changeset": "changeset",
     "version": "changeset version",
     "release": "pnpm changeset publish",
-    "test": "vitest run",
-    "test:watch": "vitest",
+    "test": "pnpm build && vitest run",
+    "test:package": "pnpm build && node durable/test-package.mjs",
+    "test:watch": "pnpm build && vitest",
     "gen:schema": "pi-settings-schema -p extensions/shared/config/types.ts -t ApertureConfig -o schema.json --version 0.17.0",
     "check:schema": "pi-settings-schema -p extensions/shared/config/types.ts -t ApertureConfig -o schema.json --version 0.17.0 --check"
   },
@@ -77,6 +97,7 @@
     "@types/node": "^25.0.10",
     "@vitest/coverage-v8": "^4.0.18",
     "dotenv": "^17.4.2",
+    "esbuild": "^0.27.3",
     "husky": "^9.1.7",
     "ts-json-schema-generator": "^2.9.0",
     "typebox": "^1.3.27",

@@ -1,9 +1,9 @@
 import { Value } from "typebox/value";
 import { describe, expect, test } from "vitest";
 import { getSelectableApis } from "../extensions/shared/api-selection";
+import { getBaseUrlForApi } from "../extensions/shared/base-url-routing";
 import { ApertureClient } from "../src/api/client";
 import { ApertureProviderSchema } from "../src/api/types";
-import { getBaseUrlForApi } from "../src/base-url-routing";
 import { GATEWAY, isAccessible } from "./helpers";
 
 const accessible = await isAccessible(GATEWAY);

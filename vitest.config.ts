@@ -15,7 +15,11 @@ export default defineConfig({
   test: {
     testTimeout: 60_000,
     hookTimeout: 30_000,
-    include: ["src/**/*.test.ts", "extensions/**/*.test.ts"],
+    include: [
+      "src/**/*.test.ts",
+      "extensions/**/*.test.ts",
+      "durable/**/*.test.ts",
+    ],
     mockReset: true,
   },
 });

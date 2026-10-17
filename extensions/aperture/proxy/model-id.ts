@@ -3,7 +3,7 @@ import {
   type AssistantMessageEvent,
   createAssistantMessageEventStream,
 } from "@earendil-works/pi-ai";
-import { embedsModelIdInPath } from "../../../src/base-url-routing";
+import { embedsModelIdInPath } from "../../shared/base-url-routing";
 import type {
   AnyModel,
   Api,

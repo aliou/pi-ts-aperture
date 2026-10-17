@@ -1,10 +1,10 @@
 import { type AnyModel, isModelType } from "@earendil-works/pi-ai";
 import { ApertureClient } from "../../../src/api/client";
 import type { ApertureProvider } from "../../../src/api/types";
-import { getBaseUrlForApi } from "../../../src/base-url-routing";
 import { resolveGatewayUrl, resolveProviderBaseUrl } from "../../../src/url";
 import { buildStream, buildStreamSimple } from "../../shared/api-routing";
 import { isSelectableApi } from "../../shared/api-selection";
+import { getBaseUrlForApi } from "../../shared/base-url-routing";
 import { configLoader } from "../../shared/config/loader";
 import type { ResolvedConfig } from "../../shared/config/types";
 import type {

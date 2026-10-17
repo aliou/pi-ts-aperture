@@ -1,6 +1,6 @@
 import type { Api, Model, StreamOptions } from "@earendil-works/pi-ai";
 import { getApiProvider } from "@earendil-works/pi-ai/compat";
-import { embedsModelIdInPath } from "../../src/base-url-routing";
+import { embedsModelIdInPath } from "./base-url-routing";
 import type {
   AssistantMessageEventStream,
   SimpleStreamOptions,

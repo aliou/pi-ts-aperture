@@ -13,7 +13,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { ApertureClient } from "../../../src/api/client";
-import { shouldUseGatewayRoot } from "../../../src/base-url-routing";
+import { shouldUseGatewayRoot } from "../../shared/base-url-routing";
 import { configLoader } from "../../shared/config/loader";
 import type { ResolvedConfig } from "../../shared/config/types";
 import type { Api, Model, SyncDeps } from "../../shared/types";

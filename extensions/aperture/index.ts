@@ -3,7 +3,6 @@ import type {
   ExtensionAPI,
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
-import { markRetryableApertureError } from "../../src/retryable-errors";
 import { configLoader } from "../shared/config/loader";
 import {
   APERTURE_FEATURE_REGISTER_EVENT,
@@ -13,6 +12,7 @@ import {
 } from "../shared/events";
 import { isProvenanceTelemetryAllowed } from "../shared/provenance";
 import { chatAndClassifierModels } from "../shared/registry-snapshot";
+import { markRetryableApertureError } from "../shared/retryable-errors";
 import { isStaleCtxError } from "../shared/stale-ctx";
 import { emitConfigSync } from "../shared/sync-bus";
 import {

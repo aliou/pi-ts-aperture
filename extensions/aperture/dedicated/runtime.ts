@@ -11,18 +11,18 @@ import { getModelType } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { ApertureClient } from "../../../src/api/client";
 import type { ApertureProvider } from "../../../src/api/types";
-import { getBaseUrlForApi } from "../../../src/base-url-routing";
-import {
-  fetchModelsDevCatalog,
-  type ModelsDevCatalog,
-  resolveModelMetadata,
-} from "../../../src/model-metadata";
 import { resolveGatewayUrl, resolveProviderBaseUrl } from "../../../src/url";
 import {
   getApiForCompatibility,
   isSelectableApi,
 } from "../../shared/api-selection";
+import { getBaseUrlForApi } from "../../shared/base-url-routing";
 import { configLoader, type ResolvedConfig } from "../../shared/config/loader";
+import {
+  fetchModelsDevCatalog,
+  type ModelsDevCatalog,
+  resolveModelMetadata,
+} from "../../shared/model-metadata";
 import {
   buildClassifierModelConfig,
   buildDefaultModelConfig,

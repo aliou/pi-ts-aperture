@@ -16,6 +16,10 @@ Aperture handles API key injection and request routing server-side, so Pi never 
 pi install npm:@aliou/pi-ts-aperture
 ```
 
+## pi-durable (experimental)
+
+Standalone provider and proxy exports live in `durable/`. They have their own implementations and do not load the Pi extension. See [durable/README.md](durable/README.md) for setup, catalog persistence, and request headers.
+
 ## First run
 
 After installing, run the onboarding wizard:
@@ -131,3 +135,9 @@ Notes:
 - A Tailscale tailnet with Aperture configured.
 - The device running Pi must be able to reach your Aperture endpoint.
 - Use the URL/scheme that matches your deployment (`http://` or `https://`).
+
+## Development
+
+From the repository root: `pnpm install`, then `pnpm typecheck`, `pnpm lint`, and `pnpm test`. Tests build both public exports before importing them. Run `pnpm test:package` to pack and install them in a temporary Node app, check NodeNext declarations, make mocked durable model requests through both APIs, and load the packed extension sources with Pi's package discovery and loader. That check downloads npm dependencies but makes no paid model calls.
+
+`pnpm build` bundles extensionless TypeScript imports into `durable/dist/provider.js` and `durable/dist/proxy.js` and emits declarations. `pnpm pack` runs the build through `prepack`; the Pi extensions remain TypeScript entry points.
