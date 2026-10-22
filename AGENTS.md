@@ -13,18 +13,7 @@ Config types and defaults: `extensions/shared/config/types.ts` and `defaults.ts`
 
 ## Commands
 
-Development (`pnpm`):
-
-| Script | What it does |
-|---|---|
-| `pnpm typecheck` | `tsc --noEmit` |
-| `pnpm lint` | `biome check` |
-| `pnpm format` | `biome check --write` |
-| `pnpm test` | `vitest run` |
-| `pnpm gen:schema` | Regenerate `schema.json` from config types |
-| `pnpm changeset` / `pnpm release` | Changeset entry / publish |
-
-The pre-commit hook runs `typecheck`, `lint`, and `gen:schema`, then fails if `schema.json` is out of date. Always stage `schema.json` when you touch config types. Never edit `schema.json` by hand.
+Standard pnpm scripts: `pnpm typecheck`, `pnpm lint`, `pnpm format`, `pnpm test`, `pnpm gen:schema`, `pnpm changeset`, `pnpm release`. The pre-commit hook runs `typecheck`, `lint`, and `gen:schema`, then fails if `schema.json` is out of date — always stage `schema.json` when you touch config types, and never edit `schema.json` by hand.
 
 User-facing commands: `/aperture:onboarding` (visible only while onboarding is pending; reloads Pi on completion) and `/aperture:settings` (syncs providers without a reload; the MCP enable toggle applies immediately).
 
