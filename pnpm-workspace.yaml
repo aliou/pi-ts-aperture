@@ -1,0 +1,9 @@
+overrides:
+  "@earendil-works/pi-ai": "$@earendil-works/pi-coding-agent"
+  "@earendil-works/pi-tui": "$@earendil-works/pi-coding-agent"
+  "@changesets/git": "4.0.0"
+
+allowBuilds:
+  "@google/genai": false
+  esbuild: false
+  protobufjs: false

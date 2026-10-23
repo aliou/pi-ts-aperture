@@ -83,12 +83,5 @@
     "typescript": "^5.9.3",
     "vitest": "^4.0.18"
   },
-  "pnpm": {
-    "overrides": {
-      "@earendil-works/pi-ai": "$@earendil-works/pi-coding-agent",
-      "@earendil-works/pi-tui": "$@earendil-works/pi-coding-agent",
-      "@changesets/git": "4.0.0"
-    }
-  },
-  "packageManager": "pnpm@10.26.1"
+  "packageManager": "pnpm@11.27.0"
 }
