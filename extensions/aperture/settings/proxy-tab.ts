@@ -260,6 +260,23 @@ export function buildProxyTab(
                             trueLabel: "on",
                             falseLabel: "off",
                           },
+                          {
+                            type: "boolean",
+                            id: `provider.${id}.generateAdditionalModelsFromGateway`,
+                            label: "Add gateway-only models",
+                            description:
+                              "Also register gateway models that Pi's local catalog does not list (in-memory only, so they cannot be set as the default model)",
+                            getValue: () =>
+                              entries.get(id)
+                                ?.generateAdditionalModelsFromGateway ?? false,
+                            setValue: (value) =>
+                              edit(id, (entry) => {
+                                entry.generateAdditionalModelsFromGateway =
+                                  value;
+                              }),
+                            trueLabel: "on",
+                            falseLabel: "off",
+                          },
                           ...(apiField ? [apiField] : []),
                         ];
                       };

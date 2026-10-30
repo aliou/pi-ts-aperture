@@ -2,11 +2,15 @@ import { type AnyModel, isModelType } from "@earendil-works/pi-ai";
 import { ApertureClient } from "../../../src/api/client";
 import type { ApertureProvider } from "../../../src/api/types";
 import { getBaseUrlForApi } from "../../../src/base-url-routing";
+import { resolveModelMetadata } from "../../../src/model-metadata";
 import { resolveGatewayUrl, resolveProviderBaseUrl } from "../../../src/url";
 import { buildStream, buildStreamSimple } from "../../shared/api-routing";
 import { isSelectableApi } from "../../shared/api-selection";
 import { configLoader } from "../../shared/config/loader";
-import type { ResolvedConfig } from "../../shared/config/types";
+import type {
+  ProxiedProviderConfig,
+  ResolvedConfig,
+} from "../../shared/config/types";
 import type {
   Api,
   CheckDeps,
@@ -14,11 +18,27 @@ import type {
   Provider,
   SyncDeps,
 } from "../../shared/types";
-
+import { DEDICATED_PROVIDER_ID } from "../dedicated/provider";
+import {
+  buildGatewayChatModel,
+  UNCATALOGUED_NAME_SUFFIX,
+} from "../gateway-models";
 import { qualifyModelId, withModelId, withRequestModelId } from "./model-id";
 import { OPENAI_BASE_URL, withOpenAIGatewayFetch } from "./openai-passthrough";
 
 const MAX_MISSING_MODELS_PER_PROVIDER = 5;
+
+/** `provider: id, id, … (N more); …` for a drift notification. */
+function summarizeDiffs(byProvider: Map<string, string[]>): string {
+  return Array.from(byProvider.entries())
+    .map(([provider, ids]) => {
+      const shown = ids.slice(0, MAX_MISSING_MODELS_PER_PROVIDER);
+      const remaining = ids.length - shown.length;
+      const more = remaining > 0 ? `, ${remaining} more` : "";
+      return `${provider}: ${shown.join(", ")}${more}`;
+    })
+    .join("; ");
+}
 
 export class ApertureRuntime {
   // Upstream provider base URLs captured on first registration. A settings
@@ -57,9 +77,16 @@ export class ApertureRuntime {
     const providersPromise = this.fetchProviders(gatewayRoot);
 
     const allModels = deps.getModels();
+    // Metadata matching for synthesized models. The dedicated provider's own
+    // entries are excluded: they carry the safe defaults from a previous sync
+    // and would shadow real registry metadata.
+    const metadataRegistry = allModels.filter(
+      (model): model is Model<Api> =>
+        isModelType(model, "chat") && model.provider !== DEDICATED_PROVIDER_ID,
+    );
     const providerIds = upstreamProviders
       .map((p) => p.id)
-      .filter((id) => id !== "aperture");
+      .filter((id) => id !== DEDICATED_PROVIDER_ID);
     const configByProvider = new Map(upstreamProviders.map((p) => [p.id, p]));
     const registered = new Map<string, Provider>();
     const warnedUnknown = new Set<string>();
@@ -75,6 +102,9 @@ export class ApertureRuntime {
       const compatibilityByProvider = new Map(
         (providers ?? []).map((p) => [p.id, p.compatibility]),
       );
+      const gatewayProviderById = new Map(
+        (providers ?? []).map((p) => [p.id, p]),
+      );
 
       for (const providerName of providerIds) {
         const entry = configByProvider.get(providerName);
@@ -82,7 +112,7 @@ export class ApertureRuntime {
         const { gatewayId } = entry;
         if (
           providers &&
-          (gatewayId === "aperture" || !catalogIds.has(gatewayId))
+          (gatewayId === DEDICATED_PROVIDER_ID || !catalogIds.has(gatewayId))
         ) {
           if (!warnedUnknown.has(gatewayId)) {
             warnedUnknown.add(gatewayId);
@@ -178,8 +208,57 @@ export class ApertureRuntime {
           providers && entry.keepGatewayModelsOnly
             ? gatewayModelIds.get(gatewayId)
             : undefined;
+
+        // `generateAdditionalModelsFromGateway`: expose gateway models Pi's
+        // catalog does not list. Pi's catalog is curated and can lag the
+        // gateway (or lack a model the gateway serves under a different
+        // provider id), so the gateway is the source of truth for existence
+        // while the registry only supplies capability metadata. Entries live
+        // in this sync's closure: they are rebuilt on every sync and never
+        // persisted, so they cannot be selected as the default model.
+        const additionalModels: Model<Api>[] = [];
+        const gatewayProvider = gatewayProviderById.get(gatewayId);
+        if (
+          providers &&
+          entry.generateAdditionalModelsFromGateway === true &&
+          gatewayProvider
+        ) {
+          const knownIds = new Set(
+            (firstSeen.getAllModels?.() ?? firstSeen.getModels()).map(
+              (model) => model.id,
+            ),
+          );
+          for (const gatewayModelId of gatewayProvider.models) {
+            if (knownIds.has(gatewayModelId)) continue;
+            const modelInfo = gatewayProvider.modelInfoById[gatewayModelId];
+            // Classifier-only routes have no chat surface to route here.
+            if (modelInfo?.system_one === true) continue;
+            additionalModels.push(
+              buildGatewayChatModel({
+                id: gatewayModelId,
+                provider: providerName,
+                name: gatewayModelId,
+                nameSuffix: UNCATALOGUED_NAME_SUFFIX,
+                api,
+                baseUrl: providerBaseUrl,
+                pricing: modelInfo?.pricing,
+                limits: {
+                  context_window_tokens: modelInfo?.context_window_tokens,
+                  max_output_tokens: modelInfo?.max_output_tokens,
+                },
+                metadata: resolveModelMetadata(providerName, gatewayModelId, {
+                  registryModels: metadataRegistry,
+                  registryProviderIds: [providerName, gatewayId],
+                  siblingMatch: true,
+                }),
+              }),
+            );
+          }
+        }
+
         if (
           servedIds !== undefined &&
+          additionalModels.length === 0 &&
           !(firstSeen.getAllModels?.() ?? firstSeen.getModels()).some((model) =>
             servedIds.has(model.id),
           )
@@ -215,10 +294,12 @@ export class ApertureRuntime {
         const serveGatewayModels = (
           models: readonly AnyModel[],
         ): readonly AnyModel[] =>
-          (servedIds === undefined
-            ? models
-            : models.filter((model) => servedIds.has(model.id))
-          ).map(routeModel);
+          [
+            ...(servedIds === undefined
+              ? models
+              : models.filter((model) => servedIds.has(model.id))),
+            ...additionalModels,
+          ].map(routeModel);
         const nativeClassify = firstSeen.classify;
         const wrapped: Provider = {
           // Avoid copying composed methods that delegate back to this wrapper.
@@ -342,18 +423,38 @@ export class ApertureRuntime {
     }
   }
 
-  async checkMissingModels(
+  /**
+   * Report model drift between the gateway catalog and the local model list.
+   *
+   * Forward (`shouldCheckGatewayModels`): local models the gateway does not
+   * serve, which would fail at request time.
+   *
+   * Reverse: gateway models the local list does not expose. Suppressed per
+   * provider by `generateAdditionalModelsFromGateway`, since enabling it removes
+   * the drift by construction. The warning names that flag (and its settings
+   * location) so the fix is discoverable.
+   *
+   * Advisory only: nothing is registered, filtered, or removed here.
+   */
+  async checkModelDrift(
     deps: CheckDeps,
     providers?: ApertureProvider[],
   ): Promise<void> {
     const config = configLoader.getConfig();
     if (!config.proxy.enabled) return;
 
-    const checkedProviders = config.proxy.upstreamProviders
-      .filter((p) => p.enabled !== false)
-      .filter((p) => p.shouldCheckGatewayModels)
-      .map((p) => [p.id, p.gatewayId] as const);
-    if (checkedProviders.length === 0) return;
+    const enabledProviders = config.proxy.upstreamProviders.filter(
+      (p) => p.enabled !== false,
+    );
+    const unfilteredProviders = enabledProviders.filter(
+      (p) => p.shouldCheckGatewayModels,
+    );
+    const unreportedProviders = enabledProviders.filter(
+      (p) => p.generateAdditionalModelsFromGateway !== true,
+    );
+    if (unfilteredProviders.length === 0 && unreportedProviders.length === 0) {
+      return;
+    }
 
     const gatewayUrl = resolveGatewayUrl(config);
     if (!gatewayUrl && !providers) return;
@@ -376,41 +477,79 @@ export class ApertureRuntime {
     );
 
     const allModels = deps.getModels();
-    const gatewayIdByLocalId = new Map(checkedProviders);
-    const routedModels = allModels.filter((m) =>
-      gatewayIdByLocalId.has(m.provider),
-    );
-    const missingModels = routedModels.filter((m) => {
-      const gatewayId = gatewayIdByLocalId.get(m.provider);
-      return (
-        gatewayId !== undefined &&
-        modelIdsByProvider.has(gatewayId) &&
-        !modelIdsByProvider.get(gatewayId)?.has(m.id)
-      );
-    });
-
-    if (missingModels.length === 0) return;
-
-    const missingByProvider = new Map<string, AnyModel[]>();
-    for (const model of missingModels) {
-      const providerModels = missingByProvider.get(model.provider) ?? [];
-      providerModels.push(model);
-      missingByProvider.set(model.provider, providerModels);
+    const localIdsByProvider = new Map<string, Set<string>>();
+    for (const model of allModels) {
+      const ids = localIdsByProvider.get(model.provider) ?? new Set<string>();
+      ids.add(model.id);
+      localIdsByProvider.set(model.provider, ids);
     }
 
-    const summary = Array.from(missingByProvider.entries())
-      .map(([provider, models]) => {
-        const shownModels = models
-          .slice(0, MAX_MISSING_MODELS_PER_PROVIDER)
-          .map((m) => m.id);
-        const remainingCount = models.length - shownModels.length;
-        const more = remainingCount > 0 ? `, ${remainingCount} more` : "";
-        return `${provider}: ${shownModels.join(", ")}${more}`;
-      })
-      .join("; ");
+    this.reportMissingOnGateway(
+      deps,
+      allModels,
+      modelIdsByProvider,
+      unfilteredProviders,
+    );
+    this.reportAdditionalGatewayModels(
+      deps,
+      localIdsByProvider,
+      modelIdsByProvider,
+      unreportedProviders,
+    );
+  }
 
+  private reportMissingOnGateway(
+    deps: CheckDeps,
+    allModels: readonly AnyModel[],
+    modelIdsByProvider: Map<string, Set<string>>,
+    checkedProviders: readonly ProxiedProviderConfig[],
+  ): void {
+    if (checkedProviders.length === 0) return;
+
+    const gatewayIdByLocalId = new Map(
+      checkedProviders.map((provider) => [provider.id, provider.gatewayId]),
+    );
+    const missingByProvider = new Map<string, string[]>();
+    for (const model of allModels) {
+      const gatewayId = gatewayIdByLocalId.get(model.provider);
+      if (gatewayId === undefined) continue;
+      const served = modelIdsByProvider.get(gatewayId);
+      if (!served || served.has(model.id)) continue;
+      const ids = missingByProvider.get(model.provider) ?? [];
+      ids.push(model.id);
+      missingByProvider.set(model.provider, ids);
+    }
+    if (missingByProvider.size === 0) return;
+
+    const summary = summarizeDiffs(missingByProvider);
     deps.notify(
       `[aperture] models not available on gateway: ${summary}. Add them to the gateway configuration.`,
+      "warning",
+    );
+  }
+
+  private reportAdditionalGatewayModels(
+    deps: CheckDeps,
+    localIdsByProvider: Map<string, Set<string>>,
+    modelIdsByProvider: Map<string, Set<string>>,
+    checkedProviders: readonly ProxiedProviderConfig[],
+  ): void {
+    if (checkedProviders.length === 0) return;
+
+    const additionalByProvider = new Map<string, string[]>();
+    for (const provider of checkedProviders) {
+      const served = modelIdsByProvider.get(provider.gatewayId);
+      if (!served) continue;
+      const localIds = localIdsByProvider.get(provider.id) ?? new Set<string>();
+      const additional = [...served].filter((id) => !localIds.has(id));
+      if (additional.length === 0) continue;
+      additionalByProvider.set(provider.id, additional);
+    }
+    if (additionalByProvider.size === 0) return;
+
+    const summary = summarizeDiffs(additionalByProvider);
+    deps.notify(
+      `[aperture] gateway models missing from the Pi model list: ${summary}. Turn on "Add gateway-only models" for these providers in /aperture:settings (Proxy tab), or set generateAdditionalModelsFromGateway: true.`,
       "warning",
     );
   }

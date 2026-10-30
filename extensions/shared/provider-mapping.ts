@@ -41,6 +41,8 @@ export function mapProxyProviders(
         shouldCheckGatewayModels:
           existingEntry?.shouldCheckGatewayModels ?? true,
         keepGatewayModelsOnly: existingEntry?.keepGatewayModelsOnly ?? false,
+        generateAdditionalModelsFromGateway:
+          existingEntry?.generateAdditionalModelsFromGateway ?? false,
         api: existingEntry?.api,
       };
     });

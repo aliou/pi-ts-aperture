@@ -31,6 +31,16 @@ export interface ProxiedProviderConfig {
   /** Only register models the gateway actually serves for this provider. */
   keepGatewayModelsOnly?: boolean;
   /**
+   * Add gateway models that Pi's local catalog does not list to this
+   * provider's model list. Entries are synthesized from the gateway catalog
+   * (pricing, limits, API) and Pi's registry metadata, and stay in memory:
+   * they are rebuilt on every sync and never persisted.
+   *
+   * Because these models exist only in memory and are not written to Pi's
+   * models store, they cannot be selected as the agent's "default" model.
+   */
+  generateAdditionalModelsFromGateway?: boolean;
+  /**
    * Route this provider's models through a specific Pi API instead of the
    * auto-detected one. Validated against the gateway compatibility map on
    * every sync; falls back to auto with a warning when not served.
