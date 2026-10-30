@@ -15,6 +15,7 @@ import { isProvenanceTelemetryAllowed } from "../shared/provenance";
 import { chatAndClassifierModels } from "../shared/registry-snapshot";
 import { isStaleCtxError } from "../shared/stale-ctx";
 import { emitConfigSync } from "../shared/sync-bus";
+import { DEDICATED_PROVIDER_ID } from "./dedicated/provider";
 import {
   reconcileDedicatedProvider,
   registerDedicatedProvider,
@@ -267,6 +268,13 @@ export default async function (pi: ExtensionAPI): Promise<void> {
 
     // Emit only after every catalog-affecting step settles.
     void Promise.allSettled([syncSettled, missingModelsSettled, refreshSettled])
+      .then(() => {
+        if (invalidated) return;
+        return ctx.modelRegistry.refresh({
+          allowNetwork: false,
+          providers: [DEDICATED_PROVIDER_ID, ...registeredProxyProviders],
+        });
+      })
       .then(() => {
         if (invalidated) return;
         emitModelsSynced(pi);
