@@ -2,6 +2,8 @@
  * Factory tests for provenance headers and proxy shutdown/reload cleanup.
  * Config, gateway fetches, and settings files are mocked.
  */
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import {
@@ -59,6 +61,12 @@ vi.mock("node:fs", async (importOriginal) => {
   };
   return { ...mocked, default: mocked };
 });
+
+// Isolate ModelRuntime and settings reads from the developer's real agent
+// dir: a stored OpenAI credential there re-wraps provider auth and breaks
+// identity assertions that hold in CI. The mock above delegates mkdtempSync
+// to the real fs.
+process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "pi-agent-test-"));
 
 import { resetProvenanceTelemetryCache } from "../shared/provenance";
 import factory from "./index";
