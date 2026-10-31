@@ -1,5 +1,14 @@
 # @aliou/pi-ts-aperture
 
+## 0.19.1
+
+### Patch Changes
+
+- aa07542: Dedicated mode: keep adaptive thinking for Anthropic models served under a custom gateway provider id.
+  
+  When the gateway provider id is not one of Pi's native provider ids (for example `anthropic-api-admins` instead of `anthropic`), model metadata is matched against Pi's registry by model id only, and that match copied just the model-intrinsic `compat` fields. `forceAdaptiveThinking` was not among them, so models that only accept adaptive thinking, such as `claude-opus-5-5`, were sent `thinking.type.enabled` and the request failed with a 400. The flag describes the request format the model itself requires, so it now carries over on a model-id match.
+- d239a5e: Emit `aperture:models:synced` only after a final cache-only registry refresh scoped to the providers this extension registers, so consumers of the event can trust the availability snapshot to include the final proxy and dedicated provider registrations.
+
 ## 0.19.0
 
 ### Minor Changes
