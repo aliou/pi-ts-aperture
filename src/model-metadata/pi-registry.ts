@@ -25,6 +25,7 @@ const INTRINSIC_COMPAT_KEYS = [
   "supportsDeveloperRole",
   "maxTokensField",
   "requiresReasoningContentOnAssistantMessages",
+  "forceAdaptiveThinking",
 ] as const;
 
 interface RegistryMatch {
