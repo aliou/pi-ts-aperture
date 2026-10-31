@@ -141,6 +141,7 @@ describe("resolveModelMetadata / Pi registry", () => {
         supportsDeveloperRole: false,
         maxTokensField: "max_tokens",
         supportsLongCacheRetention: false,
+        forceAdaptiveThinking: true,
       } as Model<Api>["compat"],
     });
     const metadata = resolveModelMetadata("my-openai-alias", "gpt-5", {
@@ -153,6 +154,7 @@ describe("resolveModelMetadata / Pi registry", () => {
     // Intrinsic fields (model-dictated) are copied on a model-id fallback...
     expect(metadata.compat?.supportsDeveloperRole).toBe(false);
     expect(metadata.compat?.maxTokensField).toBe("max_tokens");
+    expect(metadata.compat?.forceAdaptiveThinking).toBe(true);
     // ...endpoint-specific fields are not.
     expect(metadata.compat?.supportsStore).toBeUndefined();
     expect(metadata.compat?.supportsLongCacheRetention).toBeUndefined();
