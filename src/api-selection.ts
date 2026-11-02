@@ -1,5 +1,5 @@
 import type { Api } from "@earendil-works/pi-ai";
-import type { ProviderCompatibility } from "../../src/api/types";
+import type { ProviderCompatibility } from "./api/types";
 
 // Chat completions first: Aperture's default and the broadest mode for Pi's
 // tool-calling path. Flags with no Pi dispatch are not mappable.

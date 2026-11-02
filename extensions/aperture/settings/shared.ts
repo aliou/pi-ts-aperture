@@ -7,7 +7,7 @@ import type { ProviderCompatibility } from "../../../src/api/types";
 import {
   getApiForCompatibility,
   getSelectableApis,
-} from "../../shared/api-selection";
+} from "../../../src/api-selection";
 import type {
   ApertureConfig,
   ResolvedConfig,

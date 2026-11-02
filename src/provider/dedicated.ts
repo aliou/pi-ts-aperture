@@ -6,18 +6,23 @@ import type {
   RefreshModelsContext,
 } from "@earendil-works/pi-ai";
 import { isModelType } from "@earendil-works/pi-ai";
-import { buildStream, buildStreamSimple } from "../../shared/api-routing";
+import {
+  type ApiUpstreams,
+  buildStream,
+  buildStreamSimple,
+} from "../api-routing";
 import {
   APERTURE_SYSTEM_ONE_API,
   classify as classifySystemOne,
-} from "./system-one";
+} from "../system-one";
 
 export const DEDICATED_PROVIDER_ID = "aperture";
 
 /**
  * Fetch/build the dedicated catalog. Returns the models to adopt, or
  * undefined when nothing should change (network refresh failures propagate so
- * Pi reports them; cache-only restore returns [] for an unusable snapshot).
+ * the host reports them; cache-only restore returns [] for an unusable
+ * snapshot).
  */
 export type RefreshDedicatedCatalog = (
   context: RefreshModelsContext,
@@ -35,6 +40,7 @@ export type RefreshDedicatedCatalog = (
 export function createDedicatedProvider(
   baseUrl: string,
   refresh: RefreshDedicatedCatalog,
+  upstreams: ApiUpstreams,
 ): Provider {
   let liveModels: AnyModel[] = [];
 
@@ -76,7 +82,7 @@ export function createDedicatedProvider(
         },
       });
     },
-    stream: buildStream(),
-    streamSimple: buildStreamSimple(),
+    stream: buildStream(upstreams),
+    streamSimple: buildStreamSimple(upstreams),
   };
 }

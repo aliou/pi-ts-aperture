@@ -3,6 +3,7 @@ import type {
   ExtensionAPI,
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
+import { DEDICATED_PROVIDER_ID } from "../../src/provider/dedicated";
 import { markRetryableApertureError } from "../../src/retryable-errors";
 import { configLoader } from "../shared/config/loader";
 import {
@@ -15,7 +16,6 @@ import { isProvenanceTelemetryAllowed } from "../shared/provenance";
 import { chatAndClassifierModels } from "../shared/registry-snapshot";
 import { isStaleCtxError } from "../shared/stale-ctx";
 import { emitConfigSync } from "../shared/sync-bus";
-import { DEDICATED_PROVIDER_ID } from "./dedicated/provider";
 import {
   reconcileDedicatedProvider,
   registerDedicatedProvider,

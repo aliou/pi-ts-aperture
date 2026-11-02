@@ -9,7 +9,7 @@ import type { AnyModel } from "@earendil-works/pi-ai";
 import type { Component } from "@earendil-works/pi-tui";
 import { ApertureClient } from "../../../src/api/client";
 import type { ApertureProvider } from "../../../src/api/types";
-import { isSelectableApi } from "../../shared/api-selection";
+import { isSelectableApi } from "../../../src/api-selection";
 import type {
   ApertureConfig,
   ProxiedProviderConfig,
