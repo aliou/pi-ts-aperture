@@ -1,51 +1,25 @@
-import type { Api, Model, StreamOptions } from "@earendil-works/pi-ai";
+import type { Api } from "@earendil-works/pi-ai";
 import { getApiProvider } from "@earendil-works/pi-ai/compat";
-import { embedsModelIdInPath } from "../../src/base-url-routing";
-import type {
-  AssistantMessageEventStream,
-  SimpleStreamOptions,
-  TranscriptContext,
-} from "./types";
-
-function providerFor(model: Model<Api>) {
-  const provider = getApiProvider(model.api);
-  if (!provider) {
-    throw new Error(`Unsupported Aperture provider API: ${model.api}`);
-  }
-  return provider;
-}
+import {
+  type ApiUpstreams,
+  buildStreamSimple as buildStreamSimpleWith,
+  buildStream as buildStreamWith,
+} from "../../src/api-routing";
 
 /**
- * Strip the `provider/` catalog prefix for path-embedding APIs. The gateway
- * forwards Gemini/Vertex/Bedrock URL paths verbatim upstream, so the
- * qualified id the model picker shows would 404; the bare id still routes
- * because the gateway resolves it provider-side. Only the first path segment
- * is stripped: upstream ids may themselves contain slashes
- * (e.g. `acme/hf:org/some-model`).
+ * Compat-fed upstream resolver: dispatches to the API implementation the
+ * coding agent registered for `api`. pi's extension loader resolves pi-ai
+ * through jiti aliases that prefix-match the bare package specifier, so the
+ * compat registry (an exact alias) is the only thing `extensions/` may use.
  */
-function requestModel(model: Model<Api>): Model<Api> {
-  if (!embedsModelIdInPath(model.api)) return model;
-  const slash = model.id.indexOf("/");
-  if (slash === -1) return model;
-  return { ...model, id: model.id.slice(slash + 1) };
-}
+export const compatUpstreams: ApiUpstreams = (api: Api) => getApiProvider(api);
 
 /** Stream by dispatching to the upstream Pi API the model routes through. */
 export function buildStreamSimple() {
-  return (
-    model: Model<Api>,
-    context: TranscriptContext,
-    options?: SimpleStreamOptions,
-  ): AssistantMessageEventStream =>
-    providerFor(model).streamSimple(requestModel(model), context, options);
+  return buildStreamSimpleWith(compatUpstreams);
 }
 
 /** Full-stream counterpart of buildStreamSimple. */
 export function buildStream() {
-  return (
-    model: Model<Api>,
-    context: TranscriptContext,
-    options?: StreamOptions,
-  ): AssistantMessageEventStream =>
-    providerFor(model).stream(requestModel(model), context, options);
+  return buildStreamWith(compatUpstreams);
 }

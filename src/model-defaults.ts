@@ -1,9 +1,6 @@
 import type { AnyModel } from "@earendil-works/pi-ai";
-import type {
-  ApertureModelLimits,
-  ApertureModelPricing,
-} from "../../../src/api/types";
-import type { ModelMetadata } from "../../../src/model-metadata";
+import type { ApertureModelLimits, ApertureModelPricing } from "./api/types";
+import type { ModelMetadata } from "./model-metadata";
 
 export interface ApertureModelDefaultsInput {
   id: string;
