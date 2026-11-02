@@ -187,6 +187,121 @@ describe("resolveModelMetadata / Pi registry", () => {
   });
 });
 
+describe("resolveModelMetadata / registry family matching", () => {
+  const family = registryModel({
+    provider: "together",
+    id: "kimi-k3",
+    name: "Kimi K3",
+    contextWindow: 256_000,
+    maxTokens: 32_000,
+    cost: { input: 0.6, output: 2.5, cacheRead: 0.06, cacheWrite: 0 },
+    compat: {
+      supportsStore: false,
+      maxTokensField: "max_tokens",
+    } as Model<Api>["compat"],
+  });
+
+  test("sibling match copies capabilities and compat but keeps name and cost", () => {
+    const metadata = resolveModelMetadata("together", "kimi-k3-1017", {
+      registryModels: [family],
+      siblingMatch: true,
+    });
+
+    expect(metadata.reasoning).toBe(true);
+    expect(metadata.input).toEqual(["text", "image"]);
+    expect(metadata.contextWindow).toBe(256_000);
+    expect(metadata.maxTokens).toBe(32_000);
+    // Endpoint quirks travel with the family...
+    expect(metadata.compat).toEqual({
+      supportsStore: false,
+      maxTokensField: "max_tokens",
+    });
+    // ...but the variant keeps its own name and gateway pricing wins.
+    expect(metadata.name).toBeUndefined();
+    expect(metadata.cost).toBeUndefined();
+  });
+
+  test("sibling matching is off by default", () => {
+    const metadata = resolveModelMetadata("together", "kimi-k3-1017", {
+      registryModels: [family],
+    });
+
+    expect(metadata).toEqual({});
+  });
+
+  test("strips one variant segment at a time, nearest ancestor first", () => {
+    const snapshot = registryModel({
+      provider: "together",
+      id: "kimi-k3-1017",
+      maxTokens: 16_000,
+    });
+    const metadata = resolveModelMetadata("together", "kimi-k3-1017-fast", {
+      registryModels: [family, snapshot],
+      siblingMatch: true,
+    });
+
+    expect(metadata.maxTokens).toBe(16_000);
+  });
+
+  test("registryProviderIds resolves a gateway id through its pi id", () => {
+    const metadata = resolveModelMetadata("togetherai", "kimi-k3-1017", {
+      registryModels: [family],
+      registryProviderIds: ["togetherai", "together"],
+      siblingMatch: true,
+    });
+
+    expect(metadata.maxTokens).toBe(32_000);
+  });
+
+  test("a provider-id exact match beats a sibling match", () => {
+    const alias = registryModel({
+      provider: "togetherai",
+      id: "kimi-k3-1017",
+      name: "Kimi K3 1017",
+      maxTokens: 4_000,
+    });
+    const metadata = resolveModelMetadata("togetherai", "kimi-k3-1017", {
+      registryModels: [family, alias],
+      registryProviderIds: ["togetherai", "together"],
+      siblingMatch: true,
+    });
+
+    expect(metadata.maxTokens).toBe(4_000);
+    expect(metadata.name).toBe("Kimi K3 1017");
+  });
+
+  test("a same-provider sibling beats a cross-provider model-id match", () => {
+    const otherProvider = registryModel({
+      provider: "openrouter",
+      id: "kimi-k3-1017",
+      maxTokens: 1_000,
+      compat: { supportsStore: true } as Model<Api>["compat"],
+    });
+    const metadata = resolveModelMetadata("together", "kimi-k3-1017", {
+      registryModels: [otherProvider, family],
+      siblingMatch: true,
+    });
+
+    expect(metadata.maxTokens).toBe(32_000);
+    expect(metadata.compat?.supportsStore).toBe(false);
+  });
+
+  test("exact ids still copy cost with sibling matching enabled", () => {
+    const metadata = resolveModelMetadata("together", "kimi-k3", {
+      registryModels: [family],
+      siblingMatch: true,
+    });
+
+    expect(metadata.name).toBe("Kimi K3");
+    expect(metadata.cost).toEqual({
+      input: 0.6,
+      output: 2.5,
+      cacheRead: 0.06,
+      cacheWrite: 0,
+    });
+  });
+});
+
 describe("resolveModelMetadata / precedence", () => {
   test("registry wins over models.dev", () => {
     const model = registryModel({

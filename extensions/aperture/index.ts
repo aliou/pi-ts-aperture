@@ -222,8 +222,8 @@ export default async function (pi: ExtensionAPI): Promise<void> {
       })
       .catch(suppressStaleRejection);
 
-    const missingModelsSettled = proxyRuntime
-      .checkMissingModels({
+    const driftSettled = proxyRuntime
+      .checkModelDrift({
         getModels: () => registryModelSnapshot(ctx.modelRegistry),
         notify: (msg, type) => ctx.ui.notify(msg, type),
         isStale: () => invalidated,
@@ -267,7 +267,7 @@ export default async function (pi: ExtensionAPI): Promise<void> {
       .catch(notifyRefreshFailure);
 
     // Emit only after every catalog-affecting step settles.
-    void Promise.allSettled([syncSettled, missingModelsSettled, refreshSettled])
+    void Promise.allSettled([syncSettled, driftSettled, refreshSettled])
       .then(() => {
         if (invalidated) return;
         return ctx.modelRegistry.refresh({

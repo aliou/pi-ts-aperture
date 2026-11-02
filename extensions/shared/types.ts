@@ -44,7 +44,7 @@ export interface SyncDeps {
 }
 
 /**
- * Dependencies for ApertureRuntime.checkMissingModels()
+ * Dependencies for ApertureRuntime.checkModelDrift()
  */
 export interface CheckDeps {
   /** Chat and classifier models known to the registry. */

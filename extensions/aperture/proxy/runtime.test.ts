@@ -125,6 +125,7 @@ function proxyConfig(
     enabled?: boolean;
     shouldCheckGatewayModels: boolean;
     keepGatewayModelsOnly?: boolean;
+    generateAdditionalModelsFromGateway?: boolean;
     api?: string;
   }[],
 ) {
@@ -144,20 +145,35 @@ function proxyConfig(
   };
 }
 
-async function check(models: Model<Api>[]) {
+async function check(
+  models: Model<Api>[],
+  gatewayProviders: ReturnType<typeof provider>[] = [
+    provider("synthetic", ["foo", "bar", "syn-1"]),
+  ],
+) {
   const notify = vi.fn();
   const runtime = new ApertureRuntime();
 
-  await runtime.checkMissingModels(
+  await runtime.checkModelDrift(
     {
       getModels: () => models,
       notify,
     },
-    [provider("synthetic", ["foo", "bar", "syn-1"])],
+    gatewayProviders,
   );
 
   return notify;
 }
+
+/** Notification messages that contain `text`. */
+function warningsMatching(notify: ReturnType<typeof vi.fn>, text: string) {
+  return notify.mock.calls
+    .map((call: unknown[]) => String(call[0]))
+    .filter((message: string) => message.includes(text));
+}
+
+const FORWARD_DRIFT = "models not available on gateway";
+const REVERSE_DRIFT = "gateway models missing from the Pi model list";
 
 describe("ApertureRuntime.sync", () => {
   beforeEach(() => {
@@ -1058,7 +1074,7 @@ describe("ApertureRuntime.sync provider composition with models.json", () => {
   });
 });
 
-describe("ApertureRuntime.checkMissingModels", () => {
+describe("ApertureRuntime.checkModelDrift", () => {
   beforeEach(() => {
     getConfig.mockReturnValue(
       proxyConfig([{ id: "synthetic", shouldCheckGatewayModels: true }]),
@@ -1071,7 +1087,7 @@ describe("ApertureRuntime.checkMissingModels", () => {
       model("openrouter", "foo"),
     ]);
 
-    expect(notify).not.toHaveBeenCalled();
+    expect(warningsMatching(notify, FORWARD_DRIFT)).toEqual([]);
   });
 
   test("only checks configured providers", async () => {
@@ -1080,7 +1096,10 @@ describe("ApertureRuntime.checkMissingModels", () => {
       model("openrouter", "missing-openrouter"),
     ]);
 
-    expect(notify).not.toHaveBeenCalled();
+    expect(warningsMatching(notify, FORWARD_DRIFT)).toEqual([]);
+    // openrouter is not a configured proxy provider, so it is outside both
+    // drift reports.
+    expect(warningsMatching(notify, "openrouter")).toEqual([]);
   });
 
   test("truncates missing models per provider", async () => {
@@ -1093,7 +1112,7 @@ describe("ApertureRuntime.checkMissingModels", () => {
     const notify = vi.fn();
     const runtime = new ApertureRuntime();
 
-    await runtime.checkMissingModels(
+    await runtime.checkModelDrift(
       {
         getModels: () => [
           model("openrouter", "or-1"),
@@ -1146,15 +1165,99 @@ describe("ApertureRuntime.checkMissingModels", () => {
       model("openrouter", "missing-openrouter"),
     ]);
 
-    expect(notify).not.toHaveBeenCalled();
+    expect(warningsMatching(notify, FORWARD_DRIFT)).toEqual([]);
+  });
+});
+
+describe("ApertureRuntime.checkModelDrift gateway-only models", () => {
+  beforeEach(() => {
+    getConfig.mockReturnValue(
+      proxyConfig([{ id: "synthetic", shouldCheckGatewayModels: false }]),
+    );
+  });
+
+  test("reports gateway models missing from the Pi model list", async () => {
+    const notify = await check([model("synthetic", "foo")]);
+
+    expect(notify).toHaveBeenCalledOnce();
+    const [message, level] = notify.mock.calls[0];
+    expect(message).toContain(`${REVERSE_DRIFT}: synthetic: bar, syn-1.`);
+    // The fix must be discoverable from the warning itself.
+    expect(message).toContain("generateAdditionalModelsFromGateway");
+    expect(message).toContain("/aperture:settings");
+    expect(level).toBe("warning");
+  });
+
+  test("is suppressed per provider by generateAdditionalModelsFromGateway", async () => {
+    getConfig.mockReturnValue(
+      proxyConfig([
+        {
+          id: "synthetic",
+          shouldCheckGatewayModels: false,
+          generateAdditionalModelsFromGateway: true,
+        },
+        { id: "openrouter", shouldCheckGatewayModels: false },
+        { id: "other", shouldCheckGatewayModels: false },
+      ]),
+    );
+
+    const notify = await check(
+      [model("synthetic", "foo")],
+      [
+        provider("synthetic", ["foo", "bar"]),
+        provider("openrouter", ["missing-openrouter"]),
+      ],
+    );
+
+    // Only the provider still missing the flag is reported.
+    expect(warningsMatching(notify, REVERSE_DRIFT)).toHaveLength(1);
+    const message = notify.mock.calls[0][0];
+    expect(message).toContain("openrouter: missing-openrouter");
+    expect(message).not.toContain("synthetic");
+  });
+
+  test("does not report when every gateway model is local", async () => {
+    const notify = await check([
+      model("synthetic", "foo"),
+      model("synthetic", "bar"),
+      model("synthetic", "syn-1"),
+    ]);
+
+    expect(warningsMatching(notify, REVERSE_DRIFT)).toEqual([]);
+  });
+
+  test("truncates gateway-only models per provider", async () => {
+    getConfig.mockReturnValue(
+      proxyConfig([{ id: "synthetic", shouldCheckGatewayModels: false }]),
+    );
+
+    const notify = await check(
+      [model("synthetic", "syn-1")],
+      [
+        provider("synthetic", [
+          "syn-1",
+          "g-1",
+          "g-2",
+          "g-3",
+          "g-4",
+          "g-5",
+          "g-6",
+          "g-7",
+        ]),
+      ],
+    );
+
+    expect(notify.mock.calls[0][0]).toContain(
+      "synthetic: g-1, g-2, g-3, g-4, g-5, 2 more",
+    );
   });
 });
 
 // Regression: when the gateway is transiently unavailable, providers() rejects
-// (e.g. a 5s abort timeout). checkMissingModels is fire-and-forget in the sync
+// (e.g. a 5s abort timeout). checkModelDrift is fire-and-forget in the sync
 // handler, so an unhandled rejection would crash Pi via uncaughtException. This
 // is a warning-only check and must silently swallow gateway failures.
-describe("ApertureRuntime.checkMissingModels gateway failures", () => {
+describe("ApertureRuntime.checkModelDrift gateway failures", () => {
   test("swallows gateway provider fetch errors", async () => {
     getConfig.mockReturnValue(
       proxyConfig([{ id: "synthetic", shouldCheckGatewayModels: true }]),
@@ -1172,7 +1275,7 @@ describe("ApertureRuntime.checkMissingModels gateway failures", () => {
     const runtime = new ApertureRuntime();
 
     await expect(
-      runtime.checkMissingModels({
+      runtime.checkModelDrift({
         getModels: () => [model("synthetic", "missing-model")],
         notify,
       }),
@@ -1415,6 +1518,196 @@ describe("ApertureRuntime.sync gateway model filtering", () => {
     expect(
       lastRegisteredModels(registerNativeProvider, "openai").map((m) => m.id),
     ).toEqual(["gpt-5.5", "gpt-4o"]);
+  });
+});
+
+describe("ApertureRuntime.sync generateAdditionalModelsFromGateway", () => {
+  /** Gateway catalog entry with per-model info (`/v1/models` pricing, limits). */
+  function catalogEntry(
+    id: string,
+    models: string[],
+    modelInfo: Record<string, Record<string, unknown>> = {},
+  ) {
+    return {
+      ...provider(id, models),
+      modelInfoById: Object.fromEntries(
+        Object.entries(modelInfo).map(([modelId, info]) => [
+          modelId,
+          { id: modelId, ...info },
+        ]),
+      ),
+    };
+  }
+
+  function lastModels(mock: ReturnType<typeof vi.fn>, providerId: string) {
+    const call = mock.mock.calls
+      .filter(([p]: unknown[]) => (p as { id?: string }).id === providerId)
+      .at(-1);
+    return (
+      (call?.[0] as { getModels?: () => Model<Api>[] })?.getModels?.() ?? []
+    );
+  }
+
+  const syntheticLocal = () => [
+    model(
+      "synthetic",
+      "syn-local",
+      "openai-completions",
+      "https://api.synthetic.new/v1",
+    ),
+  ];
+
+  test("appends gateway-only models with gateway pricing and limits", async () => {
+    mockCatalog([
+      catalogEntry("synthetic", ["syn-local", "syn-new", "syn-classifier"], {
+        "syn-new": {
+          pricing: { input: "0.00000200", output: "0.00000900" },
+          context_window_tokens: 200_000,
+          max_output_tokens: 32_000,
+        },
+        "syn-classifier": { system_one: true },
+      }),
+    ]);
+    getConfig.mockReturnValue(
+      proxyConfig([
+        {
+          id: "synthetic",
+          shouldCheckGatewayModels: false,
+          generateAdditionalModelsFromGateway: true,
+        },
+      ]),
+    );
+    const { deps, registerNativeProvider } = syncDeps(syntheticLocal);
+
+    await new ApertureRuntime().sync(deps);
+
+    const models = lastModels(registerNativeProvider, "synthetic");
+    // Known models are not duplicated; System One routes have no chat surface.
+    expect(models.map((m) => m.id)).toEqual(["syn-local", "syn-new"]);
+
+    const synthesized = models[1];
+    expect(synthesized.name).toBe("syn-new (uncatalogued)");
+    expect(synthesized.api).toBe("openai-completions");
+    expect(synthesized.baseUrl).toBe(`${gatewayUrl}/v1`);
+    expect(synthesized.cost?.input).toBeCloseTo(2, 10);
+    expect(synthesized.cost?.output).toBe(9);
+    expect(synthesized.contextWindow).toBe(200_000);
+    expect(synthesized.maxTokens).toBe(32_000);
+  });
+
+  test("is off by default", async () => {
+    mockCatalog([catalogEntry("synthetic", ["syn-local", "syn-new"])]);
+    getConfig.mockReturnValue(
+      proxyConfig([{ id: "synthetic", shouldCheckGatewayModels: false }]),
+    );
+    const { deps, registerNativeProvider } = syncDeps(syntheticLocal);
+
+    await new ApertureRuntime().sync(deps);
+
+    expect(
+      lastModels(registerNativeProvider, "synthetic").map((m) => m.id),
+    ).toEqual(["syn-local"]);
+  });
+
+  test("resolves metadata via the pi provider id (sibling family match)", async () => {
+    // Gateway id (`togetherai`) is not Pi's provider id (`together`).
+    mockCatalog([catalogEntry("togetherai", ["kimi-k3-1017"])]);
+    getConfig.mockReturnValue(
+      proxyConfig([
+        {
+          id: "together",
+          gatewayId: "togetherai",
+          shouldCheckGatewayModels: false,
+          generateAdditionalModelsFromGateway: true,
+        },
+      ]),
+    );
+    const { deps, registerNativeProvider } = syncDeps(() => [
+      {
+        ...model(
+          "together",
+          "kimi-k3",
+          "openai-completions",
+          "https://api.together.xyz/v1",
+        ),
+        name: "Kimi K3",
+        reasoning: true,
+        input: ["text", "image"],
+        contextWindow: 256_000,
+        maxTokens: 32_000,
+        compat: { supportsStore: false },
+      } as Model<Api>,
+    ]);
+
+    await new ApertureRuntime().sync(deps);
+
+    const models = lastModels(registerNativeProvider, "together");
+    expect(models.map((m) => m.id)).toEqual(["kimi-k3", "kimi-k3-1017"]);
+
+    const synthesized = models[1];
+    // Family capabilities and endpoint quirks arrive through the alias...
+    expect(synthesized.reasoning).toBe(true);
+    expect(synthesized.input).toEqual(["text", "image"]);
+    expect(synthesized.contextWindow).toBe(256_000);
+    expect(synthesized.maxTokens).toBe(32_000);
+    expect(
+      (synthesized.compat as Record<string, unknown> | undefined)
+        ?.supportsStore,
+    ).toBe(false);
+    // ...but the variant keeps its own (marked) name.
+    expect(synthesized.name).toBe("kimi-k3-1017 (uncatalogued)");
+  });
+
+  test("keeps a keepGatewayModelsOnly provider that only synthesized models", async () => {
+    mockCatalog([catalogEntry("synthetic", ["syn-new"])]);
+    getConfig.mockReturnValue(
+      proxyConfig([
+        {
+          id: "synthetic",
+          shouldCheckGatewayModels: false,
+          keepGatewayModelsOnly: true,
+          generateAdditionalModelsFromGateway: true,
+        },
+      ]),
+    );
+    const { deps, registerNativeProvider } = syncDeps(syntheticLocal);
+
+    await new ApertureRuntime().sync(deps);
+
+    // No local model is served, but the synthesized one is: the provider must
+    // not be emptied by the "no served models" bail-out.
+    expect(
+      lastModels(registerNativeProvider, "synthetic").map((m) => m.id),
+    ).toEqual(["syn-new"]);
+  });
+
+  test("removes synthesized models again when the flag is turned off", async () => {
+    mockCatalog([catalogEntry("synthetic", ["syn-local", "syn-new"])]);
+    getConfig.mockReturnValue(
+      proxyConfig([
+        {
+          id: "synthetic",
+          shouldCheckGatewayModels: false,
+          generateAdditionalModelsFromGateway: true,
+        },
+      ]),
+    );
+    const { deps, registerNativeProvider } = syncDeps(syntheticLocal);
+    const runtime = new ApertureRuntime();
+
+    await runtime.sync(deps);
+    expect(
+      lastModels(registerNativeProvider, "synthetic").map((m) => m.id),
+    ).toEqual(["syn-local", "syn-new"]);
+
+    getConfig.mockReturnValue(
+      proxyConfig([{ id: "synthetic", shouldCheckGatewayModels: false }]),
+    );
+    await runtime.sync(deps);
+
+    expect(
+      lastModels(registerNativeProvider, "synthetic").map((m) => m.id),
+    ).toEqual(["syn-local"]);
   });
 });
 
@@ -1794,7 +2087,7 @@ describe("ApertureRuntime stale context", () => {
     await expect(pending).resolves.toBeUndefined();
   });
 
-  test("checkMissingModels bails after the catalog fetch when the session was replaced", async () => {
+  test("checkModelDrift bails after the catalog fetch when the session was replaced", async () => {
     let release: ((providers: unknown) => void) | undefined;
     vi.mocked(ApertureClient).mockImplementation(function (this: {
       providers: ReturnType<typeof vi.fn>;
@@ -1810,7 +2103,7 @@ describe("ApertureRuntime stale context", () => {
     const notify = vi.fn();
     const { deps, invalidate } = staleDeps();
 
-    const pending = new ApertureRuntime().checkMissingModels({
+    const pending = new ApertureRuntime().checkModelDrift({
       getModels: deps.getModels,
       notify,
       isStale: deps.isStale,
@@ -2253,7 +2546,7 @@ describe("ApertureRuntime.sync manual gateway mapping", () => {
       ]),
     );
     const notify = vi.fn();
-    await new ApertureRuntime().checkMissingModels(
+    await new ApertureRuntime().checkModelDrift(
       {
         getModels: () => [
           model("anthropic", "claude"),

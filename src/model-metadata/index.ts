@@ -42,6 +42,19 @@ export interface ModelMetadataSources {
    */
   registryModels?: readonly Model<Api>[];
   modelsDev?: ModelsDevCatalog | null;
+  /**
+   * Allow a same-provider family match for ids the registry only knows as a
+   * variant (e.g. `together/x-1017` resolving `together/x`). Gateway-only
+   * models are the reason this exists: they are usually a snapshot of a model
+   * the registry does list under the same provider.
+   */
+  siblingMatch?: boolean;
+  /**
+   * Pi provider ids to try for registry matching, in order. A gateway
+   * provider id is often not a Pi provider id (`togetherai` vs `together`,
+   * `Cerebras` vs `cerebras`), so callers pass the local ids first.
+   */
+  registryProviderIds?: readonly string[];
 }
 
 /**
@@ -66,8 +79,9 @@ export function resolveModelMetadata(
     applyRegistryMetadata(
       metadata,
       sources.registryModels,
-      providerId,
+      sources.registryProviderIds ?? [providerId],
       modelId,
+      sources.siblingMatch ?? false,
     );
   }
 

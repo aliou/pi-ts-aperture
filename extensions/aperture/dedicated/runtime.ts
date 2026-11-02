@@ -23,10 +23,8 @@ import {
   isSelectableApi,
 } from "../../shared/api-selection";
 import { configLoader, type ResolvedConfig } from "../../shared/config/loader";
-import {
-  buildClassifierModelConfig,
-  buildDefaultModelConfig,
-} from "./model-defaults";
+import { buildGatewayChatModel } from "../gateway-models";
+import { buildClassifierModelConfig } from "./model-defaults";
 import { createDedicatedProvider, DEDICATED_PROVIDER_ID } from "./provider";
 import { APERTURE_SYSTEM_ONE_API } from "./system-one";
 
@@ -72,7 +70,42 @@ function buildCatalogKey(gatewayUrl: string, config: ResolvedConfig): string {
     .sort();
   const filter =
     config.dedicated.providers.length === 0 ? "*" : enabled.join(",");
-  return `${origin} ${filter} v3`;
+  // `sib` records that the catalog resolved variant ids against same-provider
+  // family entries, so a catalog built under the other setting never replays.
+  const sibling = siblingMetadataEnabled(config) ? " +sib" : "";
+  return `${origin} ${filter}${sibling} v3`;
+}
+
+/**
+ * Local Pi provider ids that route to each gateway provider, keyed by gateway
+ * provider id. Dedicated metadata matching needs them because gateway ids
+ * (`togetherai`, `Cerebras`) are not Pi provider ids (`together`,
+ * `cerebras`).
+ */
+function registryProviderAliases(
+  config: ResolvedConfig,
+): Map<string, string[]> {
+  const aliases = new Map<string, string[]>();
+  for (const provider of config.proxy.upstreamProviders) {
+    if (provider.enabled === false) continue;
+    const ids = aliases.get(provider.gatewayId) ?? [];
+    if (!ids.includes(provider.id)) ids.push(provider.id);
+    aliases.set(provider.gatewayId, ids);
+  }
+  return aliases;
+}
+
+/**
+ * Same-provider family matching is enabled by the proxy's
+ * `generateAdditionalModelsFromGateway`, so the dedicated entries for the very
+ * models the proxy synthesizes keep identical metadata.
+ */
+function siblingMetadataEnabled(config: ResolvedConfig): boolean {
+  return config.proxy.upstreamProviders.some(
+    (provider) =>
+      provider.enabled !== false &&
+      provider.generateAdditionalModelsFromGateway === true,
+  );
 }
 
 function filterProviders(
@@ -100,7 +133,9 @@ function buildModels(
   registryModels: AnyModel[],
   modelsDev: ModelsDevCatalog | null,
   apiOverrides: ReadonlyMap<string, Api>,
+  registryProviderIds: ReadonlyMap<string, readonly string[]>,
   notify?: (warning: string) => void,
+  siblingMatch = false,
 ): AnyModel[] {
   // Look up native upstream base URLs from Pi's model registry. Prefer a
   // provider-id match (same naming as the gateway), then a model-id match
@@ -156,7 +191,12 @@ function buildModels(
       const upstreamBaseUrl = providerUpstream ?? upstreamByModel.get(modelId);
       const metadata = resolveModelMetadata(provider.id, modelId, {
         registryModels: metadataRegistry,
+        registryProviderIds: [
+          ...(registryProviderIds.get(provider.id) ?? []),
+          provider.id,
+        ],
         modelsDev,
+        siblingMatch,
       });
 
       if (modelInfo?.system_one === true) {
@@ -184,23 +224,19 @@ function buildModels(
         continue;
       }
 
-      const chat: Model<Api> = {
+      const chat = buildGatewayChatModel({
+        id: `${provider.id}/${modelId}`,
         provider: PROVIDER_NAME,
-        ...buildDefaultModelConfig({
-          id: `${provider.id}/${modelId}`,
-          name: modelId,
-          providerId: provider.id,
-          provider: { id: provider.id, name: provider.name },
-          pricing: modelInfo?.pricing,
-          limits: {
-            context_window_tokens: modelInfo?.context_window_tokens,
-            max_output_tokens: modelInfo?.max_output_tokens,
-          },
-          metadata,
-        }),
+        name: modelId,
         api,
         baseUrl: getBaseUrlForApi(api, gatewayUrl, baseUrl, upstreamBaseUrl),
-      };
+        pricing: modelInfo?.pricing,
+        limits: {
+          context_window_tokens: modelInfo?.context_window_tokens,
+          max_output_tokens: modelInfo?.max_output_tokens,
+        },
+        metadata,
+      });
       models.push(chat);
     }
   }
@@ -285,7 +321,9 @@ export async function refreshDedicatedCatalog(
     getModels(),
     modelsDev,
     apiOverrides,
+    registryProviderAliases(config),
     notify,
+    siblingMetadataEnabled(config),
   );
 
   context.signal?.throwIfAborted();

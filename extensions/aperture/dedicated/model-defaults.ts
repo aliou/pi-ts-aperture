@@ -9,10 +9,6 @@ export interface ApertureModelDefaultsInput {
   id: string;
   name?: string;
   providerId: string;
-  provider?: {
-    id: string;
-    name?: string;
-  };
   pricing?: ApertureModelPricing;
   /** Token limits the gateway advertises for this model on this route. */
   limits?: ApertureModelLimits;

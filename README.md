@@ -44,7 +44,9 @@ Capabilities (vision input, reasoning, thinking levels) come from the first sour
 
 Reroutes existing Pi providers through Aperture. Each provider keeps its own model definitions and settings, and sessions resume on the same model. Aperture injects server-side credentials, or forwards Pi's own credential for passthrough providers. OpenAI Responses passthrough routes support Pi's **Sign in with ChatGPT**.
 
-Pick providers in the Proxy tab of `/aperture:settings`. A local provider can target a different gateway id (for example, `anthropic` → `anthropic-oauth`), and several local providers can share one gateway target. Optional per-provider verification warns when local models are missing from the gateway; `keepGatewayModelsOnly: true` hides them from the model picker instead.
+Pick providers in the Proxy tab of `/aperture:settings`. A local provider can target a different gateway id (for example, `anthropic` → `anthropic-oauth`), and several local providers can share one gateway target.
+
+Per-provider verification runs both ways: `shouldCheckGatewayModels` warns when a local model is missing from the gateway, and every sync warns when the gateway serves a model the Pi model list does not expose. `keepGatewayModelsOnly: true` hides unsupported local models from the model picker instead of letting them fail at request time, and `generateAdditionalModelsFromGateway: true` registers the gateway-only models so they appear in the picker.
 
 ### MCP tools
 
@@ -113,6 +115,7 @@ Notes:
 - `proxy.upstreamProviders[].id` is the local Pi provider; `gatewayId` is the target gateway provider and is required. Existing configs gain `gatewayId: id` during migration. Unknown gateway targets are left unrouted with a warning. `aperture` is reserved and cannot be selected as a pairing target.
 - Gateway providers that require client authentication forward the local provider's credential (including Pi OAuth); other providers use server-side credential injection.
 - `keepGatewayModelsOnly` (per proxy provider, default `false`) hides that provider's local models the gateway doesn't serve instead of letting them fail at request time.
+- `generateAdditionalModelsFromGateway` (per proxy provider, default `false`) also registers the models the gateway serves but Pi's catalog does not list. They are synthesized from the gateway catalog (cost, token limits, API) plus Pi's registry metadata, and their name carries an ` (uncatalogued)` suffix in the model picker. They live in memory only — rebuilt on every sync and never written to Pi's models store — so they cannot be selected as the agent's default model. Enable it per provider in the Proxy tab (**Add gateway-only models**), or set the flag in the config file.
 - `api` (per provider, unset by default) forces a specific Pi API (`openai-completions`, `anthropic-messages`, `openai-responses`, `google-generative-ai`, `google-vertex`, `bedrock-converse-stream`) instead of the one picked from the gateway's compatibility map. Use it for providers Aperture serves through more than one API. If the gateway stops serving the override, the provider falls back to auto with a warning.
 - An empty `dedicated.providers` list means all gateway providers are included. Passthrough providers are excluded: the dedicated provider never forwards a client credential.
 - Models the gateway serves only over the System One endpoint (`/v1/systemone`) appear on the `aperture` provider as classifiers, callable via `models.classify`, not as chat models. Configure them per model with `model_compatibility` in the Aperture config.
