@@ -120,6 +120,30 @@ Notes:
 - Requests include `Referer` and `x-session-id` (the current Pi session) so the Aperture dashboard can group them. Turn them off with `"shouldSendProvenanceHeaders": false` or the Provenance headers toggle. They are also skipped whenever Pi telemetry is disabled (`PI_TELEMETRY=0` or `enableInstallTelemetry: false`).
 - No API keys are stored: Aperture injects upstream credentials server-side. Pi OAuth credentials still take precedence when available.
 
+## Library use
+
+The package also ships a standalone provider for use outside Pi, without the coding agent or any config file. It builds the same `aperture` provider the extension registers: the model catalog is fetched from the gateway, each model is routed through the pi-ai API matching its Aperture compatibility, and the gateway injects credentials server-side (the provider's own API key is a placeholder).
+
+```bash
+pnpm add @aliou/pi-ts-aperture @earendil-works/pi-ai
+```
+
+```ts
+import { createModels } from "@earendil-works/pi-ai/models";
+import createApertureProvider from "@aliou/pi-ts-aperture/provider";
+
+const models = createModels();
+models.setProvider(
+  createApertureProvider({
+    baseUrl: "https://ai.<tailnet>.ts.net",
+    provenance: { referer: "https://yourapp.example" },
+  }),
+);
+await models.refresh();
+```
+
+The gateway `baseUrl` is required and must be set. Provenance headers (`Referer` plus a per-request `x-session-id`) are on by default; pass `provenance: { enabled: false }` to drop them. Refreshes are driven by pi-ai's `Models.refresh()` (or a direct `provider.refreshModels(context)` with a `ModelsStore`), so the catalog persists and restores through the host's store.
+
 ## Requirements
 
 - A Tailscale tailnet with Aperture configured.

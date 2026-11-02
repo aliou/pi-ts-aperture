@@ -3,6 +3,7 @@ import type {
   Api,
   Model,
   Provider,
+  ProviderHeaders,
   RefreshModelsContext,
 } from "@earendil-works/pi-ai";
 import { isModelType } from "@earendil-works/pi-ai";
@@ -41,6 +42,7 @@ export function createDedicatedProvider(
   baseUrl: string,
   refresh: RefreshDedicatedCatalog,
   upstreams: ApiUpstreams,
+  headers?: ProviderHeaders,
 ): Provider {
   let liveModels: AnyModel[] = [];
 
@@ -48,6 +50,7 @@ export function createDedicatedProvider(
     id: DEDICATED_PROVIDER_ID,
     name: "Aperture",
     baseUrl,
+    headers,
     auth: {
       apiKey: {
         name: "Aperture",

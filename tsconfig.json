@@ -10,6 +10,6 @@
     "resolveJsonModule": true,
     "noEmit": true
   },
-  "include": ["src/**/*", "extensions/**/*"],
+  "include": ["src/**/*", "extensions/**/*", "provider/**/*"],
   "exclude": ["node_modules", "**/*.test.ts"]
 }
