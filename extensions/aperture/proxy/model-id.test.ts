@@ -123,7 +123,6 @@ describe("withRequestModelId", () => {
       normalizeToolCallId,
     );
     expect((transformed[0] as AssistantMessage).content).toEqual([
-      { type: "text", text: "reasoning" },
       { type: "text", text: "answer" },
       { type: "toolCall", id: "normalized", name: "lookup", arguments: {} },
     ]);
