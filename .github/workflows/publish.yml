@@ -99,6 +99,10 @@ jobs:
             echo "needs_staging=false" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Build packages
+        if: steps.check-publish.outputs.needs_staging == 'true'
+        run: pnpm build
+
       - name: Stage packages
         if: steps.check-publish.outputs.needs_staging == 'true'
         run: npm stage publish
