@@ -1,6 +1,10 @@
+catalog:
+  "@earendil-works/pi-ai": 1.5.0
+  "@earendil-works/pi-tui": 1.5.0
+
 overrides:
-  "@earendil-works/pi-ai": "$@earendil-works/pi-coding-agent"
-  "@earendil-works/pi-tui": "$@earendil-works/pi-coding-agent"
+  "@earendil-works/pi-ai": "catalog:"
+  "@earendil-works/pi-tui": "catalog:"
   "@changesets/git": "4.0.0"
 
 allowBuilds:
