@@ -144,6 +144,8 @@ await models.refresh();
 
 The gateway `baseUrl` is required and must be set. Provenance headers (`Referer` plus a per-request `x-session-id`) are on by default; pass `provenance: { enabled: false }` to drop them. Refreshes are driven by pi-ai's `Models.refresh()` (or a direct `provider.refreshModels(context)` with a `ModelsStore`), so the catalog persists and restores through the host's store.
 
+Pass `registryModels` to merge a host-side model catalog: gateway models inherit metadata (name, reasoning, vision input, thinking levels, context window, `compat`) and native upstream base URLs from matching entries, the same way the extension merges Pi's registry. Without it, metadata comes from models.dev and safe defaults. Pass `providers` to include only selected gateway providers and to set per-provider api overrides; leave it out to route every callable provider with automatic api selection.
+
 ## Requirements
 
 - A Tailscale tailnet with Aperture configured.

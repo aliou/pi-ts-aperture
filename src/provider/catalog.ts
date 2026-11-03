@@ -94,7 +94,7 @@ export function buildModels(
   providers: ApertureProvider[],
   gatewayUrl: string,
   baseUrl: string,
-  registryModels: AnyModel[],
+  registryModels: readonly AnyModel[],
   modelsDev: ModelsDevCatalog | null,
   apiOverrides: ReadonlyMap<string, Api>,
   notify?: (warning: string) => void,
@@ -235,7 +235,7 @@ export interface DedicatedCatalogOptions {
   baseUrl: string;
   /** Provider selection and api overrides (part of the catalog key). */
   providers: readonly DedicatedProviderSelection[];
-  getRegistryModels: () => AnyModel[];
+  getRegistryModels: () => readonly AnyModel[];
   notify?: (warning: string) => void;
 }
 

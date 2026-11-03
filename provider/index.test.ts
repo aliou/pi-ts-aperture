@@ -214,6 +214,76 @@ describe("createApertureProvider", () => {
     ]);
   });
 
+  test("merges a host catalog so gateway models inherit its metadata", async () => {
+    providersMock.mockResolvedValue([gatewayProvider("prov", ["model"])]);
+    const provider = createApertureProvider({
+      baseUrl: GATEWAY,
+      registryModels: () => [
+        {
+          provider: "prov",
+          id: "model",
+          name: "Registry Name",
+          api: "openai-completions",
+          baseUrl: "https://api.openai.com/v1",
+          reasoning: true,
+          input: ["text", "image"],
+          cost: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0 },
+          contextWindow: 999_000,
+          maxTokens: 4_096,
+        },
+      ],
+    });
+
+    const models = await refreshWithStore(
+      provider,
+      {
+        read: async () => undefined,
+        write: async () => undefined,
+        delete: async () => undefined,
+      },
+      true,
+    );
+
+    expect(models).toHaveLength(1);
+    expect(models[0]).toMatchObject({
+      id: "prov/model",
+      name: "Registry Name",
+      reasoning: true,
+      input: ["text", "image"],
+      contextWindow: 999_000,
+      maxTokens: 4_096,
+      baseUrl: `${GATEWAY}/v1`,
+    });
+  });
+
+  test("filters gateway providers and applies api overrides via providers", async () => {
+    providersMock.mockResolvedValue([
+      {
+        ...gatewayProvider("prov", ["model"]),
+        compatibility: { openai_chat: true, openai_responses: true },
+      },
+      gatewayProvider("other", ["model2"]),
+    ]);
+    const provider = createApertureProvider({
+      baseUrl: GATEWAY,
+      providers: [{ id: "prov", enabled: true, api: "openai-responses" }],
+    });
+
+    const models = await refreshWithStore(
+      provider,
+      {
+        read: async () => undefined,
+        write: async () => undefined,
+        delete: async () => undefined,
+      },
+      true,
+    );
+
+    expect(models).toEqual([
+      chatModel("prov/model", "openai-responses", `${GATEWAY}/v1`, "model"),
+    ]);
+  });
+
   test("keeps classifiers out of getModels but in getAllModels", async () => {
     providersMock.mockResolvedValue([
       {

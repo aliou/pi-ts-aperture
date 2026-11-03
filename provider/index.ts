@@ -1,4 +1,9 @@
-import type { Api, Provider, ProviderStreams } from "@earendil-works/pi-ai";
+import type {
+  AnyModel,
+  Api,
+  Provider,
+  ProviderStreams,
+} from "@earendil-works/pi-ai";
 import { anthropicMessagesApi } from "@earendil-works/pi-ai/api/anthropic-messages.lazy";
 import { bedrockConverseStreamApi } from "@earendil-works/pi-ai/api/bedrock-converse-stream.lazy";
 import { googleGenerativeAIApi } from "@earendil-works/pi-ai/api/google-generative-ai.lazy";
@@ -6,12 +11,14 @@ import { googleVertexApi } from "@earendil-works/pi-ai/api/google-vertex.lazy";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
 import { openAIResponsesApi } from "@earendil-works/pi-ai/api/openai-responses.lazy";
 import type { ApiUpstreams } from "../src/api-routing";
+import type { DedicatedProviderSelection } from "../src/provider/catalog";
 import { refreshDedicatedCatalog } from "../src/provider/catalog";
 import { createDedicatedProvider } from "../src/provider/dedicated";
 import { normalizeInputUrl, resolveGatewayUrl } from "../src/url";
 import type { ProvenanceOptions } from "./headers";
 import { provenanceRequestHeaders, withProvenanceHeaders } from "./headers";
 
+export type { DedicatedProviderSelection } from "../src/provider/catalog";
 export { DEDICATED_PROVIDER_ID } from "../src/provider/dedicated";
 export {
   DEFAULT_ATTRIBUTION_URL,
@@ -24,6 +31,13 @@ export {
 export interface ApertureProviderOptions {
   /** Aperture gateway URL, e.g. `https://ai.<tailnet>.ts.net`. */
   baseUrl: string;
+  /**
+   * Host model catalog; matching entries supply metadata and native upstream
+   * base URLs for the gateway's models.
+   */
+  registryModels?: () => readonly AnyModel[];
+  /** Gateway providers to include and their api overrides. Empty = all callable providers. */
+  providers?: readonly DedicatedProviderSelection[];
   /** Referer and session-id provenance headers. On by default. */
   provenance?: ProvenanceOptions;
 }
@@ -77,8 +91,8 @@ export default function createApertureProvider(
       refreshDedicatedCatalog(context, {
         gatewayUrl,
         baseUrl,
-        providers: [],
-        getRegistryModels: () => [],
+        providers: options.providers ?? [],
+        getRegistryModels: options.registryModels ?? (() => []),
       }),
     upstreams,
     provenanceHeaders,
