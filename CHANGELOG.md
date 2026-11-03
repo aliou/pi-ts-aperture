@@ -1,5 +1,15 @@
 # @aliou/pi-ts-aperture
 
+## 0.20.0
+
+### Minor Changes
+
+- 5d6ba93: Add a standalone `createApertureProvider` entry point, exported at `@aliou/pi-ts-aperture/provider`. It returns a pi-ai `Provider` that fetches its catalog from an Aperture gateway's `/v1` surface — no coding agent, no config file, everything via options. The gateway `baseUrl` is required; provenance headers (Referer plus per-request `x-session-id`) are on by default and configurable via `provenance`.
+
+### Patch Changes
+
+- 6f76fb0: Ship `CHANGELOG.md` in the npm tarball so pi can show the changelog when the extension updates.
+
 ## 0.19.1
 
 ### Patch Changes
