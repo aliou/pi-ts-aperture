@@ -1,5 +1,12 @@
 # @aliou/pi-ts-aperture
 
+## 0.20.1
+
+### Patch Changes
+
+- d0de28e: Default `compat.supportsDeveloperRole` to `false` on chat completions models built by the dedicated catalog when no metadata source sets it. pi-ai guesses `true` for unrecognized providers, which sends `role: "developer"` to hosts that only accept `system` and rejects the request. Metadata still wins.
+- 12a87e4: Add `registryModels` and `providers` options to `createApertureProvider`. `registryModels` passes a host-side model catalog whose matching entries supply metadata (name, reasoning, vision input, thinking levels, limits, `compat`) and native upstream base URLs, the same way the extension merges Pi's registry. `providers` selects which gateway providers to include and sets per-provider api overrides.
+
 ## 0.20.0
 
 ### Minor Changes
