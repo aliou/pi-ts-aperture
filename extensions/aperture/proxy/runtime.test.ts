@@ -240,10 +240,15 @@ describe("shouldUseGatewayRoot OpenAI SDK path inference", () => {
     // openai-responses follows the same rule.
     ["responses-openai", "https://api.openai.com/v1", false, false],
     ["responses-zai", "https://api.z.ai/api/coding/paas/v4", false, true],
-  ])("%s completions baseUrl %s", (_name, baseUrl, isCompletions, expectedRoot) => {
-    const api: Api = isCompletions ? "openai-completions" : "openai-responses";
-    expect(shouldUseGatewayRoot(api, baseUrl)).toBe(expectedRoot);
-  });
+  ])(
+    "%s completions baseUrl %s",
+    (_name, baseUrl, isCompletions, expectedRoot) => {
+      const api: Api = isCompletions
+        ? "openai-completions"
+        : "openai-responses";
+      expect(shouldUseGatewayRoot(api, baseUrl)).toBe(expectedRoot);
+    },
+  );
 
   test("missing upstream base URL keeps /v1 for OpenAI SDK APIs", () => {
     expect(shouldUseGatewayRoot("openai-completions")).toBe(false);
@@ -717,58 +722,61 @@ describe("ApertureRuntime.sync OpenAI passthrough transport", () => {
     return { native, wrapped: () => current, runtime, deps };
   }
 
-  test.each([
-    "stream",
-    "streamSimple",
-  ] as const)("%s preserves the native URL and auth while qualifying mapped model ids", async (method) => {
-    const { native, wrapped } = await setup();
-    const fetch = vi.fn().mockResolvedValue(new Response());
-    const options = {
-      apiKey: "subscription-token",
-      fetch,
-      signal: new AbortController().signal,
-      headers: { "x-session-id": "session-1" },
-    };
-    const proxied = wrapped();
-    expect(proxied.getModels()[0].baseUrl).toBe(upstreamUrl);
-    expect(proxied.getModels()[0].id).toBe("gpt-6-sol");
-    expect(proxied.auth).toBe(native.auth);
+  test.each(["stream", "streamSimple"] as const)(
+    "%s preserves the native URL and auth while qualifying mapped model ids",
+    async (method) => {
+      const { native, wrapped } = await setup();
+      const fetch = vi.fn().mockResolvedValue(new Response());
+      const options = {
+        apiKey: "subscription-token",
+        fetch,
+        signal: new AbortController().signal,
+        headers: { "x-session-id": "session-1" },
+      };
+      const proxied = wrapped();
+      expect(proxied.getModels()[0].baseUrl).toBe(upstreamUrl);
+      expect(proxied.getModels()[0].id).toBe("gpt-6-sol");
+      expect(proxied.auth).toBe(native.auth);
 
-    proxied[method](proxied.getModels()[0], {} as never, options);
-    const [sentModel, , sentOptions] = native[method].mock.calls[0];
-    expect(sentModel).toMatchObject({
-      id: "openai-subscription/gpt-6-sol",
-      provider: "openai",
-      baseUrl: upstreamUrl,
-    });
-    expect(sentOptions).toMatchObject({
-      apiKey: options.apiKey,
-      signal: options.signal,
-      headers: options.headers,
-    });
-    expect(options.fetch).toBe(fetch);
-    await sentOptions.fetch(`${upstreamUrl}/responses`);
-    expect(fetch).toHaveBeenCalledWith(
-      new URL("https://ai.pango-lin.ts.net/v1/responses"),
-      undefined,
-    );
-  });
+      proxied[method](proxied.getModels()[0], {} as never, options);
+      const [sentModel, , sentOptions] = native[method].mock.calls[0];
+      expect(sentModel).toMatchObject({
+        id: "openai-subscription/gpt-6-sol",
+        provider: "openai",
+        baseUrl: upstreamUrl,
+      });
+      expect(sentOptions).toMatchObject({
+        apiKey: options.apiKey,
+        signal: options.signal,
+        headers: options.headers,
+      });
+      expect(options.fetch).toBe(fetch);
+      await sentOptions.fetch(`${upstreamUrl}/responses`);
+      expect(fetch).toHaveBeenCalledWith(
+        new URL("https://ai.pango-lin.ts.net/v1/responses"),
+        undefined,
+      );
+    },
+  );
 
   test.each([
     { requiresClientAuth: false },
     { api: "openai-completions" as Api },
     { baseUrl: "https://api.openai.com/v1/" },
     { baseUrl: "https://other.example.test/v1" },
-  ])("keeps URL rewriting outside the exact passthrough Responses route: %j", async (settings) => {
-    const { native, wrapped } = await setup(settings);
-    const options = { apiKey: "sk-test", fetch: vi.fn() };
-    const proxied = wrapped();
-    expect(proxied.getModels()[0].baseUrl).toBe(
-      "https://ai.pango-lin.ts.net/v1",
-    );
-    proxied.stream(proxied.getModels()[0], {} as never, options);
-    expect(native.stream.mock.calls[0][2]).toBe(options);
-  });
+  ])(
+    "keeps URL rewriting outside the exact passthrough Responses route: %j",
+    async (settings) => {
+      const { native, wrapped } = await setup(settings);
+      const options = { apiKey: "sk-test", fetch: vi.fn() };
+      const proxied = wrapped();
+      expect(proxied.getModels()[0].baseUrl).toBe(
+        "https://ai.pango-lin.ts.net/v1",
+      );
+      proxied.stream(proxied.getModels()[0], {} as never, options);
+      expect(native.stream.mock.calls[0][2]).toBe(options);
+    },
+  );
 
   test("keeps native URLs and a single transport wrapper across re-syncs", async () => {
     const { native, wrapped, runtime, deps } = await setup();
@@ -783,54 +791,54 @@ describe("ApertureRuntime.sync OpenAI passthrough transport", () => {
     expect(native.streamSimple.mock.calls[0][2].fetch).toBeTypeOf("function");
   });
 
-  test.each([
-    "subscription-token",
-    "sk-test",
-  ])("lets Pi build the same body as a direct request for credential %s", async (apiKey) => {
-    const { native, wrapped } = await setup();
-    const fetch = vi.fn().mockResolvedValue(
-      new Response('{"error":{"message":"test stop"}}', {
-        status: 400,
-        headers: { "content-type": "application/json" },
-      }),
-    );
-    const options = {
-      apiKey,
-      fetch,
-      maxTokens: 128,
-      temperature: 0.5,
-      cacheRetention: "long" as const,
-      sessionId: "session-1",
-      maxRetries: 0,
-    };
-    const context = { messages: [] };
-    const directModel = {
-      ...native.getModels()[0],
-      reasoning: false,
-      input: ["text"],
-      maxTokens: 128,
-    } as Model<"openai-responses">;
-    await responsesAdapter.stream(directModel, context, options).result();
-    const directBody = JSON.parse(fetch.mock.calls[0][1].body);
-    expect(String(fetch.mock.calls[0][0])).toBe(`${upstreamUrl}/responses`);
+  test.each(["subscription-token", "sk-test"])(
+    "lets Pi build the same body as a direct request for credential %s",
+    async (apiKey) => {
+      const { native, wrapped } = await setup();
+      const fetch = vi.fn().mockResolvedValue(
+        new Response('{"error":{"message":"test stop"}}', {
+          status: 400,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+      const options = {
+        apiKey,
+        fetch,
+        maxTokens: 128,
+        temperature: 0.5,
+        cacheRetention: "long" as const,
+        sessionId: "session-1",
+        maxRetries: 0,
+      };
+      const context = { messages: [] };
+      const directModel = {
+        ...native.getModels()[0],
+        reasoning: false,
+        input: ["text"],
+        maxTokens: 128,
+      } as Model<"openai-responses">;
+      await responsesAdapter.stream(directModel, context, options).result();
+      const directBody = JSON.parse(fetch.mock.calls[0][1].body);
+      expect(String(fetch.mock.calls[0][0])).toBe(`${upstreamUrl}/responses`);
 
-    const proxied = wrapped();
-    proxied.stream(proxied.getModels()[0], context, options);
-    const [sentModel, , sentOptions] = native.stream.mock.calls[0];
-    await responsesAdapter
-      .stream({ ...directModel, ...sentModel }, context, sentOptions)
-      .result();
-    const proxyBody = JSON.parse(fetch.mock.calls[1][1].body);
-    expect(String(fetch.mock.calls[1][0])).toBe(
-      "https://ai.pango-lin.ts.net/v1/responses",
-    );
-    // Compare with Pi's own body rather than copying its subscription rules.
-    // This regression works both before and after Pi's ChatGPT support.
-    expect(proxyBody).toEqual({
-      ...directBody,
-      model: "openai-subscription/gpt-6-sol",
-    });
-  });
+      const proxied = wrapped();
+      proxied.stream(proxied.getModels()[0], context, options);
+      const [sentModel, , sentOptions] = native.stream.mock.calls[0];
+      await responsesAdapter
+        .stream({ ...directModel, ...sentModel }, context, sentOptions)
+        .result();
+      const proxyBody = JSON.parse(fetch.mock.calls[1][1].body);
+      expect(String(fetch.mock.calls[1][0])).toBe(
+        "https://ai.pango-lin.ts.net/v1/responses",
+      );
+      // Compare with Pi's own body rather than copying its subscription rules.
+      // This regression works both before and after Pi's ChatGPT support.
+      expect(proxyBody).toEqual({
+        ...directBody,
+        model: "openai-subscription/gpt-6-sol",
+      });
+    },
+  );
 });
 
 describe("ApertureRuntime.sync session model restore", () => {
@@ -913,87 +921,90 @@ describe("ApertureRuntime.sync reasoning replay", () => {
     ["streamSimple", true, "reasoning"],
     ["stream", true, "reasoning_content"],
     ["streamSimple", true, "reasoning_content"],
-  ] as const)("%s with API override %s replays %s", async (method, override, field) => {
-    const local = {
-      ...model("local-provider", "kimi-k3", "openai-completions"),
-      input: ["text"],
-      reasoning: true,
-      maxTokens: 128,
-      compat: { requiresThinkingAsText: false },
-    } as Model<"openai-completions">;
-    mockCatalog([
-      {
-        ...provider("gateway-provider", [local.id]),
-        compatibility: { openai_chat: true },
-      },
-    ]);
-    getConfig.mockReturnValue(
-      proxyConfig([
+  ] as const)(
+    "%s with API override %s replays %s",
+    async (method, override, field) => {
+      const local = {
+        ...model("local-provider", "kimi-k3", "openai-completions"),
+        input: ["text"],
+        reasoning: true,
+        maxTokens: 128,
+        compat: { requiresThinkingAsText: false },
+      } as Model<"openai-completions">;
+      mockCatalog([
         {
-          id: local.provider,
-          gatewayId: "gateway-provider",
-          shouldCheckGatewayModels: false,
-          api: override ? "openai-completions" : undefined,
+          ...provider("gateway-provider", [local.id]),
+          compatibility: { openai_chat: true },
         },
-      ]),
-    );
-    const native = {
-      id: local.provider,
-      getModels: () => [local],
-      stream: completionsAdapter.stream,
-      streamSimple: completionsAdapter.streamSimple,
-    };
-    const registerNativeProvider = vi.fn();
-    await new ApertureRuntime().sync({
-      getProvider: () => native,
-      registerNativeProvider,
-      getModels: () => [local],
-    });
-    const wrapped = registerNativeProvider.mock.calls.at(-1)?.[0];
-    const first = await doneStream(local).result();
-    first.content = [
-      {
-        type: "thinking",
-        thinking: "prior reasoning",
-        thinkingSignature: field,
-      },
-      { type: "text", text: "prior answer" },
-    ];
-    Object.freeze(first);
-    const context = normalizeContext({
-      systemPrompt: "Keep reasoning separate.",
-      messages: [first, { role: "user", content: "Continue", timestamp: 1 }],
-    });
-    const snapshot = structuredClone(context);
-    const fetch = vi.fn().mockResolvedValue(
-      new Response(
-        'data: {"choices":[{"delta":{"content":"next answer"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n',
+      ]);
+      getConfig.mockReturnValue(
+        proxyConfig([
+          {
+            id: local.provider,
+            gatewayId: "gateway-provider",
+            shouldCheckGatewayModels: false,
+            api: override ? "openai-completions" : undefined,
+          },
+        ]),
+      );
+      const native = {
+        id: local.provider,
+        getModels: () => [local],
+        stream: completionsAdapter.stream,
+        streamSimple: completionsAdapter.streamSimple,
+      };
+      const registerNativeProvider = vi.fn();
+      await new ApertureRuntime().sync({
+        getProvider: () => native,
+        registerNativeProvider,
+        getModels: () => [local],
+      });
+      const wrapped = registerNativeProvider.mock.calls.at(-1)?.[0];
+      const first = await doneStream(local).result();
+      first.content = [
         {
-          headers: { "content-type": "text/event-stream" },
+          type: "thinking",
+          thinking: "prior reasoning",
+          thinkingSignature: field,
         },
-      ),
-    );
+        { type: "text", text: "prior answer" },
+      ];
+      Object.freeze(first);
+      const context = normalizeContext({
+        systemPrompt: "Keep reasoning separate.",
+        messages: [first, { role: "user", content: "Continue", timestamp: 1 }],
+      });
+      const snapshot = structuredClone(context);
+      const fetch = vi.fn().mockResolvedValue(
+        new Response(
+          'data: {"choices":[{"delta":{"content":"next answer"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n',
+          {
+            headers: { "content-type": "text/event-stream" },
+          },
+        ),
+      );
 
-    const second = await wrapped[method](local, context, {
-      apiKey: "-",
-      fetch,
-      maxRetries: 0,
-    }).result();
+      const second = await wrapped[method](local, context, {
+        apiKey: "-",
+        fetch,
+        maxRetries: 0,
+      }).result();
 
-    const payload = JSON.parse(fetch.mock.calls[0][1].body);
-    expect(payload.model).toBe("gateway-provider/kimi-k3");
-    expect(
-      payload.messages.find((m: { role: string }) => m.role === "assistant"),
-    ).toMatchObject({
-      content: "prior answer",
-      [field]: "prior reasoning",
-    });
-    expect(second.stopReason).toBe("stop");
-    expect(second.model).toBe(local.id);
-    expect(context).toEqual(snapshot);
-    expect(first.model).toBe(local.id);
-    expect(wrapped.getModels()[0].id).toBe(local.id);
-  });
+      const payload = JSON.parse(fetch.mock.calls[0][1].body);
+      expect(payload.model).toBe("gateway-provider/kimi-k3");
+      expect(
+        payload.messages.find((m: { role: string }) => m.role === "assistant"),
+      ).toMatchObject({
+        content: "prior answer",
+        [field]: "prior reasoning",
+      });
+      expect(second.stopReason).toBe("stop");
+      expect(second.model).toBe(local.id);
+      expect(context).toEqual(snapshot);
+      expect(first.model).toBe(local.id);
+      expect(wrapped.getModels()[0].id).toBe(local.id);
+    },
+  );
 });
 
 describe("ApertureRuntime.sync provider composition with models.json", () => {

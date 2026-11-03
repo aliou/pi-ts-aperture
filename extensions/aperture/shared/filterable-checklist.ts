@@ -15,9 +15,9 @@ import {
   Input,
   Key,
   matchesKey,
-  truncateToWidth,
   wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
+import { truncateToWidth } from "../../shared/truncate";
 
 const LIST_HEIGHT = 6;
 

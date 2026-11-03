@@ -82,10 +82,10 @@
     "check:schema": "pi-settings-schema -p extensions/shared/config/types.ts -t ApertureConfig -o schema.json --version 0.17.0 --check"
   },
   "devDependencies": {
-    "@aliou/biome-plugins": "^0.11.0",
+    "@aliou/biome-plugins": "^0.16.0",
     "@aliou/pi-neuralwatt": "^0.15.1",
     "@aliou/pi-synthetic": "^0.26.1",
-    "@biomejs/biome": "^2.5.2",
+    "@biomejs/biome": "^2.6.4",
     "@changesets/cli": "3.0.1",
     "@earendil-works/pi-ai": "1.5.0",
     "@earendil-works/pi-coding-agent": "1.5.0",

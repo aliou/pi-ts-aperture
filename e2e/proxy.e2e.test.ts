@@ -64,51 +64,55 @@ describe.skipIf(!accessible)("proxy mode e2e", () => {
     });
   });
 
-  test.each(
-    Object.entries(PROXY_MODELS),
-  )("proxies %s via %s", async (providerId, modelId) => {
-    const wrapped = registered.find((p) => p.id === providerId);
-    expect(
-      wrapped,
-      `${providerId} was not wrapped by the runtime`,
-    ).toBeDefined();
-    if (!wrapped) return;
+  test.each(Object.entries(PROXY_MODELS))(
+    "proxies %s via %s",
+    async (providerId, modelId) => {
+      const wrapped = registered.find((p) => p.id === providerId);
+      expect(
+        wrapped,
+        `${providerId} was not wrapped by the runtime`,
+      ).toBeDefined();
+      if (!wrapped) return;
 
-    const model = wrapped.getModels().find((m) => m.id === modelId);
-    expect(model, `wrapped ${providerId} lost model ${modelId}`).toBeDefined();
-    if (!model) return;
+      const model = wrapped.getModels().find((m) => m.id === modelId);
+      expect(
+        model,
+        `wrapped ${providerId} lost model ${modelId}`,
+      ).toBeDefined();
+      if (!model) return;
 
-    // Both upstreams end in /v1, so the gateway base stays gateway/v1.
-    expect(model.baseUrl).toBe(`${GATEWAY}/v1`);
+      // Both upstreams end in /v1, so the gateway base stays gateway/v1.
+      expect(model.baseUrl).toBe(`${GATEWAY}/v1`);
 
-    // Routing-focused: drop reasoning params some upstreams reject.
-    const streamModel = {
-      ...model,
-      reasoning: false,
-      thinkingLevelMap: undefined,
-    };
-    const stream = wrapped.streamSimple(
-      streamModel,
-      {
-        messages: [
-          {
-            role: "user",
-            content: "Reply with exactly: OK",
-            timestamp: Date.now(),
-          },
-        ],
-      },
-      { apiKey: "-", maxTokens: 1024 },
-    );
+      // Routing-focused: drop reasoning params some upstreams reject.
+      const streamModel = {
+        ...model,
+        reasoning: false,
+        thinkingLevelMap: undefined,
+      };
+      const stream = wrapped.streamSimple(
+        streamModel,
+        {
+          messages: [
+            {
+              role: "user",
+              content: "Reply with exactly: OK",
+              timestamp: Date.now(),
+            },
+          ],
+        },
+        { apiKey: "-", maxTokens: 1024 },
+      );
 
-    const result = await stream.result();
-    expect(
-      result.errorMessage ?? "",
-      `stream failed: ${result.errorMessage}`,
-    ).toBe("");
-    expect(result.stopReason).toBe("stop");
-    expect(
-      result.content.filter((block) => block.type !== "toolcall").length,
-    ).toBeGreaterThan(0);
-  });
+      const result = await stream.result();
+      expect(
+        result.errorMessage ?? "",
+        `stream failed: ${result.errorMessage}`,
+      ).toBe("");
+      expect(result.stopReason).toBe("stop");
+      expect(
+        result.content.filter((block) => block.type !== "toolcall").length,
+      ).toBeGreaterThan(0);
+    },
+  );
 });

@@ -276,34 +276,34 @@ describe("proxy shutdown cleanup", () => {
     expect(lifecycle.unregisterProvider).toHaveBeenCalledTimes(1);
   });
 
-  test.each([
-    "stream",
-    "streamSimple",
-  ] as const)("%s uses the current gateway after shutdown and reload", async (method) => {
-    const { registry, native } = await setupRegistry();
-    const spy = vi
-      .spyOn(native, method)
-      .mockReturnValue(createAssistantMessageEventStream());
-    const first = await loadLifecycle(registry);
-    await first.emit("session_start");
-    await first.emit("session_shutdown");
-    mocks.config.baseUrl = "https://aperture.example.ts.net";
-    const second = await loadLifecycle(registry);
-    await second.emit("session_start");
-    const fetch = vi.fn().mockResolvedValue(new Response());
-    const reloaded = registry.getProvider("openai") as Provider;
-    const model = reloaded.getModels()[0];
-    reloaded[method](model, { messages: [] }, { fetch });
-    expect(spy).toHaveBeenCalledOnce();
-    const [sentModel, , sentOptions] = spy.mock.calls[0];
-    expect(sentModel.id).toBe(`openai/${model.id}`);
-    await sentOptions?.fetch?.("https://api.openai.com/v1/responses");
-    expect(fetch).toHaveBeenCalledExactlyOnceWith(
-      new URL("https://aperture.example.ts.net/v1/responses"),
-      undefined,
-    );
-    await second.emit("session_shutdown");
-  });
+  test.each(["stream", "streamSimple"] as const)(
+    "%s uses the current gateway after shutdown and reload",
+    async (method) => {
+      const { registry, native } = await setupRegistry();
+      const spy = vi
+        .spyOn(native, method)
+        .mockReturnValue(createAssistantMessageEventStream());
+      const first = await loadLifecycle(registry);
+      await first.emit("session_start");
+      await first.emit("session_shutdown");
+      mocks.config.baseUrl = "https://aperture.example.ts.net";
+      const second = await loadLifecycle(registry);
+      await second.emit("session_start");
+      const fetch = vi.fn().mockResolvedValue(new Response());
+      const reloaded = registry.getProvider("openai") as Provider;
+      const model = reloaded.getModels()[0];
+      reloaded[method](model, { messages: [] }, { fetch });
+      expect(spy).toHaveBeenCalledOnce();
+      const [sentModel, , sentOptions] = spy.mock.calls[0];
+      expect(sentModel.id).toBe(`openai/${model.id}`);
+      await sentOptions?.fetch?.("https://api.openai.com/v1/responses");
+      expect(fetch).toHaveBeenCalledExactlyOnceWith(
+        new URL("https://aperture.example.ts.net/v1/responses"),
+        undefined,
+      );
+      await second.emit("session_shutdown");
+    },
+  );
 
   test("does not unregister a removed route again on shutdown", async () => {
     const { registry } = await setupRegistry();

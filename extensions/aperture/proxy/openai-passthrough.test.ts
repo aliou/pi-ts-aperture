@@ -10,26 +10,29 @@ describe("createOpenAIGatewayFetch", () => {
   test.each([
     `${OPENAI_BASE_URL}/responses?include=usage`,
     new URL(`${OPENAI_BASE_URL}/responses?include=usage`),
-  ])("redirects string and URL inputs without changing request options", async (input) => {
-    const fetch = vi.fn().mockResolvedValue(new Response());
-    const init = {
-      method: "POST",
-      body: '{"model":"openai/gpt-6-sol"}',
-      headers: { Referer: "https://pi.dev", "x-session-id": "session-1" },
-      signal: new AbortController().signal,
-    };
-    const response = await createOpenAIGatewayFetch(gatewayRoot, fetch)(
-      input,
-      init,
-    );
+  ])(
+    "redirects string and URL inputs without changing request options",
+    async (input) => {
+      const fetch = vi.fn().mockResolvedValue(new Response());
+      const init = {
+        method: "POST",
+        body: '{"model":"openai/gpt-6-sol"}',
+        headers: { Referer: "https://pi.dev", "x-session-id": "session-1" },
+        signal: new AbortController().signal,
+      };
+      const response = await createOpenAIGatewayFetch(gatewayRoot, fetch)(
+        input,
+        init,
+      );
 
-    expect(fetch).toHaveBeenCalledWith(
-      new URL(`${gatewayRoot}/v1/responses?include=usage`),
-      init,
-    );
-    const fetchedResponse = await fetch.mock.results[0].value;
-    expect(response).toBe(fetchedResponse);
-  });
+      expect(fetch).toHaveBeenCalledWith(
+        new URL(`${gatewayRoot}/v1/responses?include=usage`),
+        init,
+      );
+      const fetchedResponse = await fetch.mock.results[0].value;
+      expect(response).toBe(fetchedResponse);
+    },
+  );
 
   test("redirects Request inputs with their body, headers, method, and signal", async () => {
     const fetch = vi.fn().mockResolvedValue(new Response());
