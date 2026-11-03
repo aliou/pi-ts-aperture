@@ -49,7 +49,13 @@ const fetchModelsDevCatalogMock = vi.mocked(mocks.fetchModelsDevCatalog);
 
 const GATEWAY = "https://ai.pango-lin.ts.net";
 
-function chatModel(id: string, api: Api, baseUrl: string, name = id): AnyModel {
+function chatModel(
+  id: string,
+  api: Api,
+  baseUrl: string,
+  name = id,
+  compat: AnyModel["compat"] | null = { supportsDeveloperRole: false },
+): AnyModel {
   return {
     provider: DEDICATED_PROVIDER_ID,
     id,
@@ -61,6 +67,7 @@ function chatModel(id: string, api: Api, baseUrl: string, name = id): AnyModel {
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow: 128_000,
     maxTokens: 8_192,
+    ...(compat ? { compat } : {}),
   };
 }
 
@@ -280,7 +287,13 @@ describe("createApertureProvider", () => {
     );
 
     expect(models).toEqual([
-      chatModel("prov/model", "openai-responses", `${GATEWAY}/v1`, "model"),
+      chatModel(
+        "prov/model",
+        "openai-responses",
+        `${GATEWAY}/v1`,
+        "model",
+        null,
+      ),
     ]);
   });
 

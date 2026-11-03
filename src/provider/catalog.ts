@@ -179,6 +179,14 @@ export function buildModels(
         continue;
       }
 
+      const existingCompat = metadata?.compat as
+        | { supportsDeveloperRole?: boolean }
+        | undefined;
+      const compat: Model<Api>["compat"] | undefined =
+        api === "openai-completions"
+          ? { supportsDeveloperRole: false, ...existingCompat }
+          : metadata?.compat;
+
       const chat: Model<Api> = {
         provider: PROVIDER_NAME,
         ...buildDefaultModelConfig({
@@ -195,6 +203,7 @@ export function buildModels(
         }),
         api,
         baseUrl: getBaseUrlForApi(api, gatewayUrl, baseUrl, upstreamBaseUrl),
+        ...(compat ? { compat } : {}),
       };
       models.push(chat);
     }
