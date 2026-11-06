@@ -1,18 +1,27 @@
-import { type Static, Type } from "typebox";
+import {
+  arr,
+  bool,
+  int,
+  map,
+  obj,
+  opt,
+  type Static,
+  str,
+} from "@earendil-works/pi-schema";
 
-export const ProviderCompatibilitySchema = Type.Object(
+export const ProviderCompatibilitySchema = obj(
   {
-    openai_chat: Type.Optional(Type.Boolean()),
-    openai_responses: Type.Optional(Type.Boolean()),
-    anthropic_messages: Type.Optional(Type.Boolean()),
-    gemini_generate_content: Type.Optional(Type.Boolean()),
-    google_generate_content: Type.Optional(Type.Boolean()),
-    google_raw_predict: Type.Optional(Type.Boolean()),
-    bedrock_model_invoke: Type.Optional(Type.Boolean()),
-    bedrock_converse: Type.Optional(Type.Boolean()),
-    experimental_gemini_cli_vertex_compat: Type.Optional(Type.Boolean()),
+    openai_chat: opt(bool()),
+    openai_responses: opt(bool()),
+    anthropic_messages: opt(bool()),
+    gemini_generate_content: opt(bool()),
+    google_generate_content: opt(bool()),
+    google_raw_predict: opt(bool()),
+    bedrock_model_invoke: opt(bool()),
+    bedrock_converse: opt(bool()),
+    experimental_gemini_cli_vertex_compat: opt(bool()),
   },
-  { additionalProperties: true, default: {} },
+  { open: true },
 );
 
 export type ProviderCompatibility = Static<typeof ProviderCompatibilitySchema>;
@@ -24,32 +33,32 @@ export type ProviderCompatibility = Static<typeof ProviderCompatibilitySchema>;
  * `web_search` and `input_cache_write_1h` have no direct mapping in Pi's
  * `ProviderModelConfig.cost` and are ignored when building model defaults.
  */
-export const ApertureModelPricingSchema = Type.Object(
+export const ApertureModelPricingSchema = obj(
   {
-    input: Type.Optional(Type.String()),
-    input_cache_read: Type.Optional(Type.String()),
-    input_cache_write: Type.Optional(Type.String()),
-    input_cache_write_1h: Type.Optional(Type.String()),
-    output: Type.Optional(Type.String()),
-    web_search: Type.Optional(Type.String()),
+    input: opt(str()),
+    input_cache_read: opt(str()),
+    input_cache_write: opt(str()),
+    input_cache_write_1h: opt(str()),
+    output: opt(str()),
+    web_search: opt(str()),
   },
-  { additionalProperties: true },
+  { open: true },
 );
 
 export type ApertureModelPricing = Static<typeof ApertureModelPricingSchema>;
 
-export const ApertureModelInfoSchema = Type.Object(
+export const ApertureModelInfoSchema = obj(
   {
-    id: Type.String(),
-    pricing: Type.Optional(ApertureModelPricingSchema),
+    id: str(),
+    pricing: opt(ApertureModelPricingSchema),
     /** Maximum input the model accepts, as advertised for this route. */
-    context_window_tokens: Type.Optional(Type.Integer({ minimum: 0 })),
+    context_window_tokens: opt(int({ minimum: 0 })),
     /** Maximum tokens the model can produce, as advertised for this route. */
-    max_output_tokens: Type.Optional(Type.Integer({ minimum: 0 })),
+    max_output_tokens: opt(int({ minimum: 0 })),
     /** The gateway serves this model over the System One classifier protocol. */
-    system_one: Type.Optional(Type.Boolean()),
+    system_one: opt(bool()),
   },
-  { additionalProperties: true },
+  { open: true },
 );
 
 export type ApertureModelInfo = Static<typeof ApertureModelInfoSchema>;
@@ -66,62 +75,62 @@ export type ApertureModelLimits = Pick<
 >;
 
 /** A `/v1/models` entry. */
-export const ApertureModelEntrySchema = Type.Object(
+export const ApertureModelEntrySchema = obj(
   {
-    id: Type.String(),
-    metadata: Type.Object(
+    id: str(),
+    metadata: obj(
       {
-        provider: Type.Object(
+        provider: obj(
           {
-            id: Type.String(),
-            name: Type.Optional(Type.String()),
-            description: Type.String({ default: "" }),
-            requires_client_auth: Type.Boolean({ default: false }),
+            id: str(),
+            name: opt(str()),
+            description: opt(str()),
+            requires_client_auth: opt(bool()),
           },
-          { additionalProperties: true },
+          { open: true },
         ),
       },
-      { additionalProperties: true },
+      { open: true },
     ),
-    supported_endpoints: Type.Array(Type.String(), { default: [] }),
-    pricing: Type.Optional(ApertureModelPricingSchema),
-    context_window_tokens: Type.Optional(Type.Integer({ minimum: 0 })),
-    max_output_tokens: Type.Optional(Type.Integer({ minimum: 0 })),
+    supported_endpoints: opt(arr(str())),
+    pricing: opt(ApertureModelPricingSchema),
+    context_window_tokens: opt(int({ minimum: 0 })),
+    max_output_tokens: opt(int({ minimum: 0 })),
   },
-  { additionalProperties: true },
+  { open: true },
 );
 
 export type ApertureModelEntry = Static<typeof ApertureModelEntrySchema>;
 
-export const ApertureProviderSchema = Type.Object(
+export const ApertureProviderSchema = obj(
   {
-    id: Type.String(),
-    name: Type.String(),
-    description: Type.String({ default: "" }),
-    models: Type.Array(Type.String(), { default: [] }),
+    id: str(),
+    name: str(),
+    description: str(),
+    models: arr(str()),
     compatibility: ProviderCompatibilitySchema,
     // Set by `auth_mode: "passthrough"` providers: the gateway forwards the
     // client's own credential, so the client must send a real one.
-    requires_client_auth: Type.Optional(Type.Boolean()),
+    requires_client_auth: opt(bool()),
     // Per-model info from `/v1/models` (pricing), keyed by model id.
-    modelInfoById: Type.Record(Type.String(), ApertureModelInfoSchema),
+    modelInfoById: map(ApertureModelInfoSchema),
   },
-  { additionalProperties: true },
+  { open: true },
 );
 
 export type ApertureProvider = Static<typeof ApertureProviderSchema>;
 
-export const ConnectorInfoSchema = Type.Object(
+export const ConnectorInfoSchema = obj(
   {
-    id: Type.String(),
-    description: Type.String({ default: "" }),
-    protocol: Type.String({ default: "" }),
-    provider: Type.String({ default: "" }),
-    category: Type.String({ default: "" }),
-    status: Type.String({ default: "" }),
-    auth_type: Type.Optional(Type.String()),
+    id: str(),
+    description: opt(str()),
+    protocol: opt(str()),
+    provider: opt(str()),
+    category: opt(str()),
+    status: opt(str()),
+    auth_type: opt(str()),
   },
-  { additionalProperties: true },
+  { open: true },
 );
 
 export type ConnectorInfo = Static<typeof ConnectorInfoSchema>;

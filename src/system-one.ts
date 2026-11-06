@@ -8,56 +8,68 @@ import type {
   ClassifierResult,
 } from "@earendil-works/pi-ai";
 import { calculateCost } from "@earendil-works/pi-ai";
-import type { Static } from "typebox";
-import { Type } from "typebox";
-import { Check, Parse, ParseError } from "typebox/value";
+import type { ValidationError } from "@earendil-works/pi-schema";
+import {
+  compile,
+  int,
+  lit,
+  map,
+  num,
+  obj,
+  opt,
+  type Static,
+  str,
+  union,
+} from "@earendil-works/pi-schema";
 
 export const APERTURE_SYSTEM_ONE_API = "typesafe-system-one";
 
-const UsageSchema = Type.Object({
-  input_tokens: Type.Integer({ minimum: 0 }),
-  output_tokens: Type.Integer({ minimum: 0 }),
+const UsageSchema = obj({
+  input_tokens: int({ minimum: 0 }),
+  output_tokens: int({ minimum: 0 }),
 });
-const AnswerSchemas = {
-  choice: Type.Object({
-    type: Type.Literal("choice"),
-    choice: Type.String(),
-    probabilities: Type.Record(Type.String(), Type.Number()),
-    confidence: Type.Number(),
-  }),
-  score: Type.Object({
-    type: Type.Literal("score"),
-    score: Type.Number(),
-    confidence: Type.Number(),
-  }),
-  bool: Type.Object({ type: Type.Literal("noul"), noul: Type.Number() }),
-};
-const ErrorSchema = Type.Union([
-  Type.Object({
-    error: Type.Object({
-      message: Type.String(),
-      type: Type.String(),
-      code: Type.String(),
-    }),
-  }),
-  Type.Object({ detail: Type.String() }),
+const AnswerSchema = union([
+  obj(
+    {
+      type: lit("choice"),
+      choice: str(),
+      probabilities: map(num()),
+      confidence: num(),
+    },
+    { open: true },
+  ),
+  obj({ type: lit("score"), score: num(), confidence: num() }, { open: true }),
+  obj({ type: lit("noul"), noul: num() }, { open: true }),
 ]);
+const ErrorSchema = union([
+  obj(
+    {
+      error: obj({ message: str(), type: str(), code: str() }, { open: true }),
+    },
+    { open: true },
+  ),
+  obj({ detail: str() }, { open: true }),
+]);
+const ResponseSchema = obj(
+  { answers: map(AnswerSchema), usage: opt(UsageSchema) },
+  { open: true },
+);
 
-function responseSchema(context: ClassifierContext) {
-  return Type.Object({
-    answers: Type.Object(
-      Object.fromEntries(
-        Object.entries(context.questions).map(([id, question]) => [
-          id,
-          AnswerSchemas[question.type],
-        ]),
-      ),
-    ),
-    usage: Type.Optional(UsageSchema),
-  });
+const usageValidator = compile(UsageSchema);
+const errorValidator = compile(ErrorSchema);
+const responseValidator = compile(ResponseSchema);
+
+type SystemOneResponse = Static<typeof ResponseSchema>;
+
+class InvalidSystemOneResponseError extends Error {
+  readonly body: unknown;
+
+  constructor(body: unknown, errors: ValidationError[]) {
+    super(errors.map(({ path, message }) => `${path}: ${message}`).join("; "));
+    this.name = "InvalidSystemOneResponseError";
+    this.body = body;
+  }
 }
-
-type SystemOneResponse = Static<ReturnType<typeof responseSchema>>;
 
 function mapAnswer(
   value: SystemOneResponse["answers"][string],
@@ -93,10 +105,10 @@ function mapUsage(
 
 function billedUsageOnInvalidResponse(
   model: ClassifierModel<ClassifierApi>,
-  error: ParseError,
+  body: unknown,
 ) {
-  const usage = (error.cause.value as { usage?: unknown } | null)?.usage;
-  return Check(UsageSchema, usage) ? mapUsage(model, usage) : undefined;
+  const usage = (body as { usage?: unknown } | null)?.usage;
+  return usageValidator.check(usage) ? mapUsage(model, usage) : undefined;
 }
 
 function formatRequest(
@@ -172,14 +184,25 @@ async function request(
 
   const body: unknown = await response.json();
   if (!response.ok) {
-    const failure = Parse(ErrorSchema, body);
-    const message = "error" in failure ? failure.error.message : failure.detail;
+    if (!errorValidator.check(body)) {
+      throw new InvalidSystemOneResponseError(
+        body,
+        errorValidator.errors(body),
+      );
+    }
+    const message = "error" in body ? body.error.message : body.detail;
     throw new Error(
       `Aperture System One API returned ${response.status}: ${message}`,
     );
   }
 
-  return Parse(responseSchema(context), body);
+  if (!responseValidator.check(body)) {
+    throw new InvalidSystemOneResponseError(
+      body,
+      responseValidator.errors(body),
+    );
+  }
+  return body;
 }
 
 export const classify: ClassifierFunction = async (
@@ -206,11 +229,9 @@ export const classify: ClassifierFunction = async (
     );
   } catch (error) {
     result.stopReason = options.signal?.aborted ? "aborted" : "error";
-    if (error instanceof ParseError) {
-      result.usage = billedUsageOnInvalidResponse(model, error);
-      result.errorMessage = error.cause.errors
-        .map(({ instancePath, message }) => `${instancePath}: ${message}`)
-        .join("; ");
+    if (error instanceof InvalidSystemOneResponseError) {
+      result.usage = billedUsageOnInvalidResponse(model, error.body);
+      result.errorMessage = error.message;
       return result;
     }
     result.errorMessage =

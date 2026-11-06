@@ -1,5 +1,4 @@
-import type { TSchema } from "typebox";
-import { Value } from "typebox/value";
+import { compile } from "@earendil-works/pi-schema";
 import {
   type ApertureModelEntry,
   ApertureModelEntrySchema,
@@ -9,10 +8,8 @@ import {
   type ProviderCompatibility,
 } from "./types";
 
-function validate<T>(schema: TSchema, value: unknown): T | null {
-  const withDefaults = Value.Default(schema, value);
-  return Value.Check(schema, withDefaults) ? (withDefaults as T) : null;
-}
+const modelEntryValidator = compile(ApertureModelEntrySchema);
+const connectorValidator = compile(ConnectorInfoSchema);
 
 function compatibilityFlag(
   endpoint: string,
@@ -96,19 +93,22 @@ export class ApertureClient {
 
     const providers = new Map<string, ApertureProvider>();
     for (const raw of body.data) {
-      const entry = validate<ApertureModelEntry>(ApertureModelEntrySchema, raw);
+      const entry: ApertureModelEntry | null = modelEntryValidator.check(raw)
+        ? raw
+        : null;
       if (!entry) continue;
       const metadata = entry.metadata.provider;
+      const endpoints = entry.supported_endpoints ?? [];
 
       let provider = providers.get(metadata.id);
       if (!provider) {
         provider = {
           id: metadata.id,
           name: metadata.name || metadata.id,
-          description: metadata.description,
+          description: metadata.description ?? "",
           models: [],
           compatibility: {},
-          requires_client_auth: metadata.requires_client_auth,
+          requires_client_auth: metadata.requires_client_auth ?? false,
           modelInfoById: {},
         };
         providers.set(metadata.id, provider);
@@ -120,9 +120,9 @@ export class ApertureClient {
         pricing: entry.pricing,
         context_window_tokens: entry.context_window_tokens,
         max_output_tokens: entry.max_output_tokens,
-        system_one: entry.supported_endpoints.includes(SYSTEM_ONE_ENDPOINT),
+        system_one: endpoints.includes(SYSTEM_ONE_ENDPOINT),
       };
-      for (const endpoint of entry.supported_endpoints) {
+      for (const endpoint of endpoints) {
         const flag = compatibilityFlag(endpoint);
         if (flag) provider.compatibility[flag] = true;
       }
@@ -139,12 +139,7 @@ export class ApertureClient {
     );
     if (!Array.isArray(body.connectors)) return [];
 
-    return body.connectors
-      .map((c): ConnectorInfo | null => {
-        if (!c || typeof c !== "object") return null;
-        return validate<ConnectorInfo>(ConnectorInfoSchema, c);
-      })
-      .filter((c): c is ConnectorInfo => c !== null);
+    return body.connectors.filter(connectorValidator.check);
   }
 
   async health(signal?: AbortSignal): Promise<void> {
