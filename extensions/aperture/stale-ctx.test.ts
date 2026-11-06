@@ -14,19 +14,19 @@ import {
   ExtensionRunner,
 } from "@earendil-works/pi-coding-agent";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { ApertureClient } from "../src/api/client";
-import apertureFactory from "./aperture/index";
-import { configLoader } from "./shared/config/loader";
-import type { Api, Model, Provider } from "./shared/types";
+import { ApertureClient } from "../../src/api/client";
+import { configLoader } from "../shared/config/loader";
+import type { Api, Model, Provider } from "../shared/types";
+import apertureFactory from "./index";
 
-vi.mock("./shared/config/loader", () => ({
+vi.mock("../shared/config/loader", () => ({
   configLoader: {
     load: vi.fn().mockResolvedValue(undefined),
     getConfig: vi.fn(),
     getRawConfig: vi.fn().mockReturnValue({}),
   },
 }));
-vi.mock("../src/api/client", () => ({ ApertureClient: vi.fn() }));
+vi.mock("../../src/api/client", () => ({ ApertureClient: vi.fn() }));
 
 const BASE_CONFIG = {
   baseUrl: "http://gateway.test",
