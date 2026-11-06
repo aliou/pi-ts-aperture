@@ -19,6 +19,9 @@ importers:
       '@aliou/pi-utils-ui':
         specifier: ^0.5.1
         version: 0.5.1(@earendil-works/pi-coding-agent@1.5.0(@aws-sdk/credential-provider-node@3.972.83)(@smithy/signature-v4@5.7.3)(supports-color@7.2.0)(zod@3.25.76))(@earendil-works/pi-tui@1.5.0)
+      '@earendil-works/pi-schema':
+        specifier: '>=1.5.0'
+        version: 1.5.0
     devDependencies:
       '@aliou/biome-plugins':
         specifier: ^0.17.0

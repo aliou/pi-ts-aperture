@@ -44,13 +44,13 @@
   "sideEffects": false,
   "dependencies": {
     "@aliou/pi-utils-settings": "^0.23.0",
-    "@aliou/pi-utils-ui": "^0.5.1"
+    "@aliou/pi-utils-ui": "^0.5.1",
+    "@earendil-works/pi-schema": ">=1.5.0"
   },
   "peerDependencies": {
-    "@earendil-works/pi-ai": "1.5.0",
-    "@earendil-works/pi-coding-agent": ">=1.0.0",
-    "@earendil-works/pi-tui": ">=1.0.0",
-    "typebox": "*"
+    "@earendil-works/pi-ai": ">=1.5.0",
+    "@earendil-works/pi-coding-agent": ">=1.5.0",
+    "@earendil-works/pi-tui": ">=1.5.0"
   },
   "peerDependenciesMeta": {
     "@earendil-works/pi-coding-agent": {
@@ -60,9 +60,6 @@
       "optional": true
     },
     "@earendil-works/pi-tui": {
-      "optional": true
-    },
-    "typebox": {
       "optional": true
     }
   },
