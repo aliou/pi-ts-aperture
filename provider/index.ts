@@ -14,7 +14,7 @@ import type { ApiUpstreams } from "../src/api-routing";
 import type { DedicatedProviderSelection } from "../src/provider/catalog";
 import { refreshDedicatedCatalog } from "../src/provider/catalog";
 import { createDedicatedProvider } from "../src/provider/dedicated";
-import { normalizeInputUrl, resolveGatewayUrl } from "../src/url";
+import { providerBaseUrl, toGatewayUrl } from "../src/url";
 import type { ProvenanceOptions } from "./headers";
 import { provenanceRequestHeaders, withProvenanceHeaders } from "./headers";
 
@@ -71,13 +71,11 @@ const lazyUpstreams: ApiUpstreams = (api: Api): ProviderStreams | undefined => {
 export default function createApertureProvider(
   options: ApertureProviderOptions,
 ): Provider {
-  const gatewayUrl = resolveGatewayUrl({
-    baseUrl: normalizeInputUrl(options.baseUrl),
-  });
+  const gatewayUrl = toGatewayUrl(options.baseUrl);
   if (!gatewayUrl) {
     throw new Error("Aperture provider requires a gateway baseUrl");
   }
-  const baseUrl = `${gatewayUrl}/v1`;
+  const baseUrl = providerBaseUrl(gatewayUrl);
   const provenanceHeaders = provenanceRequestHeaders(options.provenance);
   const upstreams: ApiUpstreams = (api) => {
     const upstream = lazyUpstreams(api);

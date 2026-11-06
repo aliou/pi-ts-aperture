@@ -25,9 +25,27 @@ export function normalizeInputUrl(raw: string): string {
     // Return just the origin (scheme + host + port), discarding path/query/fragment
     return parsed.origin;
   } catch {
-    // Fallback for unparseable input: strip /v1 and trailing slashes
-    return result.replace(/\/v1\/?$/, "").replace(/\/+$/, "");
+    // Unparseable input: return it unchanged; toGatewayUrl strips the path.
+    return result;
   }
+}
+
+/**
+ * Gateway root from user input: normalized, /v1 suffix and trailing
+ * slashes stripped. Returns null for empty input.
+ */
+export function toGatewayUrl(raw: string): string | null {
+  const normalized = normalizeInputUrl(raw);
+  if (!normalized) return null;
+  return normalized.replace(/\/v1\/?$/, "").replace(/\/+$/, "");
+}
+
+/**
+ * Aperture provider base URL for a resolved gateway root: the gateway URL
+ * with /v1 appended.
+ */
+export function providerBaseUrl(gatewayUrl: string): string {
+  return `${gatewayUrl}/v1`;
 }
 
 /**
@@ -35,9 +53,7 @@ export function normalizeInputUrl(raw: string): string {
  * Returns null when baseUrl is empty.
  */
 export function resolveGatewayUrl(config: UrlConfig): string | null {
-  const { baseUrl } = config;
-  if (!baseUrl) return null;
-  return baseUrl.replace(/\/v1\/?$/, "").replace(/\/+$/, "");
+  return config.baseUrl ? toGatewayUrl(config.baseUrl) : null;
 }
 
 /**
@@ -47,6 +63,5 @@ export function resolveGatewayUrl(config: UrlConfig): string | null {
  */
 export function resolveProviderBaseUrl(config: UrlConfig): string | null {
   const gateway = resolveGatewayUrl(config);
-  if (!gateway) return null;
-  return `${gateway}/v1`;
+  return gateway ? providerBaseUrl(gateway) : null;
 }
