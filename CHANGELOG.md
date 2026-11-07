@@ -1,5 +1,11 @@
 # @aliou/pi-ts-aperture
 
+## 0.20.2
+
+### Patch Changes
+
+- 4dfdaf8: Validate gateway responses with `@earendil-works/pi-schema` instead of `typebox` in the `./provider` entry. `typebox` is no longer a peer dependency, so installing the package next to `@earendil-works/pi-ai` is enough to import `@aliou/pi-ts-aperture/provider`. The pi peer dependencies now accept `>=1.5.0` instead of pinning `pi-ai` to `1.5.0`.
+
 ## 0.20.1
 
 ### Patch Changes
