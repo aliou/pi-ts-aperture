@@ -9,6 +9,7 @@
  */
 
 import type { SettingsTheme } from "@aliou/pi-utils-settings";
+import { truncateToWidth } from "@aliou/pi-utils-ui";
 import type { Component } from "@earendil-works/pi-tui";
 import {
   getKeybindings,
@@ -17,7 +18,6 @@ import {
   matchesKey,
   wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
-import { truncateToWidth } from "../../shared/truncate";
 
 const LIST_HEIGHT = 6;
 
