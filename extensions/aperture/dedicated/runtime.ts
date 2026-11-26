@@ -1,11 +1,20 @@
 import type { AnyModel } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import {
+  APERTURE_OPENAI_DECISIONS_API,
+  classify as classifyOpenAIDecisions,
+} from "../../../src/openai-decisions";
 import { refreshDedicatedCatalog } from "../../../src/provider/catalog";
 import {
+  type ClassifierApis,
   createDedicatedProvider,
   DEDICATED_PROVIDER_ID,
   type RefreshDedicatedCatalog,
 } from "../../../src/provider/dedicated";
+import {
+  APERTURE_SYSTEM_ONE_API,
+  classify as classifySystemOne,
+} from "../../../src/system-one";
 import { resolveGatewayUrl, resolveProviderBaseUrl } from "../../../src/url";
 import { compatUpstreams } from "../../shared/api-routing";
 import { configLoader } from "../../shared/config/loader";
@@ -18,6 +27,11 @@ import { configLoader } from "../../shared/config/loader";
  * refreshes must see a live view, not a snapshot.
  */
 export type GetRegistryModels = () => AnyModel[];
+
+const classifierApis: ClassifierApis = {
+  [APERTURE_SYSTEM_ONE_API]: { classify: classifySystemOne },
+  [APERTURE_OPENAI_DECISIONS_API]: { classify: classifyOpenAIDecisions },
+};
 
 function dedicatedCatalogRefresh(
   getModels: GetRegistryModels,
@@ -35,6 +49,7 @@ function dedicatedCatalogRefresh(
       baseUrl,
       providers: config.dedicated.providers,
       getRegistryModels: getModels,
+      classifierApis,
       notify,
     });
   };
@@ -66,6 +81,7 @@ export function registerDedicatedProvider(
       baseUrl,
       dedicatedCatalogRefresh(getModels, notify),
       compatUpstreams,
+      classifierApis,
     ),
   );
 }

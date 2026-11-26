@@ -74,6 +74,7 @@ describe("ApertureClient", () => {
           "claude-sonnet-4": {
             id: "claude-sonnet-4",
             system_one: false,
+            decisions: false,
           },
         },
       },
@@ -85,8 +86,12 @@ describe("ApertureClient", () => {
         compatibility: { openai_chat: true, openai_responses: true },
         requires_client_auth: true,
         modelInfoById: {
-          "gpt-5": { id: "gpt-5", system_one: false },
-          "gpt-5-mini": { id: "gpt-5-mini", system_one: false },
+          "gpt-5": { id: "gpt-5", system_one: false, decisions: false },
+          "gpt-5-mini": {
+            id: "gpt-5-mini",
+            system_one: false,
+            decisions: false,
+          },
         },
       },
     ]);
@@ -145,6 +150,7 @@ describe("ApertureClient", () => {
       id: "syn:large:text",
       pricing,
       system_one: false,
+      decisions: false,
     });
   });
 
@@ -176,6 +182,7 @@ describe("ApertureClient", () => {
       context_window_tokens: 500_000,
       max_output_tokens: 500_000,
       system_one: false,
+      decisions: false,
     });
   });
 
@@ -192,7 +199,13 @@ describe("ApertureClient", () => {
             model(
               "clef-flash",
               { id: "neuralwatt", name: "Neuralwatt" },
-              { supported_endpoints: ["/v1/messages", "/v1/systemone"] },
+              {
+                supported_endpoints: [
+                  "/v1/messages",
+                  "/v1/systemone",
+                  "/v1/decisions",
+                ],
+              },
             ),
           ],
         };
@@ -203,14 +216,17 @@ describe("ApertureClient", () => {
     const providers = await new ApertureClient(
       "http://gateway.test",
     ).providers();
-    // Per-model flag: presence of /v1/systemone in the entry's endpoints.
+    // Per-model flags: presence of /v1/systemone and /v1/decisions in the
+    // entry's endpoints.
     expect(providers[0].modelInfoById["jev-latest"]).toEqual({
       id: "jev-latest",
       system_one: true,
+      decisions: false,
     });
     expect(providers[1].modelInfoById["clef-flash"]).toEqual({
       id: "clef-flash",
       system_one: true,
+      decisions: true,
     });
   });
 

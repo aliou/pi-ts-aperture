@@ -21,8 +21,9 @@ import {
   type ModelsDevCatalog,
   resolveModelMetadata,
 } from "../model-metadata";
+import { APERTURE_OPENAI_DECISIONS_API } from "../openai-decisions";
 import { APERTURE_SYSTEM_ONE_API } from "../system-one";
-import { DEDICATED_PROVIDER_ID } from "./dedicated";
+import { type ClassifierApis, DEDICATED_PROVIDER_ID } from "./dedicated";
 
 const PROVIDER_NAME = DEDICATED_PROVIDER_ID;
 
@@ -97,6 +98,7 @@ export function buildModels(
   registryModels: readonly AnyModel[],
   modelsDev: ModelsDevCatalog | null,
   apiOverrides: ReadonlyMap<string, Api>,
+  classifierApis: ClassifierApis,
   notify?: (warning: string) => void,
 ): AnyModel[] {
   // Look up native upstream base URLs from Pi's model registry. Prefer a
@@ -154,7 +156,10 @@ export function buildModels(
         modelsDev,
       });
 
-      if (modelInfo?.system_one === true) {
+      if (
+        modelInfo?.system_one === true &&
+        classifierApis[APERTURE_SYSTEM_ONE_API]
+      ) {
         const classifier: ClassifierModel<ClassifierApi> = {
           provider: PROVIDER_NAME,
           type: "classifier",
@@ -206,6 +211,34 @@ export function buildModels(
         ...(compat ? { compat } : {}),
       };
       models.push(chat);
+
+      // Decision models also serve chat, so the classifier joins the chat
+      // entry instead of replacing it (the system-one branch above swaps).
+      if (
+        modelInfo?.decisions === true &&
+        classifierApis[APERTURE_OPENAI_DECISIONS_API]
+      ) {
+        const decisions: ClassifierModel<ClassifierApi> = {
+          provider: PROVIDER_NAME,
+          type: "classifier",
+          ...buildClassifierModelConfig({
+            id: `${provider.id}/${modelId}`,
+            name: modelId,
+            pricing: modelInfo?.pricing,
+            limits: {
+              context_window_tokens: modelInfo?.context_window_tokens,
+            },
+            metadata,
+          }),
+          api: APERTURE_OPENAI_DECISIONS_API,
+          baseUrl: getBaseUrlForApi(
+            APERTURE_OPENAI_DECISIONS_API,
+            gatewayUrl,
+            baseUrl,
+          ),
+        };
+        models.push(decisions);
+      }
     }
   }
 
@@ -245,6 +278,7 @@ export interface DedicatedCatalogOptions {
   /** Provider selection and api overrides (part of the catalog key). */
   providers: readonly DedicatedProviderSelection[];
   getRegistryModels: () => readonly AnyModel[];
+  classifierApis: ClassifierApis;
   notify?: (warning: string) => void;
 }
 
@@ -263,7 +297,14 @@ export async function refreshDedicatedCatalog(
   context: RefreshModelsContext,
   options: DedicatedCatalogOptions,
 ): Promise<AnyModel[]> {
-  const { gatewayUrl, baseUrl, providers, getRegistryModels, notify } = options;
+  const {
+    gatewayUrl,
+    baseUrl,
+    providers,
+    getRegistryModels,
+    classifierApis,
+    notify,
+  } = options;
 
   const catalogKey = buildCatalogKey(gatewayUrl, providers);
 
@@ -289,6 +330,7 @@ export async function refreshDedicatedCatalog(
     getRegistryModels(),
     modelsDev,
     apiOverrides,
+    classifierApis,
     notify,
   );
 

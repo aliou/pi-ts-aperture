@@ -3,6 +3,7 @@ import type {
   Api,
   Model,
   Provider,
+  ProviderClassifier,
   ProviderHeaders,
   RefreshModelsContext,
 } from "@earendil-works/pi-ai";
@@ -12,10 +13,8 @@ import {
   buildStream,
   buildStreamSimple,
 } from "../api-routing";
-import {
-  APERTURE_SYSTEM_ONE_API,
-  classify as classifySystemOne,
-} from "../system-one";
+
+export type ClassifierApis = Readonly<Record<string, ProviderClassifier>>;
 
 export const DEDICATED_PROVIDER_ID = "aperture";
 
@@ -42,6 +41,7 @@ export function createDedicatedProvider(
   baseUrl: string,
   refresh: RefreshDedicatedCatalog,
   upstreams: ApiUpstreams,
+  classifierApis: ClassifierApis,
   headers?: ProviderHeaders,
 ): Provider {
   let liveModels: AnyModel[] = [];
@@ -69,12 +69,13 @@ export function createDedicatedProvider(
       ),
     getAllModels: () => liveModels,
     classify: (model, context, options) => {
-      if (model.api !== APERTURE_SYSTEM_ONE_API) {
+      const upstream = classifierApis[model.api];
+      if (!upstream) {
         throw new Error(
           `Aperture provider has no classifier implementation for "${model.api}"`,
         );
       }
-      return classifySystemOne(model, context, options);
+      return upstream.classify(model, context, options);
     },
     refreshModels: async (context) => {
       const models = await refresh(context);
