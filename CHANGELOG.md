@@ -1,5 +1,19 @@
 # @aliou/pi-ts-aperture
 
+## 0.21.0
+
+### Minor Changes
+
+- 726097b: Expose decision models as `openai-decisions` classifiers on the dedicated `aperture` provider:
+  
+  - Models serving `/v1/decisions` keep their chat entry and gain a decisions classifier alongside it (for example `openai-api/gpt-6-luna` on the QA gateway), callable via `models.classify` with no consumer-side wrapping.
+  - Classification dispatch moves from a hardcoded System One call to a `classifierApis` injection, and emission is gated on the injected implementations, so the dedicated provider never lists a classifier it cannot dispatch.
+  - The System One and OpenAI Decisions classifier clients live in `src/system-one.ts` and `src/openai-decisions.ts`, shared by the extension and the standalone provider.
+
+### Patch Changes
+
+- 928a328: Forward cache tokens reported by the OpenAI Decisions API. `input_tokens_details.cached_tokens` and `cache_write_tokens` now map to `cacheRead` and `cacheWrite` on classifier usage, so cached input is billed at the cache-read rate instead of full price. System One classifiers report only flat input/output token counts and are unaffected.
+
 ## 0.20.2
 
 ### Patch Changes
