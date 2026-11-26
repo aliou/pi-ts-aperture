@@ -5,21 +5,21 @@ export const GATEWAY = process.env.APERTURE_E2E_GATEWAY ?? "http://aperture-qa";
 
 // One hardcoded model per enabled gateway provider.
 export const DEDICATED_MODELS: Readonly<Record<string, string>> = {
-  synthetic: "syn:small:text",
-  neuralwatt: "kimi-k3",
+  neuralwatt: "nw-small",
   gemini: "gemini-3.1-flash-lite",
-  aperture: "openai/gpt-5.6-luna",
-  openrouter: "anthropic/claude-sonnet-5",
+  "openai-api": "gpt-6-luna",
+  openrouter: "anthropic/claude-sonnet-5.5",
 };
 
 export const DEDICATED_CLASSIFIER_MODELS: Readonly<Record<string, string>> = {
-  neuralwatt: "clef-flash",
+  neuralwatt: "mammoth-1",
+  typesafe: "jev-latest",
 };
 
 // Proxy mode wraps local Pi providers by id; only these have one.
 export const PROXY_MODELS: Readonly<Record<string, string>> = {
   synthetic: "syn:small:text",
-  neuralwatt: "kimi-k3",
+  neuralwatt: "qwen3.6-35b",
 };
 
 export async function isAccessible(target: string): Promise<boolean> {

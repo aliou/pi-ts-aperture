@@ -1,8 +1,8 @@
 import { Value } from "typebox/value";
 import { describe, expect, test } from "vitest";
-import { getSelectableApis } from "../extensions/shared/api-selection";
 import { ApertureClient } from "../src/api/client";
 import { ApertureProviderSchema } from "../src/api/types";
+import { getSelectableApis } from "../src/api-selection";
 import { getBaseUrlForApi } from "../src/base-url-routing";
 import { GATEWAY, isAccessible } from "./helpers";
 
@@ -30,10 +30,12 @@ describe.skipIf(!accessible)("Aperture gateway e2e", () => {
     }
   });
 
-  test("every enabled provider maps to at least one selectable Pi api", async () => {
+  test("every chat-capable provider maps to at least one selectable Pi api", async () => {
     const providers = await client.providers();
 
     for (const provider of providers) {
+      // Classifier-only providers (e.g. system-one) serve no chat api.
+      if (Object.keys(provider.compatibility).length === 0) continue;
       const apis = getSelectableApis(provider.compatibility);
       expect(
         apis.length,
@@ -46,7 +48,9 @@ describe.skipIf(!accessible)("Aperture gateway e2e", () => {
     const providers = await client.providers();
 
     for (const provider of providers) {
-      const api = getSelectableApis(provider.compatibility)[0];
+      const apis = getSelectableApis(provider.compatibility);
+      if (apis.length === 0) continue;
+      const api = apis[0];
       const baseUrl = getBaseUrlForApi(
         api,
         GATEWAY,
@@ -58,7 +62,7 @@ describe.skipIf(!accessible)("Aperture gateway e2e", () => {
 
       switch (api) {
         case "anthropic-messages":
-          expect(parsed.pathname).toBe("");
+          expect(parsed.pathname).toBe("/");
           break;
         case "google-generative-ai":
           expect(parsed.pathname).toBe("/v1beta");
@@ -85,7 +89,7 @@ describe.skipIf(!accessible)("Aperture gateway e2e", () => {
         "x-session-id": "pi-aperture-e2e",
       },
       body: JSON.stringify({
-        model: "synthetic/syn:small:text",
+        model: "neuralwatt/nw-small",
         messages: [{ role: "user", content: "Reply with exactly: OK" }],
         max_tokens: 256,
       }),
