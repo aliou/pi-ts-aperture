@@ -220,6 +220,35 @@ describe("classify error handling", () => {
     expect(result.usage?.totalTokens).toBe(106);
   });
 
+  test("forwards cached and cache-write input tokens", async () => {
+    const result = await classify(model, context, {
+      apiKey: "-",
+      fetch: fetchOnly({
+        answers: [
+          choiceAnswer("topic", "billing"),
+          { type: "score", name: "urgency", score: 0.5, confidence: 1 },
+          { type: "predicate", name: "refund", probability: 0.1 },
+        ],
+        usage: {
+          input_tokens: 20156,
+          output_tokens: 0,
+          total_tokens: 20156,
+          input_tokens_details: {
+            cached_tokens: 20005,
+            cache_write_tokens: 0,
+          },
+          output_tokens_details: { reasoning_tokens: 0 },
+        },
+      }),
+    });
+
+    expect(result.stopReason).toBe("stop");
+    expect(result.usage?.input).toBe(20156);
+    expect(result.usage?.cacheRead).toBe(20005);
+    expect(result.usage?.cacheWrite).toBe(0);
+    expect(result.usage?.totalTokens).toBe(20156);
+  });
+
   test("error responses surface the gateway's message", async () => {
     const result = await classify(model, context, {
       apiKey: "-",

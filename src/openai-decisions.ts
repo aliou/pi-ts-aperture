@@ -30,6 +30,15 @@ const UsageSchema = obj(
   {
     input_tokens: int({ minimum: 0 }),
     output_tokens: int({ minimum: 0 }),
+    input_tokens_details: opt(
+      obj(
+        {
+          cached_tokens: opt(int({ minimum: 0 })),
+          cache_write_tokens: opt(int({ minimum: 0 })),
+        },
+        { open: true },
+      ),
+    ),
   },
   { open: true },
 );
@@ -157,8 +166,8 @@ function mapUsage(
   const usage = {
     input,
     output,
-    cacheRead: 0,
-    cacheWrite: 0,
+    cacheRead: value.input_tokens_details?.cached_tokens ?? 0,
+    cacheWrite: value.input_tokens_details?.cache_write_tokens ?? 0,
     totalTokens: input + output,
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
   };
