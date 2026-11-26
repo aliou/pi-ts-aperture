@@ -136,6 +136,10 @@ export function getBaseUrlForApi(
     // protocol error.
     case "bedrock-converse-stream":
       return `${gatewayUrl}/bedrock`;
+    // The decisions classifier client appends /decisions itself, so it needs
+    // the versioned gateway path, not the OpenAI-SDK root inference.
+    case "openai-decisions":
+      return `${gatewayUrl}/v1`;
     default:
       return shouldUseGatewayRoot(api, upstreamBaseUrl) ? gatewayUrl : baseUrl;
   }

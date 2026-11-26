@@ -11,9 +11,24 @@ export const DEDICATED_MODELS: Readonly<Record<string, string>> = {
   openrouter: "anthropic/claude-sonnet-5.5",
 };
 
-export const DEDICATED_CLASSIFIER_MODELS: Readonly<Record<string, string>> = {
-  neuralwatt: "mammoth-1",
-  typesafe: "jev-latest",
+export const DEDICATED_CLASSIFIER_MODELS: Readonly<
+  Record<string, { id: string; api: string; replacesChat: boolean }>
+> = {
+  "neuralwatt/mammoth-1": {
+    id: "neuralwatt/mammoth-1",
+    api: "typesafe-system-one",
+    replacesChat: true,
+  },
+  "typesafe/jev-latest": {
+    id: "typesafe/jev-latest",
+    api: "typesafe-system-one",
+    replacesChat: true,
+  },
+  "openai-api/gpt-6-luna": {
+    id: "openai-api/gpt-6-luna",
+    api: "openai-decisions",
+    replacesChat: false,
+  },
 };
 
 // Proxy mode wraps local Pi providers by id; only these have one.

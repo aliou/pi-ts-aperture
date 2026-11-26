@@ -31,6 +31,9 @@ function compatibilityFlag(
 /** Aperture's path for the System One classifier protocol. */
 const SYSTEM_ONE_ENDPOINT = "/v1/systemone";
 
+/** Aperture's path for the OpenAI Decisions classifier protocol. */
+const DECISIONS_ENDPOINT = "/v1/decisions";
+
 /**
  * HTTP error raised by {@link ApertureClient._fetch} on non-OK responses.
  */
@@ -121,6 +124,7 @@ export class ApertureClient {
         context_window_tokens: entry.context_window_tokens,
         max_output_tokens: entry.max_output_tokens,
         system_one: endpoints.includes(SYSTEM_ONE_ENDPOINT),
+        decisions: endpoints.includes(DECISIONS_ENDPOINT),
       };
       for (const endpoint of endpoints) {
         const flag = compatibilityFlag(endpoint);

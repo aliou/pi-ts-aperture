@@ -11,9 +11,20 @@ import { googleVertexApi } from "@earendil-works/pi-ai/api/google-vertex.lazy";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
 import { openAIResponsesApi } from "@earendil-works/pi-ai/api/openai-responses.lazy";
 import type { ApiUpstreams } from "../src/api-routing";
+import {
+  APERTURE_OPENAI_DECISIONS_API,
+  classify as classifyOpenAIDecisions,
+} from "../src/openai-decisions";
 import type { DedicatedProviderSelection } from "../src/provider/catalog";
 import { refreshDedicatedCatalog } from "../src/provider/catalog";
-import { createDedicatedProvider } from "../src/provider/dedicated";
+import {
+  type ClassifierApis,
+  createDedicatedProvider,
+} from "../src/provider/dedicated";
+import {
+  APERTURE_SYSTEM_ONE_API,
+  classify as classifySystemOne,
+} from "../src/system-one";
 import { providerBaseUrl, toGatewayUrl } from "../src/url";
 import type { ProvenanceOptions } from "./headers";
 import { provenanceRequestHeaders, withProvenanceHeaders } from "./headers";
@@ -61,6 +72,11 @@ const lazyUpstreams: ApiUpstreams = (api: Api): ProviderStreams | undefined => {
   }
 };
 
+const classifierApis: ClassifierApis = {
+  [APERTURE_SYSTEM_ONE_API]: { classify: classifySystemOne },
+  [APERTURE_OPENAI_DECISIONS_API]: { classify: classifyOpenAIDecisions },
+};
+
 /**
  * Build the standalone `aperture` provider: a pi-ai Provider whose catalog is
  * fetched from the gateway's `/v1` surface. The host drives refreshes through
@@ -91,8 +107,10 @@ export default function createApertureProvider(
         baseUrl,
         providers: options.providers ?? [],
         getRegistryModels: options.registryModels ?? (() => []),
+        classifierApis,
       }),
     upstreams,
+    classifierApis,
     provenanceHeaders,
   );
 }

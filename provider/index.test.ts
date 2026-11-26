@@ -325,6 +325,105 @@ describe("createApertureProvider", () => {
       provider.classify?.({ api: "openai-completions" } as never, {} as never),
     ).toThrow("no classifier implementation");
   });
+
+  test("adds a decisions classifier alongside the chat entry of a decision model", async () => {
+    providersMock.mockResolvedValue([
+      {
+        ...gatewayProvider("openai-api", ["gpt-luna"]),
+        modelInfoById: {
+          "gpt-luna": {
+            id: "gpt-luna",
+            decisions: true,
+            context_window_tokens: 922_000,
+          },
+        },
+      },
+    ]);
+    const provider = createApertureProvider({ baseUrl: GATEWAY });
+    await refreshWithStore(
+      provider,
+      {
+        read: async () => undefined,
+        write: async () => undefined,
+        delete: async () => undefined,
+      },
+      true,
+    );
+
+    const all = provider.getAllModels?.() ?? [];
+    expect(all.map((m) => getModelType(m))).toEqual(["chat", "classifier"]);
+    const decisions = all.find((m) => getModelType(m) === "classifier");
+    expect(decisions).toMatchObject({
+      id: "openai-api/gpt-luna",
+      api: "openai-decisions",
+      baseUrl: `${GATEWAY}/v1`,
+      contextWindow: 922_000,
+    });
+  });
+
+  test("classifies through the decisions api", async () => {
+    providersMock.mockResolvedValue([
+      {
+        ...gatewayProvider("openai-api", ["gpt-luna"]),
+        modelInfoById: {
+          "gpt-luna": { id: "gpt-luna", decisions: true },
+        },
+      },
+    ]);
+    const provider = createApertureProvider({ baseUrl: GATEWAY });
+    await refreshWithStore(
+      provider,
+      {
+        read: async () => undefined,
+        write: async () => undefined,
+        delete: async () => undefined,
+      },
+      true,
+    );
+
+    const classifier = provider
+      .getAllModels?.()
+      ?.find((m) => m.api === "openai-decisions");
+    expect(classifier).toBeDefined();
+    if (!classifier) return;
+
+    const fetchMock = vi.fn(async () =>
+      Response.json({
+        answers: [
+          {
+            type: "choice",
+            name: "topic",
+            choice: "billing",
+            probabilities: [{ value: "billing", probability: 0.9 }],
+            confidence: 0.8,
+          },
+        ],
+      }),
+    );
+    const result = await provider.classify?.(
+      classifier,
+      {
+        state: {},
+        questions: {
+          topic: {
+            type: "choice",
+            instructions: "Classify.",
+            criteria: { billing: "x", other: "y" },
+          },
+        },
+      },
+      { apiKey: "-", fetch: fetchMock as unknown as typeof fetch },
+    );
+
+    expect(result?.stopReason).toBe("stop");
+    expect(result?.answers.topic).toMatchObject({
+      type: "choice",
+      choice: "billing",
+    });
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe(
+      `${GATEWAY}/v1/decisions`,
+    );
+  });
 });
 
 describe("provenanceRequestHeaders", () => {

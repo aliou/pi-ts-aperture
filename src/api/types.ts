@@ -57,6 +57,7 @@ export const ApertureModelInfoSchema = obj(
     max_output_tokens: opt(int({ minimum: 0 })),
     /** The gateway serves this model over the System One classifier protocol. */
     system_one: opt(bool()),
+    decisions: opt(bool()),
   },
   { open: true },
 );

@@ -33,6 +33,12 @@ describe("getBaseUrlForApi", () => {
     );
   });
 
+  test("routes the decisions classifier to the versioned gateway path", () => {
+    expect(getBaseUrlForApi("openai-decisions", GATEWAY, BASE_URL)).toBe(
+      `${GATEWAY}/v1`,
+    );
+  });
+
   test("ignores the upstream base URL for fixed-path APIs", () => {
     // Anthropic / Gemini / Vertex / Bedrock map to a fixed gateway path
     // regardless of the upstream base URL; only the OpenAI-SDK default branch

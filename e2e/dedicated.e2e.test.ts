@@ -68,7 +68,10 @@ describe.skipIf(!accessible)("dedicated provider e2e", () => {
         compat: {
           ...target.compat,
           supportsStore: false,
-          maxTokensField: "max_tokens",
+          maxTokensField:
+            providerId === "openai-api"
+              ? "max_completion_tokens"
+              : "max_tokens",
         },
       };
       const stream = provider.streamSimple(
@@ -97,23 +100,22 @@ describe.skipIf(!accessible)("dedicated provider e2e", () => {
     },
   );
 
-  test.each(Object.entries(DEDICATED_CLASSIFIER_MODELS))(
-    "classifies %s/%s",
-    async (providerId, modelId) => {
-      const classifier = allModels.find(
-        (m) => m.id === `${providerId}/${modelId}`,
-      );
-      expect(
-        classifier,
-        `catalog does not contain ${providerId}/${modelId}`,
-      ).toBeDefined();
+  test.each(Object.values(DEDICATED_CLASSIFIER_MODELS))(
+    "classifies $id via $api",
+    async ({ id, api, replacesChat }) => {
+      const classifier = allModels.find((m) => m.id === id && m.api === api);
+      expect(classifier, `catalog does not contain ${id}`).toBeDefined();
       expect(
         classifier && isModelType(classifier, "classifier"),
-        `${providerId}/${modelId} is not a classifier model`,
+        `${id} is not a classifier model`,
       ).toBe(true);
       if (!classifier || !isModelType(classifier, "classifier")) return;
-      expect(classifier.api).toBe("typesafe-system-one");
-      expect(models.map((m) => m.id)).not.toContain(classifier.id);
+      expect(classifier.api).toBe(api);
+      if (replacesChat) {
+        expect(models.map((m) => m.id)).not.toContain(classifier.id);
+      } else {
+        expect(models.map((m) => m.id)).toContain(classifier.id);
+      }
 
       const result = await provider.classify?.(
         classifier,
