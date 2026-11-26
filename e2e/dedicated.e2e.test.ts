@@ -1,6 +1,3 @@
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import type {
   Api,
   Model,
@@ -9,25 +6,13 @@ import type {
 } from "@earendil-works/pi-ai";
 import { isModelType } from "@earendil-works/pi-ai";
 import { beforeAll, describe, expect, test } from "vitest";
+import createApertureProvider from "../provider";
 import {
   DEDICATED_CLASSIFIER_MODELS,
   DEDICATED_MODELS,
   GATEWAY,
   isAccessible,
 } from "./helpers";
-
-// The config loader singleton resolves ~/.pi/agent at import time: point HOME
-// at a scratch dir and set APERTURE_BASE_URL before importing it.
-process.env.HOME = mkdtempSync(join(tmpdir(), "pi-aperture-e2e-"));
-process.env.APERTURE_BASE_URL = GATEWAY;
-
-const { configLoader } = await import("../extensions/shared/config/loader");
-const { createDedicatedProvider } = await import(
-  "../extensions/aperture/dedicated/provider"
-);
-const { refreshDedicatedCatalog } = await import(
-  "../extensions/aperture/dedicated/runtime"
-);
 
 const accessible = await isAccessible(GATEWAY);
 
@@ -37,12 +22,7 @@ describe.skipIf(!accessible)("dedicated provider e2e", () => {
   let allModels: readonly Model<Api>[];
 
   beforeAll(async () => {
-    await configLoader.load();
-    expect(configLoader.getConfig().baseUrl).toBe(GATEWAY);
-
-    provider = createDedicatedProvider(`${GATEWAY}/v1`, (context) =>
-      refreshDedicatedCatalog(context, () => []),
-    );
+    provider = createApertureProvider({ baseUrl: GATEWAY });
 
     const context = {
       allowNetwork: true,
