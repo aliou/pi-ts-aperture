@@ -8,6 +8,7 @@ import type {
   TranscriptContext,
 } from "@earendil-works/pi-ai";
 import { embedsModelIdInPath } from "./base-url-routing";
+import { withModelId, withRequestModelId } from "./model-id";
 
 export type ApiUpstreams = (api: Api) => ProviderStreams | undefined;
 
@@ -40,12 +41,19 @@ export function buildStreamSimple(upstreams: ApiUpstreams) {
     model: Model<Api>,
     context: TranscriptContext,
     options?: SimpleStreamOptions,
-  ): AssistantMessageEventStream =>
-    upstreamFor(upstreams, model).streamSimple(
-      requestModel(model),
-      context,
+  ): AssistantMessageEventStream => {
+    const req = requestModel(model);
+    const upstream = upstreamFor(upstreams, model);
+    if (req.id === model.id) {
+      return upstream.streamSimple(req, context, options);
+    }
+    const stream = upstream.streamSimple(
+      req,
+      withRequestModelId(context, model, req),
       options,
     );
+    return withModelId(stream, model.id);
+  };
 }
 
 /** Full-stream counterpart of buildStreamSimple. */
@@ -54,6 +62,17 @@ export function buildStream(upstreams: ApiUpstreams) {
     model: Model<Api>,
     context: TranscriptContext,
     options?: StreamOptions,
-  ): AssistantMessageEventStream =>
-    upstreamFor(upstreams, model).stream(requestModel(model), context, options);
+  ): AssistantMessageEventStream => {
+    const req = requestModel(model);
+    const upstream = upstreamFor(upstreams, model);
+    if (req.id === model.id) {
+      return upstream.stream(req, context, options);
+    }
+    const stream = upstream.stream(
+      req,
+      withRequestModelId(context, model, req),
+      options,
+    );
+    return withModelId(stream, model.id);
+  };
 }
